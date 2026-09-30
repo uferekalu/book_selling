@@ -1,0 +1,26 @@
+@import "tailwindcss";
+
+/*
+ * Seed palette only — BS-2 replaces this with the full token system in src/styles/tokens.css
+ * (docs/ARCHITECTURE.md §6). Components must only ever use these semantic names, never raw hex.
+ */
+@theme {
+  --color-background: #fbf8f3;
+  --color-foreground: #2b1d14;
+  --color-primary: #6f4527;
+  --color-muted: #7a6656;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-background: #17110c;
+    --color-foreground: #f4ece2;
+    --color-primary: #d9a877;
+    --color-muted: #b8a695;
+  }
+}
+
+body {
+  background: var(--color-background);
+  color: var(--color-foreground);
+}

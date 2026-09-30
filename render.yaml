@@ -1,0 +1,26 @@
+# Render Blueprint for the backend API. Structure only — every `sync: false` value is set in the
+# Render dashboard, never committed. Keep this list in sync with
+# backend/src/common/config/env.validation.ts and backend/.env.example: the API refuses to boot
+# if Joi validation fails on a missing required var. See docs/DEPLOYMENT.md.
+services:
+  - type: web
+    name: book-selling-api
+    runtime: node
+    rootDir: backend
+    plan: starter
+    buildCommand: npm ci && npm run build
+    startCommand: npm run start:prod
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 4000
+      - key: NODE_VERSION
+        value: "24"
+      - key: MONGODB_URI
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
