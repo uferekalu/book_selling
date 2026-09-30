@@ -86,10 +86,20 @@ Tests don't need either: they use `mongodb-memory-server`.
 1. Add the sending domain (e.g. `mail.<domain>`) in Resend and create the **SPF, DKIM and DMARC**
    DNS records it lists. Start DMARC with `p=none; rua=…`, then move to `quarantine` once reports
    are clean.
-2. `MAIL_FROM` = `"<Author Name> Books <books@mail.<domain>>"`; `MAIL_REPLY_TO` = the support inbox.
+2. Render env: `RESEND_API_KEY` (a sending-only key), `MAIL_FROM` =
+   `"<Author Name> Books <books@mail.<domain>>"`, `MAIL_REPLY_TO` / `SUPPORT_EMAIL` = the support
+   inbox, `OWNER_ALERT_EMAIL` = the owner's own inbox (**not** on the sending domain, so alerts
+   still arrive if that domain has a problem), `BRAND_NAME`, and `BUSINESS_POSTAL_ADDRESS`.
+   `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET` and `MAIL_FROM` are required in production: the API
+   will not boot without them.
 3. Create the Resend webhook → `https://api.<domain>/mail/webhooks/resend` for `email.delivered`,
-   `email.bounced` and `email.complained`, and set its signing secret as `RESEND_WEBHOOK_SECRET`.
-4. Send test receipts to Gmail, Outlook and Yahoo and confirm they land in the inbox, not spam.
+   `email.delivery_delayed`, `email.bounced`, `email.complained`, `email.failed` and
+   `email.suppressed`, and set its signing secret as `RESEND_WEBHOOK_SECRET`. Unsigned or forged
+   calls get 401.
+4. Send test emails to Gmail, Outlook and Yahoo and confirm they land in the inbox, not spam.
+   Check how they look first with `npm run email:preview` (backend).
+5. Without `RESEND_API_KEY` (local dev), emails are printed to the API log, links included, and
+   nothing is sent.
 
 ## 6. Payment providers: go-live checklist
 

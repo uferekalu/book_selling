@@ -24,3 +24,19 @@ services:
         sync: false
       - key: FRONTEND_URL
         sync: false
+      - key: BRAND_NAME
+        sync: false
+      - key: SUPPORT_EMAIL
+        sync: false
+      - key: BUSINESS_POSTAL_ADDRESS
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: RESEND_WEBHOOK_SECRET
+        sync: false
+      - key: MAIL_FROM
+        sync: false
+      - key: MAIL_REPLY_TO
+        sync: false
+      - key: OWNER_ALERT_EMAIL
+        sync: false

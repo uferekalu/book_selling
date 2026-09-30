@@ -1,11 +1,14 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { LoggerModule } from 'nestjs-pino';
 import { envValidationSchema } from './common/config/env.validation.js';
 import { DatabaseModule } from './database/database.module.js';
 import { HealthModule } from './health/health.module.js';
+import { JobsModule } from './jobs/jobs.module.js';
+import { MailModule } from './mail/mail.module.js';
 
 @Module({
   imports: [
@@ -44,8 +47,12 @@ import { HealthModule } from './health/health.module.js';
       },
     }),
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
+    // Registered once for the whole app (the outbox worker; later reconciliation and expiry jobs).
+    ScheduleModule.forRoot(),
     DatabaseModule,
     HealthModule,
+    JobsModule,
+    MailModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })

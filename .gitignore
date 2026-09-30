@@ -37,3 +37,6 @@ backend/backups/
 # Claude Code local state (project skills in .claude/skills ARE committed)
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
+
+# Rendered email previews (npm run email:preview)
+.email-previews/

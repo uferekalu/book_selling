@@ -157,7 +157,7 @@ Fluid Mechanics, Machine Design, Strength of Materials.
 | description | string (sanitised rich text) | |
 | tableOfContents | `{ title, children[] }[]` | |
 | isbn13, edition, publishedAt, pageCount, language | | |
-| cover | `{ publicId, url, width, height, blurDataUrl }` | |
+| cover | `{ publicId, version, width, height, crop, dominantColor, blurDataUrl }` | public Cloudinary image, 2:3 (§10.0) |
 | gallery | same shape [] | sample spreads |
 | abstract | string (sanitised rich text) | also rendered as HTML on the book page (SEO, instant read) |
 | manuscript | `{ assetId (private), pageCount, uploadedAt, checksum }` | **the private master PDF**: the source for the preview, online reading and ebook downloads. Required to publish, even for print-only books, so every book has a preview |
@@ -719,6 +719,91 @@ passed to the buyer as a 400. Anything else is a generic message with full detai
 
 ## 10. Preview reader, online reading, ebook delivery and print fulfilment
 
+### 10.0 Adding a book: upload, storage and presentation (built in BS-5)
+
+Everything a book needs is stored in **Cloudinary**. There are two kinds of file, handled very
+differently:
+
+| File | Who may see it | Cloudinary delivery type | Folder |
+|---|---|---|---|
+| Cover, gallery spreads, author photo | everyone | `upload` (public, CDN-cached) | `books/<bookId>/images`, `authors/<id>` |
+| **Manuscript** (the full book PDF) | **nobody directly**; only our server, through short-lived signed URLs | `authenticated` | `books/<bookId>/manuscript` |
+| Generated preview PDF + blurred teasers | everyone (they only contain free pages) | `upload` | `books/<bookId>/preview` |
+| Per-buyer stamped ebook copies | only that buyer, through signed URLs | `authenticated` | `books/<bookId>/stamped` |
+
+**How a file gets there: direct signed uploads.**
+1. The admin picks a file in the book editor.
+2. The browser asks our API for an upload signature: `POST /uploads/signature` with
+   `{ bookId, kind: 'cover' | 'gallery' | 'manuscript' }`, admin plus 2FA.
+3. The API signs **only** that folder, delivery type, allowed formats and size limit, valid for a
+   few minutes. The Cloudinary secret never leaves the server.
+4. The browser uploads **straight to Cloudinary** with a progress bar. Large manuscripts go in
+   6MB chunks, which is resumable on a flaky connection.
+5. The file bytes never pass through our API: faster, no memory pressure on Render, no request
+   size limits.
+6. The browser sends the resulting `public_id` to the API, which **verifies the asset with
+   Cloudinary's Admin API** before attaching it: that it exists, sits in the expected folder, has
+   the expected type and format, and fits the size and dimension rules. A tampered request can't
+   attach someone else's asset or a public manuscript.
+7. Uploads never attached within 24 hours (the admin abandoned the form) are deleted by a cleanup
+   job. They are tagged `pending` on upload and re-tagged `attached`.
+
+**Cover images** (presentation is what sells the book):
+- Rules: JPG/PNG/WebP, at least 1200×1800px, at most 15MB. The editor has a **2:3 cropper** with a
+  live preview of the real `BookCover` in light and dark, so the title is never cut off by
+  automatic cropping later.
+- Stored on the book: `{ publicId, version, width, height, crop, dominantColor, blurDataUrl }`.
+  - `blurDataUrl` (a ~20px image, base64) gives an instant blurred placeholder while the real
+    cover loads.
+  - `dominantColor` tints the card background so the grid looks designed even before images load.
+- Delivered through a **Cloudinary loader for `next/image`**: `f_auto,q_auto` (AVIF/WebP chosen per
+  browser), exact responsive widths (1x/2x for retina phones), and the stored crop. The versioned
+  URL means a replaced cover shows up immediately everywhere. A 2:3 cover card on a phone is
+  typically 15–30KB.
+- Open Graph and social-share images are generated from the cover (BS-13).
+
+**The manuscript PDF**:
+- Uploaded as an **authenticated** asset. It is never publicly addressable, never linked from any
+  page, and the API never returns its URL to a browser.
+- Server-side checks on attach:
+  - it really is a PDF (`%PDF` magic bytes, not just the extension);
+  - page count read and stored;
+  - **password-protected or encrypted PDFs are rejected** with a clear message, because pages
+    can't be extracted for the preview;
+  - checksum stored, so the preview regenerates only when the file actually changes.
+- Cloudinary can render any PDF page as an image. We use that for the **admin preview picker**:
+  page thumbnails served through signed, admin-only URLs.
+- The manuscript is the single source for the preview (§10.1), online reading (§10.2) and
+  downloads (§10.3). Upload once, and all three stay in sync.
+- **A manuscript with buyers is never deleted.** Archiving a book hides it from the store but
+  keeps every buyer's library working. Replacing a manuscript (a corrected printing) creates a new
+  version; existing buyers get the new version, plus an "updated edition" email (BS-9).
+- **File size vs. Cloudinary plan**: Cloudinary's maximum upload size depends on the account plan,
+  and textbooks with diagrams can be 20–200MB. Before BS-5, confirm the plan's limit covers the
+  largest manuscript (Cloudinary console → Settings). If it doesn't: optimise the PDF first
+  (usually 50–80% smaller with no visible loss), or upgrade the plan. The upload UI shows the
+  limit and refuses larger files up front with a helpful message.
+
+**The admin "Add a book" flow** (BS-5 + BS-6). It is a step-by-step editor with autosaved drafts
+that works on a tablet:
+1. **Details**: title, subtitle, edition, ISBN-13 (checksum validated), author(s), categories,
+   tags, language, page count, publication date.
+2. **Description & abstract**: rich text (sanitised), plus the table of contents (pre-filled from
+   the PDF's outline when it has one).
+3. **Cover & gallery**: drag-and-drop, 2:3 crop, live BookCover preview in both themes.
+4. **Manuscript**: resumable upload with progress, then automatic checks (PDF, not encrypted,
+   pages counted).
+5. **Preview** (BS-6): pick the abstract and introduction pages from thumbnails, with the 15% cap
+   enforced; see exactly what visitors will see.
+6. **Formats & prices**: ebook and/or print, a price per currency (NGN, USD, GBP, EUR), optional
+   sale price, print stock, weight and dimensions (for shipping).
+7. **SEO & publish**: URL slug, search title and description, and a **publish checklist**. Publish
+   stays disabled until every rule in PRODUCT_RULES §3 passes: cover, abstract, manuscript,
+   preview, and a price in every enabled currency.
+
+**Backups**: turn on Cloudinary's backup option for the account, and the owner keeps the original
+manuscript files. Cloudinary is the delivery store, not the only copy of the author's work.
+
 ### 10.1 Preview ("read the abstract and introduction before you buy")
 
 The lecturer's requirement: a buyer can read the abstract and introduction of any book in the
@@ -794,32 +879,78 @@ just removes the paywall.
 - A shipment record is created on payment; an admin moves it through
   processing → shipped (carrier + tracking number) → delivered. Each step emails the buyer.
 
-## 11. Email system
+## 11. Email system (built in BS-3)
+
+**Guarantee:** an email that business logic asks for is either delivered, or visibly marked failed
+and reported to the owner. It is never silently lost, and never sent twice for the same event.
+
+**Code:** `backend/src/mail/` (+ `backend/src/jobs/` for the lease lock).
 
 - **Provider**: Resend, with a verified sending domain (SPF, DKIM, DMARC; see DEPLOYMENT §5).
-- **Templates**: React Email components in `backend/src/mail/templates/`, in brand style (the same
-  colour tokens, copied as constants into `templates/theme.ts`), each with a plain-text version.
-  Previewed with `npm run email:dev`.
-- **Transactional outbox**: business code never calls Resend directly. It inserts an
-  `email_outbox` row, inside the same transaction as the state change when there is one. A worker
-  (every 10 s, lease-locked):
-  - claims due rows atomically (`queued|failed`, `nextAttemptAt ≤ now` → `sending`,
-    `lockedUntil = now + 2 min`);
-  - sends with Resend's `Idempotency-Key` set to the outbox ID;
-  - records `providerMessageId`;
-  - retries with exponential backoff (30 s … 6 h) for up to 8 attempts, then marks `dead` and
-    alerts the owner.
-- **Dedupe**: a unique `dedupeKey`, so a replayed webhook can never send a second receipt.
-- **Delivery tracking**: the Resend webhook (Svix-signed) records `delivered`, `bounced` and
-  `complained`. Hard bounces and complaints add the address to `email_suppressions`; later
-  non-critical emails to it are skipped. Receipts are still attempted.
-- **Catalogue**:
-  - Auth: verify email, welcome, password reset, claim account, new-device login, 2FA enabled.
-  - Commerce: order receipt (with invoice PDF), payment failed (with retry link), ebook ready,
-    shipment updates, refund issued, order expired (with "complete your order" link).
-  - Messaging: new message (sent only when the recipient hasn't read it within 10 minutes; the
-    outbox row uses `sendAfter` and is cancelled on read).
-  - Owner: new sale, reconciliation needed, dead-letter email, low stock.
+  Without `RESEND_API_KEY` (local dev and tests) the `LogTransport` prints each email, links
+  included, to the API log instead of sending it. Env validation makes the key, the webhook secret
+  and `MAIL_FROM` mandatory in production.
+- **Enqueue, never send**: business code calls
+  `MailService.enqueue({ to, template, data, dedupeKey, sendAfter? }, session?)`.
+  - It is an **upsert on `dedupeKey`** (`$setOnInsert`). Enqueueing the same event twice returns the
+    existing row, and, unlike insert-and-catch-duplicate, a duplicate can't abort the caller's
+    transaction.
+  - Pass the caller's `session` so the email commits or rolls back with the state change. This is
+    tested: an email enqueued inside a failed transaction is never sent.
+  - `cancel(dedupeKey)` withdraws an unsent email (unread-message reminders).
+  - `requeue(id)` retries a dead one once its cause is fixed (future admin action).
+- **Outbox worker** (`OutboxWorker`, every 5 s, under the `mail-outbox` job lease so one API
+  instance works at a time):
+  1. Reclaims rows stuck in `sending` past their 2-minute lease, from a worker that crashed mid-send.
+  2. Atomically claims due rows (`queued|failed` with `nextAttemptAt ≤ now`, which also implements
+     `sendAfter`), oldest first, up to 25 per run.
+  3. Skips `notification` emails to suppressed addresses. `critical` ones (verification, reset,
+     receipts) are always attempted because the person explicitly needs them.
+  4. Renders the template, then sends with **`idempotencyKey = outbox-<id>`**. A retry after an
+     ambiguous timeout can never deliver twice, because the whole retry window (about 18h) stays
+     inside Resend's 24h idempotency lifetime.
+  5. On success: `sent`, provider message id and subject stored. For templates marked `sensitive`
+     (one-time links), **`data` is erased** so tokens don't sit in the database.
+  6. Retryable failure (rate limit, quota, 5xx, network, fixable API-key problems): `failed`, with
+     backoff of 30s, 2m, 8m, 32m, 2h8m, then a 6h cap, +0–20% jitter.
+  7. Permanent failure (invalid address or request, template render error) or 8 attempts: `dead`,
+     and an `ops.email-dead-letter` alert goes to `OWNER_ALERT_EMAIL`. An alert about a failed
+     alert is never sent, to avoid loops.
+  8. Final rows get `expireAt`; a TTL index deletes them after 180 days.
+- **Delivery tracking**: `POST /mail/webhooks/resend` (`@Public`, unthrottled).
+  - Verified with **Svix** against the exact raw body. Unsigned, forged or tampered requests get
+    401 before touching the database.
+  - Note: `svix` 2.x `verify()` returns nothing; we verify first, then parse. See the BS-3
+    incident in ROADMAP.
+  - Status updates apply only forwards in time, because events arrive out of order.
+  - Permanent bounces, complaints and provider suppressions upsert `email_suppressions`.
+  - Everything is idempotent, so redelivered webhooks are harmless.
+  - Verified events that fail to apply are logged and still acknowledged (repeated 5xx gets
+    endpoints disabled).
+- **Templates**: React Email components in `backend/src/mail/templates/`. Brand colours are copied
+  from the design tokens into `theme.ts`, with serif/sans font stacks, because web fonts are
+  unreliable in mail clients.
+  - Each template is registered in `registry.tsx` with its `subject`, `category`, `sensitive` flag
+    and a realistic `sample`.
+  - Every email: a 600px single column, 16px body text, AA contrast, `lang="en"`, an inbox preview
+    line, a plain-text version, a copyable URL under every button, and a footer stating why the
+    person got it, plus support email and postal address.
+  - `npm run email:preview` renders every template to `backend/.email-previews/` (HTML + text).
+  - The render test fails if any template outputs `undefined`/`null`/`NaN`, drops a link from the
+    text version, or carries a token without `sensitive: true`.
+- **Built in BS-3**: `auth.verify-email`, `auth.welcome`, `auth.password-reset`,
+  `auth.claim-account`, `auth.security-notice` (password changed, new sign-in, email changed, 2FA
+  on/off), and `ops.email-dead-letter`.
+- **Added by later tickets**:
+  - Commerce: order receipt (with PDF invoice), payment failed (retry link), ebook ready, shipment
+    updates, refund issued, order expired ("complete your order"), back-in-stock and price-drop
+    alerts.
+  - Messaging: new message (sent with `sendAfter` 10 min, cancelled if read first).
+  - Owner: new sale, reconciliation needed, low stock.
+  - Marketing (BS-13+) only with explicit opt-in, plus `List-Unsubscribe` one-click headers
+    (RFC 8058) and a preference centre.
+- **Admin visibility** (BS-12): dead or suppressed emails appear in the "Needs attention" queue with
+  a requeue button.
 
 ## 12. Messaging and notifications
 
