@@ -1,0 +1,7 @@
+# Normalize line endings in the repo; development happens on Windows, CI on Linux.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.ico binary
+*.pdf binary
+*.woff2 binary

@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+.pnp/
+.pnp.js
+
+# Env files (never commit secrets)
+.env
+.env.*
+!.env.example
+
+# Build outputs
+dist/
+build/
+.next/
+out/
+coverage/
+*.tsbuildinfo
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editor / OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+
+# Deploy tool state
+.vercel/
+.turbo/
+
+# Database backups (real customer data — never committed)
+backend/backups/
+
+# Claude Code local state (project skills in .claude/skills ARE committed)
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
