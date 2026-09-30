@@ -11,7 +11,13 @@ Full design: `../docs/ARCHITECTURE.md` §6 (design system) and §7 (frontend arc
   `node_modules/next/dist/docs/` before using an API you're not sure of (see `AGENTS.md`). Pages
   receive typed props (`PageProps<'/books/[slug]'>`, `LayoutProps<'/'>`), and `params` are async.
 - **Tailwind v4, CSS-first.** There is no `tailwind.config.ts`. Tokens live in `src/styles/tokens.css`
-  under `@theme` (from BS-2; BS-1 has a seed palette in `globals.css`).
+  under `@theme` (imported by `src/app/globals.css`). Tokens outside Tailwind namespaces are used via
+  the v4 variable shorthand: `z-(--z-modal)`, `duration-(--duration-base)`, `h-(--header-height)`.
+- `cn()` (`src/lib/cn.ts`) extends tailwind-merge with our custom scale names (`text-2xs`,
+  `shadow-book`). **Add any new custom size/shadow name there too**, or tailwind-merge will
+  silently drop one of two classes it wrongly thinks conflict.
+- Theme: `ThemeSync` + `themeSlice` + the inline bootstrap script from `src/lib/theme.ts`.
+  Component tests needing Redux or toasts use `renderWithProviders` from `src/test/render.tsx`.
 - **Browser API calls go to the relative `/api/*`**, which `next.config.ts` rewrites to the API
   (`getBackendUrl()` in `src/lib/backend-url.ts`). This keeps the refresh cookie first-party (Safari
   and private windows). Only server components and route handlers call `getBackendUrl()` directly.
@@ -29,10 +35,30 @@ Full design: `../docs/ARCHITECTURE.md` §6 (design system) and §7 (frontend arc
 - **UI kit only** (`src/components/ui`, exported from `index.ts`): features and pages compose kit
   components. Need something new? Add it to the kit with a keyboard-behaviour test and a
   `/design-system` entry.
-- Mobile-first. Every page works at 375px. Touch targets are 44px for standalone icon actions.
+- Motion via tokens (`animate-rise-in`, `ease-out-soft`, 120–320 ms). The `motion` library is added only
+  when a screen needs gesture or physics animation (e.g. the reader). `prefers-reduced-motion` is handled
+  globally in `globals.css`.
+
+## Responsive rules (most buyers are on phones)
+
+- **Mobile-first from 320px.** Write the phone layout first, then widen with `sm:`/`md:`/`lg:`.
+- Touch targets: 44px for standalone actions (Button `md`, IconButton `md`), 36px minimum in dense
+  rows. Text inputs keep a 16px font (set globally) so iOS doesn't zoom on focus.
+- Any row that could grow gets `flex-wrap` or a `grid-cols-1 sm:grid-cols-N` fallback. Wide content
+  (tab strips, tables, chip rows) scrolls inside its own `overflow-x-auto` container.
+- **Long words must never widen the page.** Headings are globally `overflow-wrap: anywhere;
+  hyphens: auto`. Large display text outside a heading needs `wrap-anywhere hyphens-auto`. *Why:* in
+  BS-2 the word "Thermodynamics" made the page 397px wide on a 375px phone, and the bottom sheet
+  slid off-screen.
+- Modals are bottom sheets on phones; footers stack full-width buttons (`flex-col-reverse`). Use
+  `.safe-x` / `.safe-bottom` near screen edges.
+- **Verify every UI change:** `npm run build && npx next start -p 3100`, then
+  `npm run check:responsive -- <paths>`. It loads each path at 320/375/414/768/1024/1440px in both
+  themes and fails if the layout viewport is wider than the device or the console logs an error.
+  Review the screenshots in `.responsive-shots/`. First run on a machine needs
+  `npx playwright install chromium`.
 - Self-positioned overlays clamp to the viewport. **Never put a portal-based control (DropdownMenu,
   Tooltip) inside a Modal/Drawer**: the modal backdrop paints over it. Use an inline control.
-- Motion via `motion`, 120–320 ms, and always respects `prefers-reduced-motion`.
 
 ## Data rules
 

@@ -1,0 +1,369 @@
+/*
+ * Design tokens: the single source of truth for colour, type, radius, shadow, motion and
+ * layering (docs/ARCHITECTURE.md §6). Tailwind v4 is CSS-first: every value under `@theme`
+ * generates utilities (`bg-primary`, `font-display`, `shadow-book`) AND is emitted as a real CSS
+ * custom property, so utilities, plain CSS and `tokens.ts` all read the same value.
+ *
+ * Rules (docs/ENGINEERING_RULES.md §7):
+ *  - Components never hardcode a colour, size, radius, shadow or font. Add a token here first.
+ *  - Components use SEMANTIC tokens (`bg-surface`, `text-text-muted`). The raw `brown`/`paper`/
+ *    `gold` scales never change with the theme, so they are for theme-invariant art only.
+ *  - A new semantic colour needs a light value (in @theme) AND a dark value (in the `--dark-*`
+ *    block below). `tokens.contrast.test.ts` checks every text/background pairing against WCAG AA
+ *    in both themes, so keep its pair list in sync.
+ */
+@theme {
+  /* ---------- Raw scales (theme-invariant) ---------- */
+  --color-brown-50: #faf6f1;
+  --color-brown-100: #f2e8dc;
+  --color-brown-200: #e4cfb7;
+  --color-brown-300: #d2b08b;
+  --color-brown-400: #bf8f62;
+  --color-brown-500: #a87445;
+  --color-brown-600: #8c5c36;
+  --color-brown-700: #6f4527;
+  --color-brown-800: #56351f;
+  --color-brown-900: #3f2718;
+  --color-brown-950: #24160d;
+
+  --color-paper-0: #ffffff;
+  --color-paper-50: #fdfbf8;
+  --color-paper-100: #f7f2ea;
+  --color-paper-200: #ede5d8;
+  --color-paper-300: #dccfbd;
+  --color-paper-400: #b9a994;
+  --color-paper-500: #948470;
+  --color-paper-600: #736553;
+  --color-paper-700: #574c3f;
+  --color-paper-800: #3c342b;
+  --color-paper-900: #26211b;
+  --color-paper-950: #16120e;
+
+  --color-gold-50: #fbf7ea;
+  --color-gold-100: #f5ebcb;
+  --color-gold-200: #ead594;
+  --color-gold-300: #dcbb5e;
+  --color-gold-400: #cfa53d;
+  --color-gold-500: #b88a2c;
+  --color-gold-600: #966b23;
+  --color-gold-700: #784f21;
+  --color-gold-800: #634120;
+  --color-gold-900: #54371f;
+  --color-gold-950: #301c0e;
+
+  /* ---------- Semantic colours (light values; dark values below) ---------- */
+  --color-background: #fdfbf8;
+  --color-surface: #ffffff;
+  --color-surface-raised: #ffffff;
+  --color-surface-sunken: #f7f2ea;
+  --color-overlay: rgb(36 22 13 / 0.55);
+  --color-glass: rgb(255 255 255 / 0.72);
+
+  --color-border: #ede5d8;
+  --color-border-strong: #dccfbd;
+  /* Form-control outlines must reach 3:1 against their background (WCAG 1.4.11). */
+  --color-border-input: #9c8b77;
+
+  --color-text: #24160d;
+  --color-text-muted: #66594b;
+  --color-text-subtle: #7f6e59;
+  --color-text-disabled: #b9a994;
+
+  --color-primary: #6f4527;
+  --color-primary-hover: #56351f;
+  --color-primary-active: #3f2718;
+  --color-on-primary: #ffffff;
+  --color-primary-subtle: #faf6f1;
+  --color-on-primary-subtle: #56351f;
+
+  --color-accent: #b88a2c;
+  --color-accent-hover: #cfa53d;
+  --color-on-accent: #24160d;
+  --color-accent-subtle: #fbf7ea;
+  --color-on-accent-subtle: #784f21;
+
+  /* Neutral interactive surfaces: secondary buttons, hover/highlight rows, chips, skeletons. */
+  --color-secondary: #f7f2ea;
+  --color-secondary-hover: #ede5d8;
+  --color-secondary-active: #dccfbd;
+
+  --color-success: #1f7a4d;
+  --color-on-success: #ffffff;
+  --color-success-subtle: #e8f5ee;
+  --color-warning: #9a5b00;
+  --color-on-warning: #ffffff;
+  --color-warning-subtle: #fdf3e1;
+  --color-danger: #b42318;
+  --color-on-danger: #ffffff;
+  --color-danger-subtle: #fdecea;
+  --color-info: #1d5fa8;
+  --color-on-info: #ffffff;
+  --color-info-subtle: #e9f1fb;
+
+  --color-focus-ring: #966b23;
+
+  /* ---------- Typography ---------- */
+  --font-display: var(--font-fraunces), ui-serif, Georgia, "Times New Roman", serif;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, "SFMono-Regular", Menlo, monospace;
+
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1.125rem;
+  --text-sm: 0.875rem;
+  --text-sm--line-height: 1.375rem;
+  --text-base: 1rem;
+  --text-base--line-height: 1.625rem;
+  --text-lg: 1.125rem;
+  --text-lg--line-height: 1.75rem;
+  --text-xl: 1.25rem;
+  --text-xl--line-height: 1.875rem;
+  --text-2xl: 1.5rem;
+  --text-2xl--line-height: 2rem;
+  /* Display sizes are fluid: they scale smoothly from a 320px phone to a wide desktop. */
+  --text-3xl: clamp(1.625rem, 1.35rem + 1.2vw, 2rem);
+  --text-3xl--line-height: 1.2;
+  --text-4xl: clamp(1.875rem, 1.45rem + 1.9vw, 2.625rem);
+  --text-4xl--line-height: 1.12;
+  --text-5xl: clamp(2.25rem, 1.6rem + 2.9vw, 3.5rem);
+  --text-5xl--line-height: 1.06;
+  --text-6xl: clamp(2.625rem, 1.7rem + 4.2vw, 4.5rem);
+  --text-6xl--line-height: 1.02;
+  --text-7xl: clamp(3rem, 1.8rem + 5.6vw, 5.75rem);
+  --text-7xl--line-height: 0.98;
+
+  --tracking-tightest: -0.035em;
+  --tracking-tight: -0.02em;
+  --tracking-wide: 0.04em;
+  --tracking-eyebrow: 0.18em;
+
+  /* ---------- Radius ---------- */
+  --radius-xs: 0.25rem;
+  --radius-sm: 0.375rem;
+  --radius-md: 0.625rem;
+  --radius-lg: 0.875rem;
+  --radius-xl: 1.25rem;
+  --radius-2xl: 1.75rem;
+  --radius-full: 9999px;
+
+  /* ---------- Shadow (warm brown tint, never neutral grey) ---------- */
+  --shadow-xs: 0 1px 2px 0 rgb(63 39 24 / 0.06);
+  --shadow-sm: 0 1px 3px 0 rgb(63 39 24 / 0.08), 0 1px 2px -1px rgb(63 39 24 / 0.06);
+  --shadow-md: 0 6px 16px -4px rgb(63 39 24 / 0.12), 0 2px 6px -2px rgb(63 39 24 / 0.08);
+  --shadow-lg: 0 16px 32px -8px rgb(63 39 24 / 0.16), 0 6px 12px -6px rgb(63 39 24 / 0.1);
+  --shadow-xl: 0 28px 56px -12px rgb(63 39 24 / 0.24);
+  /* A cover resting on a surface: a tight contact shadow plus a long soft one. */
+  --shadow-book: 0 1px 1px rgb(36 22 13 / 0.18), 0 10px 18px -6px rgb(36 22 13 / 0.28),
+    0 30px 50px -20px rgb(36 22 13 / 0.35);
+  --shadow-glow-accent: 0 0 0 1px rgb(184 138 44 / 0.35), 0 8px 30px -6px rgb(184 138 44 / 0.45);
+
+  /* ---------- Motion ---------- */
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out-soft: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  --animate-fade-in: fade-in var(--duration-base) var(--ease-out-soft) both;
+  --animate-rise-in: rise-in var(--duration-slow) var(--ease-out-soft) both;
+  --animate-scale-in: scale-in var(--duration-base) var(--ease-out-soft) both;
+  --animate-sheet-up: sheet-up var(--duration-slow) var(--ease-out-soft) both;
+  --animate-slide-in-right: slide-in-right var(--duration-slow) var(--ease-out-soft) both;
+  --animate-slide-in-left: slide-in-left var(--duration-slow) var(--ease-out-soft) both;
+  --animate-shimmer: shimmer 1.6s linear infinite;
+
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @keyframes rise-in {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes scale-in {
+    from { opacity: 0; transform: scale(0.96); }
+    to { opacity: 1; transform: scale(1); }
+  }
+  @keyframes sheet-up {
+    from { transform: translateY(100%); }
+    to { transform: translateY(0); }
+  }
+  @keyframes slide-in-right {
+    from { transform: translateX(100%); }
+    to { transform: translateX(0); }
+  }
+  @keyframes slide-in-left {
+    from { transform: translateX(-100%); }
+    to { transform: translateX(0); }
+  }
+  @keyframes shimmer {
+    from { background-position: 200% 0; }
+    to { background-position: -200% 0; }
+  }
+}
+
+/* Tokens outside Tailwind's themable namespaces. Use as `z-(--z-modal)`, `duration-(--duration-base)`. */
+:root {
+  --z-base: 0;
+  --z-sticky: 100;
+  --z-header: 200;
+  --z-dropdown: 1000;
+  --z-drawer: 1200;
+  --z-modal: 1300;
+  /* Portal-based overlays that may open inside a Modal/Drawer (Select's listbox) sit above it. */
+  --z-popover: 1350;
+  --z-toast: 1400;
+  --z-tooltip: 1500;
+
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+  --duration-slow: 320ms;
+
+  --header-height: 4rem;
+  --container-max: 80rem;
+  --container-gutter: clamp(1rem, 0.6rem + 2vw, 2.5rem);
+
+  /* Faint paper grain for large surfaces (.surface-grain). Inline SVG noise, no network request. */
+  --texture-grain: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.25 0 0 0 0 0.16 0 0 0 0 0.1 0 0 0 0.07 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+}
+
+/*
+ * Dark palette ("espresso"). Declared once, then activated twice below: for the OS preference
+ * (unless the user explicitly chose light) and for an explicit dark choice, so the two can never
+ * drift apart.
+ */
+:root {
+  --dark-background: #120d09;
+  --dark-surface: #1b140f;
+  --dark-surface-raised: #241b14;
+  --dark-surface-sunken: #0d0906;
+  --dark-overlay: rgb(0 0 0 / 0.62);
+  --dark-glass: rgb(27 20 15 / 0.72);
+  --dark-border: #342920;
+  --dark-border-strong: #4a3b2e;
+  --dark-border-input: #7d6b59;
+  --dark-text: #f4ece2;
+  --dark-text-muted: #bfae9b;
+  --dark-text-subtle: #9a8a76;
+  --dark-text-disabled: #5e5043;
+  --dark-primary: #d2b08b;
+  --dark-primary-hover: #e4cfb7;
+  --dark-primary-active: #f2e8dc;
+  --dark-on-primary: #24160d;
+  --dark-primary-subtle: #2e2016;
+  --dark-on-primary-subtle: #e4cfb7;
+  --dark-accent: #cfa53d;
+  --dark-accent-hover: #dcbb5e;
+  --dark-on-accent: #24160d;
+  --dark-accent-subtle: #2b2010;
+  --dark-on-accent-subtle: #ead594;
+  --dark-secondary: #2a2019;
+  --dark-secondary-hover: #342820;
+  --dark-secondary-active: #3f3127;
+  --dark-success: #5cc98f;
+  --dark-on-success: #0b1f14;
+  --dark-success-subtle: #10261b;
+  --dark-warning: #f0b44c;
+  --dark-on-warning: #24160d;
+  --dark-warning-subtle: #2c1f0b;
+  --dark-danger: #f47b6e;
+  --dark-on-danger: #24160d;
+  --dark-danger-subtle: #2f1512;
+  --dark-info: #7fb2ee;
+  --dark-on-info: #0d1726;
+  --dark-info-subtle: #0f1e30;
+  --dark-focus-ring: #cfa53d;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --color-background: var(--dark-background);
+    --color-surface: var(--dark-surface);
+    --color-surface-raised: var(--dark-surface-raised);
+    --color-surface-sunken: var(--dark-surface-sunken);
+    --color-overlay: var(--dark-overlay);
+    --color-glass: var(--dark-glass);
+    --color-border: var(--dark-border);
+    --color-border-strong: var(--dark-border-strong);
+    --color-border-input: var(--dark-border-input);
+    --color-text: var(--dark-text);
+    --color-text-muted: var(--dark-text-muted);
+    --color-text-subtle: var(--dark-text-subtle);
+    --color-text-disabled: var(--dark-text-disabled);
+    --color-primary: var(--dark-primary);
+    --color-primary-hover: var(--dark-primary-hover);
+    --color-primary-active: var(--dark-primary-active);
+    --color-on-primary: var(--dark-on-primary);
+    --color-primary-subtle: var(--dark-primary-subtle);
+    --color-on-primary-subtle: var(--dark-on-primary-subtle);
+    --color-accent: var(--dark-accent);
+    --color-accent-hover: var(--dark-accent-hover);
+    --color-on-accent: var(--dark-on-accent);
+    --color-accent-subtle: var(--dark-accent-subtle);
+    --color-on-accent-subtle: var(--dark-on-accent-subtle);
+    --color-secondary: var(--dark-secondary);
+    --color-secondary-hover: var(--dark-secondary-hover);
+    --color-secondary-active: var(--dark-secondary-active);
+    --color-success: var(--dark-success);
+    --color-on-success: var(--dark-on-success);
+    --color-success-subtle: var(--dark-success-subtle);
+    --color-warning: var(--dark-warning);
+    --color-on-warning: var(--dark-on-warning);
+    --color-warning-subtle: var(--dark-warning-subtle);
+    --color-danger: var(--dark-danger);
+    --color-on-danger: var(--dark-on-danger);
+    --color-danger-subtle: var(--dark-danger-subtle);
+    --color-info: var(--dark-info);
+    --color-on-info: var(--dark-on-info);
+    --color-info-subtle: var(--dark-info-subtle);
+    --color-focus-ring: var(--dark-focus-ring);
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --color-background: var(--dark-background);
+  --color-surface: var(--dark-surface);
+  --color-surface-raised: var(--dark-surface-raised);
+  --color-surface-sunken: var(--dark-surface-sunken);
+  --color-overlay: var(--dark-overlay);
+  --color-glass: var(--dark-glass);
+  --color-border: var(--dark-border);
+  --color-border-strong: var(--dark-border-strong);
+  --color-border-input: var(--dark-border-input);
+  --color-text: var(--dark-text);
+  --color-text-muted: var(--dark-text-muted);
+  --color-text-subtle: var(--dark-text-subtle);
+  --color-text-disabled: var(--dark-text-disabled);
+  --color-primary: var(--dark-primary);
+  --color-primary-hover: var(--dark-primary-hover);
+  --color-primary-active: var(--dark-primary-active);
+  --color-on-primary: var(--dark-on-primary);
+  --color-primary-subtle: var(--dark-primary-subtle);
+  --color-on-primary-subtle: var(--dark-on-primary-subtle);
+  --color-accent: var(--dark-accent);
+  --color-accent-hover: var(--dark-accent-hover);
+  --color-on-accent: var(--dark-on-accent);
+  --color-accent-subtle: var(--dark-accent-subtle);
+  --color-on-accent-subtle: var(--dark-on-accent-subtle);
+  --color-secondary: var(--dark-secondary);
+  --color-secondary-hover: var(--dark-secondary-hover);
+  --color-secondary-active: var(--dark-secondary-active);
+  --color-success: var(--dark-success);
+  --color-on-success: var(--dark-on-success);
+  --color-success-subtle: var(--dark-success-subtle);
+  --color-warning: var(--dark-warning);
+  --color-on-warning: var(--dark-on-warning);
+  --color-warning-subtle: var(--dark-warning-subtle);
+  --color-danger: var(--dark-danger);
+  --color-on-danger: var(--dark-on-danger);
+  --color-danger-subtle: var(--dark-danger-subtle);
+  --color-info: var(--dark-info);
+  --color-on-info: var(--dark-on-info);
+  --color-info-subtle: var(--dark-info-subtle);
+  --color-focus-ring: var(--dark-focus-ring);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+}

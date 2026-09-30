@@ -1,26 +1,116 @@
 @import "tailwindcss";
+@import "../styles/tokens.css";
 
-/*
- * Seed palette only — BS-2 replaces this with the full token system in src/styles/tokens.css
- * (docs/ARCHITECTURE.md §6). Components must only ever use these semantic names, never raw hex.
- */
-@theme {
-  --color-background: #fbf8f3;
-  --color-foreground: #2b1d14;
-  --color-primary: #6f4527;
-  --color-muted: #7a6656;
-}
+@layer base {
+  html {
+    background-color: var(--color-background);
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+    scroll-padding-top: calc(var(--header-height) + 1rem);
+  }
 
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --color-background: #17110c;
-    --color-foreground: #f4ece2;
-    --color-primary: #d9a877;
-    --color-muted: #b8a695;
+  body {
+    min-height: 100dvh;
+    background-color: var(--color-background);
+    color: var(--color-text);
+    font-feature-settings: "cv11", "ss01";
+    text-rendering: optimizeLegibility;
+    overflow-x: clip;
+    overflow-wrap: break-word;
+  }
+
+  /*
+   * Engineering titles are full of long words ("Thermodynamics", "Electromechanical"). At display
+   * sizes one of them can be wider than a 320px phone, and an unbreakable word widens the whole
+   * layout viewport, so phones zoom out and bottom sheets slip off-screen (found in BS-2).
+   * `anywhere` lets the word shrink min-content; `hyphens: auto` (lang="en") makes the break
+   * a proper hyphenation instead of an arbitrary cut.
+   */
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-display);
+    font-optical-sizing: auto;
+    letter-spacing: var(--tracking-tight);
+    text-wrap: balance;
+    overflow-wrap: anywhere;
+    hyphens: auto;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+
+  ::selection {
+    background-color: var(--color-accent);
+    color: var(--color-on-accent);
+  }
+
+  /* One consistent, highly visible keyboard focus style (WCAG 2.4.7 / 2.4.11). */
+  :focus-visible {
+    outline: 2px solid var(--color-focus-ring);
+    outline-offset: 2px;
+  }
+
+  /* 16px minimum on text inputs stops iOS Safari zooming the page on focus. */
+  input,
+  select,
+  textarea {
+    font-size: max(16px, 1em);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
   }
 }
 
-body {
-  background: var(--color-background);
-  color: var(--color-foreground);
+@layer utilities {
+  /* Faint paper grain over large brand surfaces (hero, footer). Purely decorative. */
+  .surface-grain {
+    position: relative;
+    isolation: isolate;
+  }
+  .surface-grain::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background-image: var(--texture-grain);
+    opacity: 0.6;
+  }
+
+  /* Frosted glass for the sticky header, cart drawer and overlays. */
+  .surface-glass {
+    background-color: var(--color-glass);
+    backdrop-filter: saturate(1.4) blur(14px);
+    -webkit-backdrop-filter: saturate(1.4) blur(14px);
+  }
+
+  /* Page gutters that respect notches/home indicators on phones. */
+  .safe-x {
+    padding-left: max(var(--container-gutter), env(safe-area-inset-left));
+    padding-right: max(var(--container-gutter), env(safe-area-inset-right));
+  }
+  .safe-bottom {
+    padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  }
+
+  .scrollbar-none {
+    scrollbar-width: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
 }
