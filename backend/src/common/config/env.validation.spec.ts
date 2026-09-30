@@ -6,11 +6,21 @@ const valid = {
   FRONTEND_URL: 'http://localhost:3000',
 };
 
+const productionMail = {
+  RESEND_API_KEY: 're_live_key',
+  RESEND_WEBHOOK_SECRET: 'whsec_abc',
+  MAIL_FROM: 'Engineering Books <books@mail.example.com>',
+};
+
 describe('envValidationSchema', () => {
   it('accepts a minimal valid env and applies defaults', () => {
     const { error, value } = envValidationSchema.validate(valid);
     expect(error).toBeUndefined();
-    expect(value).toMatchObject({ NODE_ENV: 'development', PORT: 4000 });
+    expect(value).toMatchObject({
+      NODE_ENV: 'development',
+      PORT: 4000,
+      BRAND_NAME: 'Engineering Books',
+    });
   });
 
   it.each(['MONGODB_URI', 'CORS_ORIGINS', 'FRONTEND_URL'])(
@@ -28,5 +38,28 @@ describe('envValidationSchema', () => {
       MONGODB_URI: 'https://example.com',
     });
     expect(error).toBeDefined();
+  });
+
+  it('allows missing mail settings outside production', () => {
+    expect(envValidationSchema.validate(valid).error).toBeUndefined();
+  });
+
+  it.each(Object.keys(productionMail))('requires %s in production', (key) => {
+    const env: Record<string, string> = {
+      ...valid,
+      ...productionMail,
+      NODE_ENV: 'production',
+    };
+    delete env[key];
+    expect(envValidationSchema.validate(env).error?.message).toContain(key);
+  });
+
+  it('accepts a complete production mail config', () => {
+    const { error } = envValidationSchema.validate({
+      ...valid,
+      ...productionMail,
+      NODE_ENV: 'production',
+    });
+    expect(error).toBeUndefined();
   });
 });

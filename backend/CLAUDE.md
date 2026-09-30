@@ -43,15 +43,38 @@ filters, decorators, `money/`, `utils/`). The module map and ticket per module a
   webhook dedupe, one success per order), not optimisations.
 - Never return a raw document containing secrets. Map to a response DTO.
 
+## Email, jobs and webhooks (BS-3)
+
+- **Never call an email provider directly.** Use `MailService.enqueue()` with a `dedupeKey`
+  that identifies the business event, and pass the caller's `session` when inside a transaction.
+  New email = a component in `src/mail/templates/`, registered in `registry.tsx` with `category`,
+  `sensitive` (true if it carries a one-time link) and a `sample`. The render test and
+  `npm run email:preview` pick it up automatically.
+- **Scheduled work** uses `@Interval`/`@Cron` + `JobLockService.runExclusive(name, leaseMs, fn)`,
+  so only one API instance runs it. Timers are skipped when `NODE_ENV=test`; tests call the job's
+  method directly with an injected `now`.
+- **Webhooks**: `@Public()` (from `common/decorators/public.decorator.ts`) + `@SkipThrottle()`.
+  Verify the signature against `req.rawBody` (main.ts `rawBody: true`) before anything else. Reject
+  with 401. After verification, always 2xx and log processing errors.
+- **`svix` 2.x `Webhook.verify()` returns `undefined`** (v1 returned the parsed payload). Verify,
+  then `JSON.parse` the raw body yourself. Type-checking didn't catch this; only the e2e test did
+  (BS-3).
+
 ## Testing
 
 - The e2e specs are the **only** check that the real `AppModule` wiring boots (circular module
   dependencies pass every unit test and still crash production). Run `npm run test:e2e` after any
   change to module imports or constructor dependencies.
-- e2e pattern (see `test/health.e2e-spec.ts`): start `MongoMemoryServer` with
-  `launchTimeout: 60_000`, call `applyTestEnv(uri)` (`test/test-env.ts`, which you extend when you add
-  a required env var), **then** `await import('../src/app.module.js')`, since ConfigModule validates
-  env when the module is evaluated. Always call `setupApp(app)` before `app.init()`.
+- e2e specs **always** boot through `createTestApp()` (`test/app.ts`). It starts an in-memory
+  replica set, applies `applyTestEnv()` (extend `test/test-env.ts` when you add a required env var),
+  dynamically imports `AppModule` after the env is set, creates the app with `rawBody: true` (as
+  main.ts does; webhook signatures need it), and calls `setupApp()`. Don't hand-roll this in a spec.
+- Service specs that need a database use `startMongo()` (`test/mongo.ts`, a single-node
+  **replica set** so transactions work) plus a `Test.createTestingModule` with
+  `MongooseModule.forRoot(uri)`. Call `model.syncIndexes()` in `beforeAll` when a test relies on a
+  unique index.
+- Time-based tests inject `now` and step the clock **past the maximum jittered delay**. A 7h step
+  against a 6h+20%-jitter backoff was flaky in BS-3.
 - The first run on a new machine downloads a ~550MB mongod binary (about 6 minutes). A timeout on
   that first run is not a bug.
 - Never mock Mongoose for service logic. Assert on real stored state.

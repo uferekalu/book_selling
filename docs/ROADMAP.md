@@ -1,6 +1,6 @@
 # Roadmap
 
-**Next ticket number: BS-3**
+**Next ticket number: BS-4**
 
 Each ticket is one branch (`feature/BS-<n>-<suffix>`) and one squash-merged PR. The order is
 deliberate: each ticket builds only on merged work. When a ticket finishes, its row is rewritten
@@ -11,9 +11,9 @@ follow-ups) take the next number and get a new row.
 |---|---|---|---|
 | BS-1 | `project-foundation` | See detail below | ✅ Done |
 | BS-2 | `design-system` | See detail below | ✅ Done |
-| BS-3 | `email-outbox` | `mail` module: Resend client, transactional outbox (atomic claim, backoff, dead-letter, `dedupeKey`), React Email base layout and brand theme, plain-text versions, Resend webhook with Svix signature → delivery status and suppression list, `jobs` lease-lock utility, `npm run email:dev` preview | ⏳ Planned |
+| BS-3 | `email-outbox` | See detail below | ✅ Done |
 | BS-4 | `auth-accounts` | Users, auth (register, login, refresh rotation with reuse detection, logout, `/auth/me`), verify email, forgot and reset password, claim account, default-deny guards, roles (`customer`/`admin`/`owner`), `seed:owner`, admin TOTP 2FA, audit module, rate limits and lockout; frontend auth pages, session restore with the shared refresh mutex, `/api` proxy base query with 401 retry, account profile, addresses and security tabs | ⏳ Planned |
-| BS-5 | `catalog` | Authors, categories, books with formats and per-currency prices, manuscript upload (Cloudinary authenticated), covers and gallery, search (text index) and filters; `migrate-mongo`; admin book editor (without the preview picker); storefront home, `/books`, book detail (RSC, JSON-LD, abstract as HTML), author page, currency detection and switcher | ⏳ Planned |
+| BS-5 | `catalog` | Authors, categories, books with formats and per-currency prices; **Cloudinary upload pipeline** (ARCHITECTURE §10.0): signed direct uploads, Admin-API verification, 2:3 cover cropper, blur placeholders, dominant colour, `next/image` Cloudinary loader, authenticated manuscript with PDF checks and page count, orphan cleanup; `migrate-mongo`; admin step-by-step book editor with autosave and a publish checklist; storefront home, `/books` (search, filters, sort), book detail (RSC, JSON-LD, abstract as HTML), author page, header/footer/mobile nav, currency detection and switcher, recently viewed | ⏳ Planned |
 | BS-6 | `preview-reader` | **Read-before-you-buy** (ARCHITECTURE §10.1, PRODUCT_RULES §4): server-side preview PDF generation (pdf-lib, page-range copy, "Preview" stamp, metadata strip), blurred locked teasers, outline extraction; public preview endpoint; admin preview section picker with thumbnails and 15% cap; pdf.js reader (worker, text layer, scroll/spread/zoom/fullscreen, keyboard, sepia), TOC with locked chapters, progress, end-of-preview "Continue reading" card, 80% nudge, `reading_progress`, `preview_events`; preview leak tests | ⏳ Planned |
 | BS-7 | `cart-checkout-orders` | `common/money`, carts (guest and user, merge on login, repricing), shipping zones and rates, coupon engine, server quote, order placement with idempotency key and transaction (stock reservation, coupon hold, already-owned check, guest → unclaimed account), order state machine, expiry job, order numbers; frontend cart drawer, checkout steps, **checkout drawer inside the reader**, order history and detail | ⏳ Planned |
 | BS-8 | `payments` | Stripe, Paystack and Flutterwave adapters; `payments` and `webhook_events` collections; initiate, webhooks (raw-body signature verification), verify-on-return, the single `settle()` with amount/currency assertion inside a transaction (entitlements, stock commit, outbox receipt); reconciliation job; refunds (two-phase, outcome-unknown); out-of-band refund and dispute detection; provider switcher UI; `/checkout/callback` (verify + poll + return to the reader at the saved page); the **full payment test matrix** | ⏳ Planned |
@@ -23,6 +23,58 @@ follow-ups) take the next number and get a new row.
 | BS-12 | `admin-dashboard` | Revenue per currency, orders, preview → purchase conversion per book, best sellers, low stock, **Needs attention** queue (reconciliation, attention orders, dead emails), customers, audit log viewer, settings (currencies, provider switches, preview cap, refund threshold) | ⏳ Planned |
 | BS-13 | `storefront-polish-seo-legal` | Landing-page art direction and motion polish, OG images, sitemap and robots, performance budget pass (LCP/INP/CLS), accessibility audit, legal pages (terms, refunds, privacy, shipping), data export and account deletion, cookie notice; **decide EU/UK digital VAT** (PRODUCT_RULES §9) | ⏳ Planned |
 | BS-14 | `production-launch` | Staging and production on Vercel + Render + Atlas, domains, Resend domain DNS, live provider accounts and webhooks, Sentry, `npm audit` CI check, go-live checklist (DEPLOYMENT §6) with a real live transaction and refund per provider | ⏳ Planned |
+| BS-15 | `gifts-bundles-preorders` | Buy an ebook **as a gift** (recipient email, message, scheduled delivery, gift claim link); **bundles** (e.g. print + ebook at a discount, multi-book course packs); **pre-orders** for upcoming books (charged at order and fulfilled on release, or cancel and refund) | ⏳ Planned |
+| BS-16 | `institutional-orders` | Universities, libraries and lecturers: **bulk orders** with quantity pricing, request-a-quote, **proforma invoice and bank transfer / purchase order** payment with manual confirmation (audited), multi-seat ebook licences with named readers, tax invoice PDFs with the buyer organisation's details | ⏳ Planned |
+| BS-17 | `reader-pro` | Reader for owners: **bookmarks, highlights and notes** synced across devices, in-book search, reading stats, **offline reading** (installable PWA, owned ebooks cached encrypted with a licence check), errata and "updated edition" notices | ⏳ Planned |
+| BS-18 | `engagement-marketing` | Newsletter with **double opt-in** and one-click unsubscribe; **back-in-stock**, **price-drop** and **new-edition** alerts; **abandoned-cart** reminder (consent-aware, once); public **Q&A** on book pages answered by the author; referral codes; privacy-friendly analytics with a consent banner; UTM tracking | ⏳ Planned |
+
+**Launch line.** BS-1 to BS-14 are the launch. The store goes live after BS-14 with the complete
+buying, reading, email, messaging and admin experience. BS-15 to BS-18 are growth features shipped
+after launch, in any order the owner prefers.
+
+## World-class feature map
+
+What leading bookstores and publisher storefronts offer, and where each item is built here. This
+checklist is reviewed whenever a ticket is planned, so nothing important is forgotten.
+
+| Area | Feature | Ticket |
+|---|---|---|
+| Discovery | Fast search with typo tolerance and suggestions, filters, sorting | BS-5 (text index), BS-13 (typo-tolerant Atlas Search) |
+| Discovery | Categories and curated collections ("For first-year students") | BS-5 |
+| Discovery | Author page with credentials, photo and all titles | BS-5 |
+| Discovery | Related books, "readers also bought", recently viewed | BS-5, BS-12 |
+| Discovery | New releases, bestsellers, sale badges | BS-5, BS-11 |
+| Try before buying | **Read the abstract and introduction free**, full table of contents | BS-6 |
+| Try before buying | Verified-buyer reviews and ratings | BS-11 |
+| Try before buying | Public Q&A answered by the author | BS-18 |
+| Buying | Guest checkout, prices in NGN/USD/GBP/EUR, local payment methods | BS-7, BS-8 |
+| Buying | Print + ebook bundles, multi-book packs, coupons | BS-11, BS-15 |
+| Buying | Gift an ebook | BS-15 |
+| Buying | Pre-orders for upcoming books | BS-15 |
+| Buying | Bulk and institutional orders, quotes, invoices, bank transfer | BS-16 |
+| Buying | Clear shipping cost and delivery estimate before paying | BS-7 |
+| After buying | Instant ebook access: read online on any device or download | BS-9 |
+| After buying | Personalised (stamped) PDFs to discourage sharing | BS-9 |
+| After buying | Order tracking page, shipment emails, PDF receipts and invoices | BS-9 |
+| After buying | Free corrected-edition updates and errata notices | BS-9, BS-17 |
+| After buying | Bookmarks, highlights, notes, offline reading | BS-17 |
+| Support | Message the author or store, live updates, email fallback | BS-10 |
+| Retention | Wishlist; price-drop, back-in-stock and new-edition alerts | BS-11, BS-18 |
+| Retention | Newsletter (double opt-in), abandoned-cart reminder | BS-18 |
+| Trust | Secure checkout badges, refund policy, visible contact details | BS-8, BS-13 |
+| Trust | Never charged twice; payments confirmed server-side | BS-8 |
+| Performance | Mobile-first, fast on 3G, image CDN, installable PWA | BS-2, BS-5, BS-13, BS-17 |
+| Accessibility | WCAG 2.2 AA throughout, accessibility statement | BS-2 onward, BS-13 |
+| SEO | Structured data (Book, Offer, Review), sitemap, social cards | BS-5, BS-13 |
+| Admin | Book editor with publish checklist, sales per currency, conversion per book | BS-5, BS-12 |
+| Admin | "Needs attention" queue for money and email problems, audit log, 2FA | BS-4, BS-12 |
+| Admin | CSV exports for accounting | BS-12 |
+| Compliance | **NDPA 2023** (Nigeria) and **GDPR / UK GDPR**: privacy policy, lawful basis, data export and deletion, consent records | BS-13 |
+| Compliance | Cookie consent (only when non-essential cookies or analytics are used) | BS-13, BS-18 |
+| Compliance | Email law (CAN-SPAM, PECR, NDPA): postal address in footers, one-click unsubscribe for marketing | BS-3 (footer), BS-18 |
+| Compliance | **PCI DSS SAQ-A**: card data only on the provider's hosted pages | BS-8 |
+| Compliance | EU/UK digital VAT decision, tax-ready invoices | BS-13 |
+| Compliance | Terms of sale, refund, shipping and accessibility statements | BS-13 |
 
 ## BS-1: Project foundation (✅ Done, 2026-09-30)
 
@@ -109,3 +161,58 @@ follow-ups) take the next number and get a new row.
      timers. It is now stable per toast.
 - `motion` was installed and then removed as unused. It will be added when a screen needs gesture
   or physics animation (the reader).
+
+
+## BS-3: Email system (✅ Done, 2026-09-30)
+
+- **Transactional outbox** (`backend/src/mail`, ARCHITECTURE §11):
+  - `MailService.enqueue` is an idempotent upsert on `dedupeKey` that joins the caller's
+    transaction; `cancel` and `requeue` are also available.
+  - The `OutboxWorker` runs every 5s under a job lease. It reclaims crashed sends, claims rows
+    atomically, skips suppressed notification emails (critical ones still go), sends with the
+    outbox id as Resend idempotency key, and erases one-time-link data once sent.
+  - Retries back off exponentially with jitter for up to 8 attempts, staying inside Resend's 24h
+    idempotency window. Permanent errors and exhausted retries become `dead` and alert the owner,
+    with no alert loops.
+  - A TTL index removes final rows after 180 days.
+- **Transports**: `ResendTransport` (Resend SDK v6; errors classified as permanent or retryable),
+  and `LogTransport` for dev and tests, which prints emails with their links. Production cannot
+  boot without the key, webhook secret and `MAIL_FROM` (Joi, conditional on `NODE_ENV`).
+- **Delivery webhooks**: `POST /mail/webhooks/resend`.
+  - Svix signature is verified on the raw body; unsigned, forged or tampered requests get 401.
+  - Status updates are applied only forwards in time.
+  - Permanent bounces, complaints and provider suppressions go to `email_suppressions`.
+  - Idempotent, and always acknowledged after verification.
+- **Templates** (React Email): a shared brand layout, and `auth.verify-email`, `auth.welcome`,
+  `auth.password-reset`, `auth.claim-account`, `auth.security-notice` and
+  `ops.email-dead-letter`.
+  - Each has a plain-text version, a copyable fallback link, and a footer stating why the person got
+    it, with support email and postal address.
+  - `npm run email:preview` renders them all. Screenshots were checked at 375px and 700px with no
+    overflow.
+- **Jobs**: `JobLockService` (MongoDB lease lock; the upsert race is handled). It will be reused
+  by payment reconciliation and order expiry.
+- **Also**: the `@Public()` decorator, ready for BS-4's default-deny guard; shared test helpers
+  `createTestApp()` and `startMongo()` (an in-memory replica set so transactions work); new env
+  vars in Joi, `.env.example` and `render.yaml`.
+- **Tests**: 58 unit/service tests (outbox success, dedupe, concurrency, transaction rollback,
+  sendAfter, cancel, retry and backoff, permanent failure, max attempts, crash reclaim, render
+  failure, suppression, requeue; transport error classification; every template rendered with no
+  `undefined`, links in the text version, escaping, sensitive flags; job lock race and expiry) plus
+  10 e2e tests (signed, forged, tampered and unsigned webhooks; bounce, complaint and delivery
+  handling).
+- **Design added for the owner's question** about Cloudinary book uploads: ARCHITECTURE §10.0
+  (public images vs an authenticated manuscript, signed direct uploads, server verification, cover
+  cropping and delivery, the step-by-step "Add a book" editor, backups). BS-5's row was updated.
+  **Open item before BS-5:** confirm the Cloudinary plan's maximum upload size covers the
+  largest manuscript PDF.
+- **World-class feature map** added above, with new tickets BS-15 to BS-18 (gifts, bundles and
+  pre-orders; institutional orders; advanced reader; engagement and marketing).
+- **Incidents**:
+  1. `svix` 2.x `Webhook.verify()` returns `undefined` (v1 returned the payload). Every signed
+     webhook would have 500'd in production. It passed type-checking; the real-app e2e test
+     caught it.
+  2. A retry-exhaustion test stepped the clock 7h against a 6h+20% jittered delay, so it was flaky.
+     It now steps past the maximum.
+  3. Type errors in spec files only showed up under `tsc`, because Vitest doesn't type-check.
+     CI runs `tsc --noEmit`, which is exactly why that step exists.

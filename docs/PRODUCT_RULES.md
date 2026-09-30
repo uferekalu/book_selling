@@ -41,6 +41,13 @@ engineers, and university libraries and lecturers elsewhere.
   and sorting by relevance, newest, price and rating.
 - Book URLs (`/books/<slug>`) never change once published. If a title changes, the old slug
   redirects.
+- **Adding a book** (ARCHITECTURE §10.0):
+  - Covers are at least 1200×1800px and cropped to 2:3 in the editor, so a title is never cut off.
+  - The manuscript must be a normal, unencrypted PDF.
+  - The editor saves drafts automatically and won't publish until the checklist above passes.
+- **Archiving a book never breaks a buyer's library.** It disappears from the store; owners keep
+  reading and downloading it. A corrected manuscript reaches existing ebook owners automatically,
+  with an email.
 
 ## 4. Preview: "Read before you buy"
 
