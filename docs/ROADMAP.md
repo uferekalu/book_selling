@@ -1,6 +1,6 @@
 # Roadmap
 
-**Next ticket number: BS-2**
+**Next ticket number: BS-3**
 
 Each ticket is one branch (`feature/BS-<n>-<suffix>`) and one squash-merged PR. The order is
 deliberate: each ticket builds only on merged work. When a ticket finishes, its row is rewritten
@@ -10,7 +10,7 @@ follow-ups) take the next number and get a new row.
 | # | Branch suffix | Scope | Status |
 |---|---|---|---|
 | BS-1 | `project-foundation` | See detail below | ✅ Done |
-| BS-2 | `design-system` | Full token system (`tokens.css` / `tokens.ts`: brown, paper and gold scales, semantic light and dark aliases, typography with Fraunces/Inter/JetBrains Mono, radius, warm shadows, motion, z-index, grain texture); theme switching with no flash; Redux store and theme slice; UI kit tier 1 (primitives, forms, feedback, navigation, Card, BookCover 3D, BookCard, PriceTag, layout); `/design-system` showcase; WCAG contrast test over the token file; component keyboard tests | ⏳ Planned |
+| BS-2 | `design-system` | See detail below | ✅ Done |
 | BS-3 | `email-outbox` | `mail` module: Resend client, transactional outbox (atomic claim, backoff, dead-letter, `dedupeKey`), React Email base layout and brand theme, plain-text versions, Resend webhook with Svix signature → delivery status and suppression list, `jobs` lease-lock utility, `npm run email:dev` preview | ⏳ Planned |
 | BS-4 | `auth-accounts` | Users, auth (register, login, refresh rotation with reuse detection, logout, `/auth/me`), verify email, forgot and reset password, claim account, default-deny guards, roles (`customer`/`admin`/`owner`), `seed:owner`, admin TOTP 2FA, audit module, rate limits and lockout; frontend auth pages, session restore with the shared refresh mutex, `/api` proxy base query with 401 retry, account profile, addresses and security tabs | ⏳ Planned |
 | BS-5 | `catalog` | Authors, categories, books with formats and per-currency prices, manuscript upload (Cloudinary authenticated), covers and gallery, search (text index) and filters; `migrate-mongo`; admin book editor (without the preview picker); storefront home, `/books`, book detail (RSC, JSON-LD, abstract as HTML), author page, currency detection and switcher | ⏳ Planned |
@@ -57,3 +57,55 @@ follow-ups) take the next number and get a new row.
     (about 6 minutes). CI caches `~/.cache/mongodb-binaries`.
   - `create-next-app`'s `@types/node@20` conflicted with Vitest 5's peer range. Fixed by moving to
     `@types/node@24` (matching Node 24), not `--force`.
+
+## BS-2: Design system and UI kit (✅ Done, 2026-09-30)
+
+- **Tokens** (`frontend/src/styles/tokens.css` + `tokens.ts`):
+  - raw `brown`, `paper` and `gold` scales
+  - 40+ semantic colours with an "espresso" dark palette, activated for both the OS preference and
+    an explicit choice
+  - Fraunces / Inter / JetBrains Mono through `next/font` (self-hosted)
+  - fluid display type (`clamp()`), radius, warm-tinted shadows (including `shadow-book`), motion
+    easings and keyframes, z-index layers, container and gutter tokens, and a paper-grain texture
+  - new over the reference project: `border-input` and `focus-ring` tokens that meet WCAG 1.4.11
+    (3:1 for controls)
+- **Contrast is tested**: `tokens.contrast.test.ts` parses tokens.css and checks 41 pairings per
+  theme against WCAG AA, plus completeness of the dark palette. On its first run it caught the gold
+  button's hover text at 3.7:1; the hover was changed to lighten.
+- **Theme**: a no-flash inline bootstrap script, `themeSlice` + `ThemeSync` (Redux is the source of
+  truth; storage failures are handled), and `ThemeToggle` as inline radios (safe inside drawers).
+- **Redux** store scaffold (the per-tree lazy store the App Router needs, and typed hooks). RTK Query
+  joins in BS-4.
+- **Money display**: `src/lib/money.ts` (`formatMoney` from integer minor units with a
+  currency-native locale; a non-integer amount throws), plus `PriceTag`.
+- **UI kit**: 40+ components in `src/components/ui` (inventory in ARCHITECTURE §6.4). Highlights:
+  - Modal becomes a bottom sheet on phones
+  - one shared `useDialog` (focus trap, Escape, ref-counted scroll lock, focus return)
+  - BookCover (spine, page block, resting shadow, hover turn, typographic fallback) and BookCard
+    (a single link per card)
+  - DropdownMenu with type-ahead and viewport clamping
+  - FormField wiring labels, hints and errors through context
+- **Decision change**: `Select` is a styled native `<select>` rather than a custom listbox. Native
+  pickers are best on phones, where most buyers are. Combobox is deferred until a screen needs
+  search-as-you-type.
+- **`/design-system`** showcase (noindex) with every token and component, and live overlays and
+  toasts. The placeholder home page is rebuilt from kit components.
+- **Tests**: 157 (Vitest + RTL), with keyboard behaviour for every interactive component (tabs,
+  menu, dialogs, radios, switch, stepper, rating, tooltip, toast timing), money formatting, theme
+  logic, `cn` merging and contrast.
+- **Responsive verification**: `npm run check:responsive` (Playwright, a dev dependency). It loads
+  pages at 320–1440px in both themes and fails if the layout viewport is wider than the device or the
+  console logs errors. It passes for `/` and `/design-system`.
+- **Incidents** (found by looking at real screenshots, not by the unit tests):
+  1. The word "Thermodynamics" at display size made the page **397px wide on a 375px phone**. The
+     phone zoomed out and the bottom sheet's second button went off-screen. A naive overflow check
+     passed, because it compared the page against its own widened viewport. Fixed globally
+     (`overflow-wrap: anywhere; hyphens: auto` on headings) and caught permanently by the strict
+     check.
+  2. At 320px, a row of avatars plus a rating had no `flex-wrap`.
+  3. Titles on small typographic covers were clipped. They are now sized in container units.
+  4. Radio cards squeezed their label beside a sale price on phones; the price now wraps below.
+  5. A toast's dismiss callback was recreated on every render, restarting the other toasts'
+     timers. It is now stable per toast.
+- `motion` was installed and then removed as unused. It will be added when a screen needs gesture
+  or physics animation (the reader).

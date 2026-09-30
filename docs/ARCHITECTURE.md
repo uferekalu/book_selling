@@ -55,7 +55,7 @@ response shapes. A contract change updates both sides in the same PR.
 | Styling | Tailwind CSS v4 (CSS-first `@theme`), design tokens | §6 |
 | Frontend state | Redux Toolkit + RTK Query (one `api` instance) | §7 |
 | Forms | `react-hook-form` + Zod | |
-| Motion | `motion` (Framer Motion), always honouring `prefers-reduced-motion` | |
+| Motion | CSS token animations; `motion` (Framer Motion) added when a screen needs gestures/physics | Always honours `prefers-reduced-motion` |
 | Frontend tests | Vitest + React Testing Library (jsdom) | |
 
 ## 3. Backend module map
@@ -374,26 +374,28 @@ Raw scales (theme-invariant):
 | 900 | `#3f2718` | `#26211b` | `#54371f` |
 | 950 | `#24160d` | `#16120e` | `#301c0e` |
 
-Semantic aliases: **the only colours components use.** Each has a light value and a dark value.
+Semantic aliases: **the only colours components use.** Exact values live in
+`frontend/src/styles/tokens.css` (light values in `@theme`, dark values as `--dark-*`). This table
+lists the names and what each is for.
 
-| Token | Light | Dark |
-|---|---|---|
-| `background` | paper-50 | `#120d09` (espresso) |
-| `surface` | white | `#1b140f` |
-| `surface-raised` | white | `#241b14` |
-| `surface-sunken` | paper-100 | `#0d0906` |
-| `border` / `border-strong` | paper-200 / paper-300 | `#342920` / `#4a3b2e` |
-| `text` / `text-muted` / `text-subtle` | brown-950 / paper-600 / paper-500 | `#f4ece2` / `#bfae9b` / `#8f7f6d` |
-| `primary` / `primary-hover` / `primary-active` | brown-700 / brown-800 / brown-900 | brown-300 / brown-200 / brown-100 |
-| `on-primary` | white | brown-950 |
-| `primary-subtle` | brown-50 | `#2a1d13` |
-| `accent` / `on-accent` | gold-500 / brown-950 | gold-400 / brown-950 |
-| `secondary` / `-hover` / `-active` | paper-100 / paper-200 / paper-300 | `#2a2019` / `#342820` / `#3f3127` |
-| `success`, `warning`, `danger`, `info` (+ `-subtle`, `on-`) | AA-contrast pairs | AA-contrast pairs |
-| `focus-ring` | gold-500 | gold-400 |
+| Token(s) | Use |
+|---|---|
+| `background` · `surface` · `surface-raised` · `surface-sunken` | page · cards · overlays · wells and disabled inputs |
+| `overlay` · `glass` | modal backdrop · frosted header and drawers (`.surface-glass`) |
+| `border` · `border-strong` · **`border-input`** | dividers · emphasised outlines · form-control outlines (≥ 3:1, WCAG 1.4.11) |
+| `text` · `text-muted` · `text-subtle` · `text-disabled` | body · secondary · captions and placeholders (still ≥ 4.5:1) · disabled |
+| `primary` · `primary-hover` · `primary-active` · `on-primary` | brown actions and links. In dark mode primary becomes a light tan with dark text |
+| `primary-subtle` · `on-primary-subtle` | tinted chips, selected cards |
+| `accent` · `accent-hover` · `on-accent` · `accent-subtle` · `on-accent-subtle` | antique gold: highlights, "Buy ebook", ratings, eyebrows |
+| `secondary` · `secondary-hover` · `secondary-active` | neutral interactive surfaces (secondary buttons, hover rows, skeletons) |
+| `success` · `warning` · `danger` · `info` (+ `on-*`, `*-subtle`) | status. The tone colour is also readable as text on its own subtle background |
+| `focus-ring` | the single keyboard focus outline colour |
 
-Every text/background pairing meets WCAG 2.2 AA (4.5:1 for body text, 3:1 for large text and UI
-boundaries). BS-2 adds a contrast unit test that computes the ratios from the token file.
+**Enforced, not just documented:** `src/styles/tokens.contrast.test.ts` parses tokens.css and checks
+41 foreground/background pairings in **each** theme (82 checks) against WCAG 2.2 AA. It also checks
+that every semantic token has a dark value that is activated in both dark blocks. It caught a real
+failure on its first run: the gold button's hover text measured 3.7:1. The fix was to lighten the
+hover colour instead of darkening it.
 
 **Rule from the reference project:** raw scale classes (`bg-paper-100`) do not change in dark
 mode. Anything that must look right in both themes uses a semantic alias. A shipped dark-mode bug
@@ -408,11 +410,17 @@ mode. Anything that must look right in both themes uses a semantic alias. A ship
 - **Radius**: `xs 4`, `sm 6`, `md 10`, `lg 14`, `xl 20`, `2xl 28`, `full`.
 - **Shadow**: `xs`…`xl` in warm-tinted browns (never neutral grey), plus `book` (a cover
   resting on a surface) and `glow-accent`.
-- **Motion**: `--duration-fast 120ms`, `base 200ms`, `slow 320ms`; `--ease-out`,
-  `--ease-spring`.
+- **Motion**: `--duration-fast 120ms`, `base 200ms`, `slow 320ms`; easings `ease-out-soft`,
+  `ease-in-out-soft` and `ease-spring`; keyframe animations `fade-in`, `rise-in`, `scale-in`,
+  `sheet-up`, `slide-in-left/right` and `shimmer`. All motion is neutralised under
+  `prefers-reduced-motion` (globals.css).
 - **Z-index**: `base`, `sticky 100`, `header 200`, `dropdown 1000`, `drawer 1200`, `modal 1300`,
-  `toast 1400`, `tooltip 1500`.
-- **Spacing and breakpoints**: Tailwind v4 defaults. Mobile-first; every page works at 375px.
+  `popover 1350` (portal overlays that may open inside a modal), `toast 1400`, `tooltip 1500`. Used
+  as `z-(--z-modal)`.
+- **Spacing and breakpoints**: Tailwind v4 defaults. Mobile-first, and every page works from
+  **320px**. Layout helpers: `--container-max`, a fluid `--container-gutter` and `--header-height`.
+  `.safe-x` and `.safe-bottom` keep content clear of notches and home indicators
+  (`viewport-fit=cover`).
 - **Textures**: `--texture-grain` (inline SVG noise data URI) used by `.surface-grain`.
 
 ### 6.3 Theming
@@ -435,21 +443,50 @@ something, extend the kit first.
 Every interactive component implements its WAI-ARIA pattern (roles, keyboard navigation, focus
 management and focus return), and its colocated test covers keyboard behaviour, not just rendering.
 
-Inventory (BS-2 builds tier 1; later tickets add the rest when a real screen needs them):
+**Built in BS-2** (all exported from `@/components/ui` and shown on `/design-system`):
 
-- **Primitives**: Button, IconButton, Icon (wraps `lucide-react` with token sizes), Link, Badge,
-  Tag, Avatar, Kbd, VisuallyHidden
-- **Forms**: Input, Textarea, Select (custom listbox), Combobox, Checkbox, RadioGroup, Switch,
-  QuantityStepper, MoneyInput, PasswordInput (with strength meter), OtpInput, FormField
-  (label + hint + error, wired with `aria-describedby`)
-- **Feedback**: Toast (+ provider), Alert, Modal, Drawer, ConfirmDialog, Tooltip, Popover, Skeleton,
-  Spinner, ProgressBar, EmptyState
-- **Navigation**: Tabs, Breadcrumbs, Pagination, Stepper (checkout and shipment timeline),
-  DropdownMenu, Header and MobileNav shells
-- **Data display**: Card, **BookCover** (3D cover with spine, tilt and blur placeholder),
-  **BookCard**, **PriceTag** (formats `Money` via `Intl.NumberFormat`), Rating, Accordion, Table,
-  StatCard, Timeline
-- **Layout**: Container, Stack, Grid, Section, Divider
+- **Primitives**: Button (+ `buttonVariants`), IconButton (with count badge), Icon (lucide-react at
+  token sizes, hidden from assistive tech unless labelled), TextLink, ButtonLink, Badge, Avatar
+  (initials fallback), Kbd, VisuallyHidden, Spinner, Skeleton
+- **Forms**:
+  - FormField (+ `useFormFieldControl`, which wires label, hint, error, `aria-describedby`,
+    `aria-invalid` and `required` through context)
+  - Label, Input (leading/trailing adornments), Textarea (character counter)
+  - **Select (a styled native `<select>`)**
+  - Checkbox (indeterminate state), RadioGroup (list, or selectable cards with an aside such as a
+    price; the aside wraps under the label on narrow phones)
+  - Switch, QuantityStepper, PasswordInput
+- **Feedback**:
+  - Alert, Toast (+ `ToastProvider`/`useToast`)
+  - Modal: a **bottom sheet on phones**, centred from `sm` up
+  - Drawer (right, left or bottom), ConfirmDialog (focus starts on Cancel)
+  - Tooltip, ProgressBar, EmptyState
+- **Navigation**: Tabs (underline or pills; scrolls sideways on phones), Breadcrumbs, Pagination
+  (compact "Page x of y" on phones), DropdownMenu, ThemeToggle (inline segmented radios)
+- **Data display**:
+  - Card (+ CardHeader, CardFooter)
+  - **BookCover**: a 2:3 cover with spine crease, page block and warm resting shadow; turns on hover
+    on pointer devices; falls back to a typographic cover sized in container units
+  - **BookCard**: the whole card is one link, named by the title
+  - **PriceTag**: "now/was" wording for screen readers, % off, trims ".00" except with `exact`
+  - Rating (partial stars), RatingInput, Accordion (`inert` when collapsed, so it can animate)
+- **Layout**: Container, Section (eyebrow/title/intro/actions header), Eyebrow, Divider
+- **Shared behaviour**:
+  - `use-dialog.ts`: moves focus in, traps Tab, closes on Escape, returns focus, and uses a
+    ref-counted scroll lock that is safe for nested dialogs
+  - Portal / `useMounted`
+
+**Decision: `Select` is a styled native `<select>`, not a custom listbox.** This changes the
+original plan. Most buyers are on phones, where the OS picker is faster and more familiar than any
+custom listbox, and it is accessible without extra work. A custom Combobox gets built only when a
+screen needs search-as-you-type (e.g. a long country list in BS-7).
+
+**Added later, when a real screen needs them:**
+- Combobox, MoneyInput, Table/DataTable (admin)
+- OtpInput and a password strength meter (BS-4)
+- Stepper/Timeline (checkout and shipment, BS-7 and BS-9)
+- StatCard (BS-12)
+- Header and MobileNav shells (BS-5)
 
 Reference-project lessons baked in:
 - Overlays that position themselves clamp to the viewport after measuring.
@@ -458,6 +495,11 @@ Reference-project lessons baked in:
 - Touch targets are 44px for standalone icon actions and at least 36px in dense rows.
 - `/design-system` (not indexed) renders every token and every component in both themes. It is
   the visual regression reference.
+- **Long words must never widen the page** (found in BS-2). An unbreakable word ("Thermodynamics"
+  at display size) made the layout viewport 397px wide on a 375px phone, so the phone zoomed out and
+  the bottom sheet slid off-screen. Headings now use `overflow-wrap: anywhere; hyphens: auto`
+  globally, and `npm run check:responsive` fails whenever the layout viewport is wider than the
+  device.
 
 ## 7. Frontend architecture
 

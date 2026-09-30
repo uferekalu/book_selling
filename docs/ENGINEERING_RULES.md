@@ -35,7 +35,9 @@ A rule with a "why" came from a real incident, mostly in the sister project `foo
    CLAUDE.md files if a convention changed.
 5. New env vars are in Joi validation, `.env.example` and `render.yaml` (or the Vercel list in
    DEPLOYMENT.md).
-6. UI changes are checked at 375px and at desktop width, in **light and dark**, with keyboard only.
+6. UI changes pass `npm run check:responsive` (320px → 1440px, **light and dark**, no page wider
+   than the device, no console errors) against a production build. You look at the screenshots, and
+   you walk the change with the keyboard only (frontend/CLAUDE.md "Responsive rules").
 
 ## 3. Code rules (both apps)
 
