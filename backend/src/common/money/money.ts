@@ -120,3 +120,27 @@ export function formatMoney(value: Money): string {
     maximumFractionDigits: digits,
   }).format(Number(toMajorString(value)));
 }
+
+/**
+ * A provider's major-unit amount (Flutterwave reports `29.99` or `"25000.00"`) as exact minor
+ * units, by string manipulation, never `* 100`. Throws on anything that isn't a plain decimal
+ * with at most the currency's decimals (after normalising float noise like 29.990000000000002).
+ */
+export function fromMajor(value: number | string, currency: Currency): Money {
+  const exponent = EXPONENT[currency];
+  const text =
+    typeof value === 'number'
+      ? Number.isFinite(value)
+        ? value.toFixed(exponent)
+        : ''
+      : value.trim();
+  const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(text);
+  if (!match) throw new MoneyError(`Not a decimal amount: ${String(value)}`);
+  const [, sign, whole, fraction = ''] = match;
+  if (fraction.length > exponent && /[1-9]/.test(fraction.slice(exponent))) {
+    throw new MoneyError(`Too many decimals for ${currency}: ${String(value)}`);
+  }
+  const digits = whole + fraction.slice(0, exponent).padEnd(exponent, '0');
+  const amount = Number(digits);
+  return checked(sign ? -amount : amount, currency);
+}

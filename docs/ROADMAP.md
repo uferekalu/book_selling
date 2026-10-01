@@ -1,6 +1,6 @@
 # Roadmap
 
-**Next planned ticket: BS-8** · **Next reactive ticket: BS-20**
+**Next planned ticket: BS-9** · **Next reactive ticket: BS-20**
 
 Each ticket is one branch (`feature/BS-<n>-<suffix>`) and one squash-merged PR. The order is
 deliberate: each ticket builds only on merged work. When a ticket finishes, its row is rewritten
@@ -17,7 +17,7 @@ so planned numbers never shift; they get a new row at the end of the table.
 | BS-5 | `catalog` | See detail below | ✅ Done |
 | BS-6 | `preview-reader` | See detail below | ✅ Done |
 | BS-7 | `cart-checkout-orders` | See detail below | ✅ Done |
-| BS-8 | `payments` | Stripe, Paystack and Flutterwave adapters; `payments` and `webhook_events` collections; initiate, webhooks (raw-body signature verification), verify-on-return, the single `settle()` with amount/currency assertion inside a transaction (entitlements, stock commit, outbox receipt); reconciliation job; refunds (two-phase, outcome-unknown); out-of-band refund and dispute detection; provider switcher UI; `/checkout/callback` (verify + poll + return to the reader at the saved page); the **full payment test matrix** | ⏳ Planned |
+| BS-8 | `payments` | See detail below | ✅ Done |
 | BS-9 | `library-fulfillment` | Entitlements, My Library, online full reader (signed range-request URL, synced progress), downloads (5-min signed URLs, rate limit), per-buyer PDF stamping; shipments admin flow with tracking; receipt with PDF invoice; all commerce emails | ⏳ Planned |
 | BS-10 | `messaging` | Socket.IO gateway (handshake auth, rooms, rejoin on reconnect), conversations and messages, staff inbox, "Ask the author" and order-linked threads, read receipts and unread counts, offline email fallback via delayed outbox, contact form (Turnstile/honeypot), in-app notifications bell | ⏳ Planned |
 | BS-11 | `reviews-wishlist-coupons` | Verified-buyer reviews with rating aggregation, wishlist, coupons admin UI | ⏳ Planned |
@@ -476,3 +476,63 @@ checklist is reviewed whenever a ticket is planned, so nothing important is forg
      nothing; a newer checkout replaces an older unpaid one instead.
   4. Accepted: for guests, "already in your library" is checked against the account with that
      email (prevents paying twice; reveals ownership only to someone who types that email).
+
+## BS-8: Payments with Paystack, Flutterwave and Stripe (✅ Done, 2026-10-01)
+
+- **Adapters** behind one interface: Paystack (kobo, HMAC-SHA512 webhooks, `abandoned` stays
+  pending), Flutterwave (**major units both ways via exact string conversion**, verif-hash plus
+  **re-verification of every webhook with the API**), Stripe (official SDK, Checkout Session with
+  one line for the exact total, `constructEvent` with a 5-minute tolerance, idempotency keys on
+  create and refund). Each adapter separates "the provider said no" (shown to the buyer) from
+  "the outcome is unknown" (never assumed).
+- **Configuration safety**: `PAYMENTS_MODE` test/live; the API refuses to boot when a key doesn't
+  match the mode, when a provider's webhook secret is missing, or when live production has no
+  provider. Providers are offered only when configured, so Stripe can be off at launch.
+- **settle()**, the only code that marks money received: known reference, matching provider, a
+  failure never downgrades a success, **amount and currency must match exactly or the order is
+  flagged and not paid**, then one transaction for payment, order, stock (committed, or taken
+  again for a late payment, else "ship later or refund"), coupon, ebook library entries, the
+  buyer's carts (account and the guest cart the order came from), receipt, owner "new sale" and
+  attention emails. Audit entry and the guest's "set your password" link after commit. The
+  database refuses a second settled payment per order; that case is flagged for refund.
+- **Webhooks** deduplicated per provider event; a failed or stuck event is reprocessed when the
+  provider redelivers it. **Reconciliation** every 5 minutes rescues lost webhooks; attempts older
+  than 48 hours are closed. Expiry and "one open checkout" now wait 15 minutes for a payment in
+  progress.
+- **Refunds** (owner only): atomic claim that can never exceed what was paid (even concurrently),
+  Stripe idempotency key, a refusal releases the balance, **any unknown or unexpected outcome is
+  held, flagged and never retried**; refund webhooks confirm pending refunds; dashboard refunds
+  (Stripe, Paystack) are detected and recorded; a full refund removes the order's ebooks.
+  Disputes flag the order. "Needs attention" shows in the admin list and on the order, with a
+  required resolution note (audited).
+- **Frontend**: the payment step after placing an order (provider choice, "Pay ₦… with …"), the
+  return page that confirms with the server and keeps checking ("confirming" → "confirmed" /
+  "didn't go through" with retry), "Complete your payment" on unpaid orders, the admin order page
+  (payments, refunds with a two-step confirmation, attention).
+- **Payment test matrix** (ENGINEERING_RULES §6), all green: adapter request shapes and unit
+  conversion, valid/invalid/missing/stale signatures; settlement success, duplicate webhook, a
+  webhook racing verify and reconciliation (exactly one settlement), five parallel settles, amount
+  and currency mismatch, missing amount, provider mismatch, unknown reference, failure after
+  success, late payment with and without stock, second payment refused, ebook bought twice;
+  failed-then-redelivered webhooks; reconciliation and abandonment; the 15-minute grace; disputes;
+  full, partial, concurrent and over-refunds, provider refusal, timeout and unexpected errors as
+  unknown, webhook-confirmed and dashboard refunds; one receipt per paid order. Backend 47 payment
+  tests among the unit suites, 5 payment e2e tests (real HMAC over the raw HTTP body).
+- **Verified live** (phone and desktop, a throwaway database): place order → "Pay ₦15,000.00 with
+  Paystack" → a provider refusal shown plainly → "confirming" while pending → a signed webhook →
+  the open page switches to "Payment confirmed", order paid, ebook granted, one receipt and one
+  claim email, cart emptied → the owner's admin order page → a refund refused by the provider,
+  shown, recorded as failed, order still paid. No console errors or overflow.
+- **Found and fixed while verifying**: the guest's cart wasn't emptied after paying, and Mongoose's
+  update casting silently dropped an `$or` inside `$pull`, so signed-in carts weren't emptied
+  either (now one `$pull` per item, with tests for both); a failed webhook could never be
+  reprocessed; an unexpected refund error could leave a refund "pending" forever; the audit entry
+  was written inside the transaction; a flagged payment could later be marked abandoned; the
+  Idempotency-Key header and Set-Cookie were not redacted from request logs (both earlier
+  tickets); the "complete your order" email showed ": item" rows (BS-7); refund sums were done
+  outside the money module; and the e2e tests loaded the developer's real `.env` (Cloudinary keys
+  had just been added locally), so the app now ignores `.env` when `NODE_ENV=test`.
+- **Known limits, documented**: Flutterwave dashboard refunds aren't detected automatically
+  (refund Flutterwave orders from the admin); Paystack and Flutterwave have no refund idempotency
+  key (one more reason refunds are never retried automatically); the owner must decide on Stripe
+  for a Nigerian business before going live.

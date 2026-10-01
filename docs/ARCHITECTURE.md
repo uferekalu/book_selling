@@ -778,6 +778,50 @@ job. Steps:
 Because emails go through the outbox **inside the same transaction**, "paid but no receipt sent"
 and "receipt sent but not paid" are both impossible.
 
+**As built (BS-8)** in `backend/src/payments`:
+- **Reference**: `BSP-` + 32 hex characters (random 128 bits). Hex rather than a ULID because
+  Paystack allows only letters, digits, `-`, `.` and `=` in references.
+- **Initiate** (`POST /payments/initiate`, `@OptionalAuth`; a guest proves access with their checkout
+  key in the body): order must be `pending_payment` and inside its window; the provider must be
+  enabled and route the currency; at most 10 attempts per order. Our payment row is written
+  **before** calling the provider, for the exact `order.total`. A provider refusal is shown to the
+  buyer (400); an unreachable provider is a 503 with "try again or choose another method". Starting
+  a payment moves no money, so a failed start is simply closed.
+- **Verify on return** (`POST /payments/verify { reference }`, public, rate-limited) re-asks the
+  provider server-to-server and settles; the page polls it (every 3 s for about 2 minutes, then
+  "we'll email you"). Failed attempts are re-verified too (a bank can confirm after a decline).
+- **settle()** in order: unknown reference → ignored; provider mismatch → ignored; `pending` →
+  nothing; `failed` → only `initiated → failed` (a success is never downgraded); succeeded →
+  **amount and currency must equal the payment exactly, else `reconciliationRequired`, order
+  `attention`, owner alerted, not paid** → one transaction: payment `initiated|failed|abandoned →
+  succeeded` (conditional) · order `pending_payment|expired|cancelled → paid` (conditional) · stock
+  committed (held) or **taken again for a late payment, else the order is paid and flagged "ship
+  later or refund"** · coupon redeemed (taken again if its hold was released) · ebook entitlements
+  (an ebook already owned through another order is flagged, not granted twice) · purchased lines
+  removed from the buyer's cart · receipt, owner "new sale" and any attention email queued in the
+  outbox in the same transaction. After commit: audit entry, and the "set your password" link for a
+  guest's unclaimed account. The unique index refuses a second settled payment per order; that case
+  is flagged "refund this payment in the provider dashboard".
+- **Webhooks** (`POST /payments/webhooks/:provider`): signature over the raw body first (401 when
+  missing or wrong); then the event is recorded in `webhook_events` (unique per provider and event
+  id: a redelivery is a no-op) and processed; processing errors are stored and answered 200.
+  Flagged payments are left to the owner: reconciliation neither re-checks nor abandons them.
+- **Refunds** (`POST /admin/orders/:n/refunds`, **owner only** until BS-12's threshold): the claim
+  is one atomic update whose filter checks that `amount − (pending + succeeded + unknown refunds)` is
+  at least the request, so concurrent refunds can never exceed the payment. Stripe receives our
+  refund id as its idempotency key; Paystack and Flutterwave have no such key, which is one more
+  reason an unknown outcome is never retried automatically. Refund webhooks confirm pending
+  refunds; a refund made in a dashboard is recorded and flagged (Stripe via `charge.refunded`'s
+  running total, Paystack via `refund.processed`). **Not detected automatically: Flutterwave
+  dashboard refunds** (it has no reliable refund webhook); refund Flutterwave orders from the admin.
+  A full refund revokes the order's ebooks.
+- **Disputes** (Stripe `charge.dispute.created`, Paystack `charge.dispute.create`) flag the order
+  and email the owner.
+- **Configuration**: `PAYMENTS_MODE` (`test`/`live`) and per-provider keys; the API refuses to
+  boot when a key doesn't match the mode or a provider's webhook secret is missing. A provider is
+  offered only when configured (launching without Stripe = leaving its keys empty). Logs redact
+  provider signatures, the Idempotency-Key header and Set-Cookie.
+
 ### 8.6 Reconciliation and expiry jobs
 
 - **Every 5 minutes**: payments still `initiated` for more than 10 minutes and less than 48 hours

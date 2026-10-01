@@ -9,6 +9,7 @@ import { AccessTokenGuard, RolesGuard } from './auth/guards/auth.guards.js';
 import { AuthModule } from './auth/auth.module.js';
 import { CatalogModule } from './catalog/catalog.module.js';
 import { CommerceModule } from './commerce/commerce.module.js';
+import { PaymentsModule } from './payments/payments.module.js';
 import { envValidationSchema } from './common/config/env.validation.js';
 import { DatabaseModule } from './database/database.module.js';
 import { HealthModule } from './health/health.module.js';
@@ -21,6 +22,9 @@ import { UsersModule } from './users/users.module.js';
     ConfigModule.forRoot({
       isGlobal: true,
       validationSchema: envValidationSchema,
+      // Tests must never pick up a developer's real keys (Cloudinary, Resend, payments) from .env:
+      // they run on the deliberate settings in test/test-env.ts only.
+      ignoreEnvFile: process.env.NODE_ENV === 'test',
     }),
     LoggerModule.forRootAsync({
       inject: [ConfigService],
@@ -39,10 +43,14 @@ import { UsersModule } from './users/users.module.js';
               env === 'development'
                 ? { target: 'pino-pretty', options: { singleLine: true } }
                 : undefined,
-            // Never log credentials or payment-provider signatures.
+            // Never log credentials, session cookies, a guest's checkout key (their proof of access
+            // to an order) or payment-provider signatures.
             redact: [
               'req.headers.authorization',
               'req.headers.cookie',
+              'req.headers["idempotency-key"]',
+              'req.headers["svix-signature"]',
+              'res.headers["set-cookie"]',
               'req.headers["x-paystack-signature"]',
               'req.headers["stripe-signature"]',
               'req.headers["verif-hash"]',
@@ -64,6 +72,7 @@ import { UsersModule } from './users/users.module.js';
     AuthModule,
     CatalogModule,
     CommerceModule,
+    PaymentsModule,
   ],
   // Order matters: rate limit first, then authentication (default-deny), then roles.
   providers: [

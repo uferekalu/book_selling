@@ -91,4 +91,83 @@ export const envValidationSchema = Joi.object({
   MAIL_REPLY_TO: optionalString().email().optional(),
   // Where operational alerts go (dead-letter emails; later payment reconciliation).
   OWNER_ALERT_EMAIL: optionalString().email().optional(),
-});
+
+  // ---- Payments (docs/ARCHITECTURE.md §9) ----
+  // `live` takes real money. Production must say which explicitly; keys must match the mode.
+  PAYMENTS_MODE: Joi.string()
+    .valid('test', 'live')
+    .when('NODE_ENV', {
+      is: 'production',
+      // oxlint-disable-next-line unicorn/no-thenable
+      then: Joi.required(),
+      otherwise: Joi.optional().default('test'),
+    }),
+  // A provider is offered only when all its keys are set.
+  STRIPE_SECRET_KEY: optionalString().optional(),
+  STRIPE_WEBHOOK_SECRET: optionalString().optional(),
+  PAYSTACK_SECRET_KEY: optionalString().optional(),
+  FLUTTERWAVE_SECRET_KEY: optionalString().optional(),
+  // The "secret hash" set in the Flutterwave dashboard, sent back in the verif-hash header.
+  FLUTTERWAVE_WEBHOOK_HASH: optionalString().min(16).optional(),
+}).custom((env: Record<string, unknown>, helpers) => {
+  const problem = paymentKeysProblem(env);
+  return problem ? helpers.message({ custom: problem }) : env;
+}, 'payment keys match the payments mode');
+
+/**
+ * Test keys can never take real money and live keys can never be used by a developer machine by
+ * accident: every key present must match PAYMENTS_MODE, and live production needs a provider.
+ */
+export function paymentKeysProblem(
+  env: Record<string, unknown>,
+): string | null {
+  const mode = env.PAYMENTS_MODE === 'live' ? 'live' : 'test';
+  const str = (key: string) =>
+    typeof env[key] === 'string' && env[key] !== ''
+      ? (env[key] as string)
+      : null;
+  const checks: Array<
+    [string, (key: string) => boolean, (key: string) => boolean]
+  > = [
+    [
+      'STRIPE_SECRET_KEY',
+      (k) => k.startsWith('sk_live_') || k.startsWith('rk_live_'),
+      (k) => k.startsWith('sk_test_') || k.startsWith('rk_test_'),
+    ],
+    [
+      'PAYSTACK_SECRET_KEY',
+      (k) => k.startsWith('sk_live_'),
+      (k) => k.startsWith('sk_test_'),
+    ],
+    [
+      'FLUTTERWAVE_SECRET_KEY',
+      (k) => k.startsWith('FLWSECK-') && !k.includes('_TEST'),
+      (k) => k.startsWith('FLWSECK_TEST-'),
+    ],
+  ];
+  for (const [name, isLive, isTest] of checks) {
+    const key = str(name);
+    if (!key) continue;
+    if (mode === 'live' && !isLive(key))
+      return `${name} is not a live key, but PAYMENTS_MODE=live`;
+    if (mode === 'test' && !isTest(key))
+      return `${name} is not a test key, but PAYMENTS_MODE=test (live keys belong in production only)`;
+  }
+  const pairs: Array<[string, string]> = [
+    ['STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET'],
+    ['FLUTTERWAVE_SECRET_KEY', 'FLUTTERWAVE_WEBHOOK_HASH'],
+  ];
+  for (const [key, partner] of pairs) {
+    if (str(key) && !str(partner)) return `${partner} is required with ${key}`;
+  }
+  if (
+    env.NODE_ENV === 'production' &&
+    mode === 'live' &&
+    !str('STRIPE_SECRET_KEY') &&
+    !str('PAYSTACK_SECRET_KEY') &&
+    !str('FLUTTERWAVE_SECRET_KEY')
+  ) {
+    return 'Live payments need at least one provider key';
+  }
+  return null;
+}

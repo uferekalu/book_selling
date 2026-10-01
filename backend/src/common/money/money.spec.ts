@@ -1,6 +1,7 @@
 import {
   add,
   equals,
+  fromMajor,
   max,
   min,
   money,
@@ -60,5 +61,24 @@ describe('money', () => {
   it('compares exactly', () => {
     expect(equals(usd(100), usd(100))).toBe(true);
     expect(equals(usd(100), ngn(100))).toBe(false);
+  });
+
+  it('reads provider major units exactly (Flutterwave), never via float maths', () => {
+    expect(fromMajor(29.99, 'USD')).toEqual(usd(2999));
+    expect(fromMajor(25000, 'NGN')).toEqual(ngn(2_500_000));
+    expect(fromMajor('25000.00', 'NGN')).toEqual(ngn(2_500_000));
+    expect(fromMajor(0.1 + 0.2, 'USD')).toEqual(usd(30));
+    expect(fromMajor(1.15, 'USD')).toEqual(usd(115));
+    expect(fromMajor('12.340', 'USD')).toEqual(usd(1234));
+    expect(() => fromMajor('12.345', 'USD')).toThrow(/Too many decimals/);
+    expect(() => fromMajor('abc', 'USD')).toThrow(MoneyError);
+    expect(() => fromMajor(Number.NaN, 'USD')).toThrow(MoneyError);
+    // Round trip with toMajorString for every cent value up to $10.
+    for (let cents = 0; cents <= 1000; cents += 1) {
+      expect(fromMajor(toMajorString(usd(cents)), 'USD')).toEqual(usd(cents));
+      expect(fromMajor(Number(toMajorString(usd(cents))), 'USD')).toEqual(
+        usd(cents),
+      );
+    }
   });
 });

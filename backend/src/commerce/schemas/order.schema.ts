@@ -141,6 +141,9 @@ export class Order {
   /** Relative path to return to after payment (e.g. the reader page where they stopped). */
   @Prop({ type: String, default: null }) returnPath: string | null;
   @Prop({ type: Boolean, default: false }) completeOrderEmailSent: boolean;
+  /** The guest cart the order came from, so settlement can empty it (never sent to a browser). */
+  @Prop({ type: String, default: null, select: false })
+  guestCartId: string | null;
 
   @Prop({ type: [StatusChangeSchema], default: [] })
   statusHistory: StatusChange[];

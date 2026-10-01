@@ -159,7 +159,10 @@ export class AdminCommerceController {
       .sort({ createdAt: -1 })
       .limit(100)
       .exec();
-    return orders.map(presentOrder);
+    return orders.map((order) => ({
+      ...presentOrder(order),
+      attention: order.attention,
+    }));
   }
 
   @Get('orders/:orderNumber')

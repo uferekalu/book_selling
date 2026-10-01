@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Clock, Lock, ShoppingBag, Tag } from "lucide-react";
+import { Check, Lock, ShoppingBag, Tag } from "lucide-react";
 import NextLink from "next/link";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { z } from "zod";
@@ -29,6 +29,7 @@ import { countryName, countryOptions } from "@/lib/countries";
 import { formatMoney, type Currency } from "@/lib/money";
 import { useAppSelector } from "@/lib/redux/hooks";
 import { checkoutKeyFor, fingerprintOf, forgetCheckoutKey, rememberGuestOrder } from "./checkout-key";
+import { PayNow } from "./pay-now";
 
 type Step = "details" | "shipping" | "review";
 
@@ -488,36 +489,20 @@ function OrderPlaced({ order, signedIn, onNavigate }: { order: OrderView; signed
         </span>
         <div className="flex flex-col gap-1">
           <h2 id="placed-heading" className="text-2xl font-medium">
-            Order {order.orderNumber} is reserved
+            Order {order.orderNumber}: one step left
           </h2>
           <p className="text-text-muted">
-            Total {formatMoney({ amount: order.total, currency: order.currency })}. We&rsquo;ve held your books
-            {until ? ` until ${until.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : ""} while you pay.
+            Your books are held
+            {until ? ` until ${until.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : ""} while you pay. Nothing has been charged yet.
           </p>
         </div>
       </div>
-      <Alert tone="info" title="Online payment is being connected">
-        <span className="flex items-start gap-2">
-          <Icon icon={Clock} size="sm" className="mt-0.5 shrink-0" />
-          Paystack, Flutterwave and Stripe open here in the next update. Nothing has been charged.
-        </span>
-      </Alert>
-      <div className="flex flex-col gap-2 sm:flex-row">
-        {signedIn ? (
-          <ButtonLink href={`/account/orders/${order.orderNumber}`} variant="outline" onClick={onNavigate}>
-            View the order
-          </ButtonLink>
-        ) : (
-          <ButtonLink href={`/checkout/order/${order.orderNumber}`} variant="outline" onClick={onNavigate}>
-            View the order
-          </ButtonLink>
-        )}
-        <ButtonLink href="/books" variant="ghost" onClick={onNavigate}>
-          Keep browsing
-        </ButtonLink>
-      </div>
+      <PayNow order={order} guest={!signedIn} />
       <p className="text-xs text-text-subtle">
-        A confirmation will be sent to {order.email} once the payment is confirmed. <NextLink href="/legal/terms" className="underline underline-offset-4">Terms of Sale</NextLink>
+        Your receipt goes to {order.email} as soon as the payment is confirmed.{" "}
+        <NextLink href={signedIn ? `/account/orders/${order.orderNumber}` : `/checkout/order/${order.orderNumber}`} onClick={onNavigate} className="underline underline-offset-4">
+          View the order
+        </NextLink>
       </p>
     </section>
   );
