@@ -9,5 +9,8 @@ export default defineConfig({
     globals: true,
     root: './',
     include: ['**/*.spec.ts'],
+    // Most specs run against a real in-memory MongoDB, one per file, all in parallel. On a busy
+    // laptop a 1.5s test hit the 5s default (BS-5); 20s absorbs load without hiding real hangs.
+    testTimeout: 20_000,
   },
 });

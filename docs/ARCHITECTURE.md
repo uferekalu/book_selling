@@ -145,8 +145,8 @@ a reset link stops working once used.
 `bio`, `photo`, `affiliations[]`, `socialLinks`. Usually one document (the lecturer). It is still
 modelled as a collection so co-authored titles work.
 
-**`categories`**: `name`, `slug` (unique), `description`, `sortOrder`. Examples: Thermodynamics,
-Fluid Mechanics, Machine Design, Strength of Materials.
+**`categories`**: `name`, `slug` (unique), `description`, `sortOrder`. Examples (the lecturer teaches foundry):
+Foundry Technology, Metal Casting, Heat Treatment, Physical Metallurgy, Furnaces and Melting.
 
 **`books`**
 | Field | Type | Notes |
@@ -582,12 +582,16 @@ Reference-project lessons baked in:
 ```
 frontend/src/
 ├── app/
-│   ├── (store)/            home, /books, /books/[slug], /books/[slug]/read (preview reader), /authors/[slug], /cart, /checkout, /checkout/callback
+│   ├── (site)/             everything with the site header and footer:
+│   │   ├── page.tsx, books/, books/[slug]/, authors/, authors/[slug]/   storefront (server components, BS-5)
+│   │   ├── account/        profile, addresses, security (BS-4); orders, library, messages later
+│   │   ├── admin/          books, books/[id] (editor), authors, categories (BS-5); orders, payments… later
+│   │   └── legal/, not-found.tsx
 │   ├── (auth)/             /login, /register, /forgot-password, /reset-password, /verify-email, /claim-account
-│   ├── account/            orders, library (read online + downloads), messages, addresses, profile, security
-│   ├── admin/              dashboard, books, orders, payments, refunds, customers, coupons, shipping, messages, settings
+│   ├── internal/revalidate/ POST hook the API calls after catalogue edits (shared secret)
 │   ├── design-system/
 │   ├── sitemap.ts, robots.ts
+├── proxy.ts                (Next 16's middleware) sets the currency cookie on a first visit
 ├── components/ui/          the UI kit (§6.4)
 ├── components/layout/      header, footer, mobile nav (composed from the kit)
 ├── features/<domain>/      feature components, hooks, Zod schemas (e.g. features/reader/: the pdf.js reader, §10)
@@ -598,8 +602,14 @@ frontend/src/
 ```
 
 - **Rendering**: catalogue pages (home, book list, book detail, author) are **server components**
-  fetching from the API with `revalidate` tags (fast first paint and SEO). Cart, checkout, account
-  and admin are client components using RTK Query.
+  fetching from the API through `lib/catalog.ts` (`server-only`): `cache: 'force-cache'` plus tags
+  (`catalog`, `book:<slug>`, `author:<slug>`) and a 5-minute expiry as a safety net. After every
+  admin edit the API calls `POST /internal/revalidate` (shared secret `REVALIDATE_SECRET` =
+  backend `FRONTEND_REVALIDATE_SECRET`, compared in constant time), which expires those tags
+  immediately, so changes appear at once. If the API is unreachable, pages render a friendly
+  "unavailable" state (`orFallback`) instead of an error page. Cart, checkout, account and admin
+  are client components using RTK Query. Listing state (search, subject, format, sort, page) lives
+  in the URL, so results are shareable and the back button works.
 - **Data**: one RTK Query `createApi` instance with `baseUrl: '/api'` (the same-origin proxy).
   Features call `api.injectEndpoints()`. Server data never goes into plain slices. The base query
   retries once after a silent refresh on 401 (except on the auth endpoints), guarded by the shared
@@ -607,10 +617,18 @@ frontend/src/
 - **RTK Query rules from the reference**: always `try/catch` around `await queryFulfilled` in
   `onQueryStarted`, and never send a form's values object straight to a mutation (build the payload
   explicitly, because `forbidNonWhitelisted` rejects any extra field).
-- **Currency**: the `currency` slice is initialised from the `x-vercel-ip-country` header (NG → NGN,
-  GB → GBP, euro-area → EUR, otherwise USD), persisted in a cookie, and switchable in the header.
-- **SEO**: `generateMetadata` per book, JSON-LD `Book` + `Offer` + `AggregateRating`, canonical
-  URLs, `sitemap.ts`, Open Graph images generated from the cover.
+- **Currency** (as built): `proxy.ts` sets the `bs_currency` cookie on a first visit from the
+  `x-vercel-ip-country` header (NG → NGN, GB → GBP, euro area → EUR, otherwise USD), falling back to
+  the `Accept-Language` region locally. Server components read it (`lib/request-currency.ts`); the
+  header/drawer switcher rewrites the cookie and calls `router.refresh()`. It is a cookie, not a
+  Redux slice, because the server renders the prices.
+- **Images**: `next/image` with a custom loader (`lib/cloudinary-loader.ts`) that inserts
+  `w_<width>,c_limit,q_auto,f_auto` after the stored crop, so Cloudinary serves AVIF/WebP at the exact
+  size each screen needs. The cover's blur placeholder and dominant colour show while it loads.
+- **SEO**: `generateMetadata` per book and author (canonical URL, Open Graph image from the cover),
+  JSON-LD `Book` + `Offer` (+ `AggregateRating` once reviews exist) and `Person`, `sitemap.ts`
+  (published books, subjects with books, authors, legal pages) and `robots.ts` (account, admin,
+  checkout and internal paths disallowed). Renamed books 308-redirect from their old slugs.
 
 ## 8. Commerce and money safety
 
@@ -810,24 +828,35 @@ differently:
 **How a file gets there: direct signed uploads.**
 1. The admin picks a file in the book editor.
 2. The browser asks our API for an upload signature: `POST /uploads/signature` with
-   `{ bookId, kind: 'cover' | 'gallery' | 'manuscript' }`, admin plus 2FA.
-3. The API signs **only** that folder, delivery type, allowed formats and size limit, valid for a
-   few minutes. The Cloudinary secret never leaves the server.
-4. The browser uploads **straight to Cloudinary** with a progress bar. Large manuscripts go in
-   6MB chunks, which is resumable on a flaky connection.
+   `{ kind: 'cover' | 'gallery' | 'author-photo' | 'manuscript', ownerId }` (admin plus 2FA; the
+   book or author must exist).
+3. The API signs **only** that folder (`<CLOUDINARY_FOLDER>/books/<id>/images|manuscript` or
+   `/authors/<id>`), delivery type, allowed formats, the `pending` tag and no-overwrite. Cloudinary
+   accepts a signature for an hour; the browser fetches a fresh one if a long upload outlives
+   50 minutes. The Cloudinary secret never leaves the server.
+4. The browser uploads **straight to Cloudinary** (`lib/upload.ts`) with a progress bar and a
+   cancel button. Files over 6MB go in 6MB chunks (`X-Unique-Upload-Id` + `Content-Range`); a
+   dropped connection or a 5xx retries that chunk up to 3 times with backoff, while a 4xx (bad
+   signature, format) stops at once with Cloudinary's message. Size and format are checked in the
+   browser first so obvious mistakes fail instantly.
 5. The file bytes never pass through our API: faster, no memory pressure on Render, no request
    size limits.
 6. The browser sends the resulting `public_id` to the API, which **verifies the asset with
    Cloudinary's Admin API** before attaching it: that it exists, sits in the expected folder, has
    the expected type and format, and fits the size and dimension rules. A tampered request can't
    attach someone else's asset or a public manuscript.
-7. Uploads never attached within 24 hours (the admin abandoned the form) are deleted by a cleanup
-   job. They are tagged `pending` on upload and re-tagged `attached`.
+7. Uploads never attached within 24 hours (the admin cancelled or closed the tab) are deleted by
+   `UploadCleanupJob` (hourly, job-locked). They are tagged `pending` on upload and the tag is
+   removed on attach. Before deleting, the job checks the database: an asset still referenced by a
+   book or author (its untagging failed) is kept and untagged instead. Only this environment's
+   `CLOUDINARY_FOLDER` is touched.
 
 **Cover images** (presentation is what sells the book):
-- Rules: JPG/PNG/WebP, at least 1200×1800px, at most 15MB. The editor has a **2:3 cropper** with a
-  live preview of the real `BookCover` in light and dark, so the title is never cut off by
-  automatic cropping later.
+- Rules: JPG/PNG/WebP, at least 1200×1800px, at most `IMAGE_MAX_MB` (15MB). The editor reads the
+  image size **before uploading** and refuses one too small, then opens a **2:3 cropper** (zoom and
+  position sliders, thumb-friendly; the zoom stops before the crop drops below 1200px wide). The
+  preview shows exactly the region sent as the crop, and the API checks it is inside the image and
+  2:3, so the title is never cut off by automatic cropping later.
 - Stored on the book: `{ publicId, version, width, height, crop, dominantColor, blurDataUrl }`.
   - `blurDataUrl` (a ~20px image, base64) gives an instant blurred placeholder while the real
     cover loads.
@@ -841,13 +870,13 @@ differently:
 **The manuscript PDF**:
 - Uploaded as an **authenticated** asset. It is never publicly addressable, never linked from any
   page, and the API never returns its URL to a browser.
-- Server-side checks on attach:
-  - it really is a PDF (`%PDF` magic bytes, not just the extension);
-  - page count read and stored;
-  - **password-protected or encrypted PDFs are rejected** with a clear message, because pages
-    can't be extracted for the preview;
-  - checksum stored, so the preview regenerates only when the file actually changes.
-- Cloudinary can render any PDF page as an image. We use that for the **admin preview picker**:
+- Server-side checks on attach (as built in BS-5): Cloudinary must have parsed the file as a PDF
+  (a renamed file fails), it must be in this book's manuscript folder, within `MANUSCRIPT_MAX_MB`,
+  and have at least one readable page; the page count and the `etag` (checksum) are stored, so the
+  preview regenerates only when the file actually changes.
+- **BS-6 adds**: rejecting password-protected or encrypted PDFs with a clear message (it is the
+  first step that extracts pages, with `pdf-lib`).
+- Cloudinary can render any PDF page as an image. BS-6 uses that for the **admin preview picker**:
   page thumbnails served through signed, admin-only URLs.
 - The manuscript is the single source for the preview (§10.1), online reading (§10.2) and
   downloads (§10.3). Upload once, and all three stay in sync.
@@ -860,22 +889,37 @@ differently:
   (usually 50–80% smaller with no visible loss), or upgrade the plan. The upload UI shows the
   limit and refuses larger files up front with a helpful message.
 
-**The admin "Add a book" flow** (BS-5 + BS-6). It is a step-by-step editor with autosaved drafts
-that works on a tablet:
-1. **Details**: title, subtitle, edition, ISBN-13 (checksum validated), author(s), categories,
-   tags, language, page count, publication date.
-2. **Description & abstract**: rich text (sanitised), plus the table of contents (pre-filled from
-   the PDF's outline when it has one).
-3. **Cover & gallery**: drag-and-drop, 2:3 crop, live BookCover preview in both themes.
-4. **Manuscript**: resumable upload with progress, then automatic checks (PDF, not encrypted,
-   pages counted).
+**The admin "Add a book" flow** (BS-5 + BS-6), as built: **one page with every section stacked**
+(not a wizard), each section saving on its own with an "Unsaved" badge, a "Discard changes"
+button and a browser warning before leaving with unsaved edits. Explicit saves were chosen over
+autosave: a half-typed price or slug is never published by accident, and on a phone it is clear
+what has been saved. The status card (checklist, Publish, Unpublish, Archive, Delete draft) sits
+beside the form on desktop and above it on phones. Markdown fields have a Preview tab rendered by
+`POST /admin/catalog/markdown-preview` through the same sanitizer the store uses. Prices are typed
+in major units and parsed to integer minor units **as strings** (`parseMajorToMinor`), never with
+floating-point maths. The table of contents is typed as text, one line per entry (indent for a
+section, page number at the end), which is how authors already have it. Sections:
+1. **Details**: title, subtitle, web address (slug; renaming keeps the old link as a redirect),
+   author(s), subjects, ISBN-13 (check digit validated in the browser and by the API), edition,
+   publication date, pages, language, keywords, "feature on the home page", and the optional
+   search-engine title and description.
+2. **Abstract & description**: Markdown with a live, sanitised preview; the abstract shows a
+   character count until it reaches the 80-character minimum; the table of contents as text.
+   (Pre-filling the contents from the PDF's outline is a later improvement.)
+3. **Cover & sample pages**: tap-to-pick or drag-and-drop, size check before upload, 2:3 crop,
+   optional alt text; up to 8 sample pages, each removable.
+4. **Book file**: chunked, resumable upload with progress and cancel; pages and size shown after
+   the checks. Replacing the file of a book already sold explains what happens to buyers.
 5. **Preview** (BS-6): pick the abstract and introduction pages from thumbnails, with the 15% cap
    enforced; see exactly what visitors will see.
-6. **Formats & prices**: ebook and/or print, a price per currency (NGN, USD, GBP, EUR), optional
-   sale price, print stock, weight and dimensions (for shipping).
-7. **SEO & publish**: URL slug, search title and description, and a **publish checklist**. Publish
-   stays disabled until every rule in PRODUCT_RULES §3 passes: cover, abstract, manuscript,
-   preview, and a price in every enabled currency.
+6. **Formats & prices**: ebook and/or print, a price per currency (NGN, USD, GBP, EUR), an optional
+   sale ("was") price that must be higher, per-copy buyer stamping for ebooks, print stock (never
+   below copies held by unpaid orders), weight and per-order limit.
+7. **Status card**: the **publish checklist** (each item links to its section), Publish,
+   Unpublish, Archive and Delete draft. Publish stays disabled while any section has unsaved edits
+   and until every rule in PRODUCT_RULES §3 passes: cover, abstract, description, manuscript,
+   preview, and a price in every currency for each format on sale. The API enforces the same
+   checklist and returns it as `problems` if publishing is refused.
 
 **Backups**: turn on Cloudinary's backup option for the account, and the owner keeps the original
 manuscript files. Cloudinary is the delivery store, not the only copy of the author's work.

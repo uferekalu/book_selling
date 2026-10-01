@@ -4,6 +4,7 @@ import { SessionBootstrap } from "@/components/session-bootstrap";
 import { ThemeSync } from "@/components/theme-sync";
 import { ToastProvider } from "@/components/ui";
 import { StoreProvider } from "@/lib/redux/store-provider";
+import { SITE_URL } from "@/lib/site";
 import { THEME_BOOTSTRAP_SCRIPT } from "@/lib/theme";
 import "./globals.css";
 
@@ -18,8 +19,6 @@ const fraunces = Fraunces({
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
 const jetbrains = JetBrains_Mono({ subsets: ["latin"], variable: "--font-jetbrains", display: "swap" });
 
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
-
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
@@ -27,7 +26,7 @@ export const metadata: Metadata = {
     template: "%s · Engineering Books",
   },
   description:
-    "Mechanical engineering textbooks and ebooks. Read the introduction free, then buy print or instant-download editions from anywhere in the world.",
+    "Foundry technology, metal casting and heat treatment textbooks. Read the introduction free, then buy print or instant-download editions from anywhere in the world.",
   formatDetection: { telephone: false },
 };
 

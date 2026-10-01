@@ -14,6 +14,7 @@ export interface BookCardProps {
   author: string;
   coverSrc?: string | null;
   coverBlurDataUrl?: string | null;
+  coverDominantColor?: string | null;
   price: Money;
   compareAt?: Money | null;
   /** True when formats have different prices, so the card says "From …". */
@@ -38,6 +39,7 @@ export function BookCard({
   author,
   coverSrc,
   coverBlurDataUrl,
+  coverDominantColor,
   price,
   compareAt,
   priceIsFrom,
@@ -50,7 +52,15 @@ export function BookCard({
   return (
     <article className={cn("group relative flex flex-col gap-3 sm:gap-4", className)}>
       <div className="relative flex items-end justify-center rounded-2xl bg-surface-sunken px-[12%] pt-[14%] pb-[10%] transition-colors duration-(--duration-base) group-hover:bg-secondary-hover">
-        <BookCover title={title} author={author} src={coverSrc} blurDataUrl={coverBlurDataUrl} size="fluid" priority={priority} />
+        <BookCover
+          title={title}
+          author={author}
+          src={coverSrc}
+          blurDataUrl={coverBlurDataUrl}
+          dominantColor={coverDominantColor}
+          size="fluid"
+          priority={priority}
+        />
         {highlight && (
           <Badge tone="accent" size="sm" className="absolute top-2.5 left-2.5 sm:top-3 sm:left-3">
             {highlight}

@@ -62,6 +62,19 @@ export const envValidationSchema = Joi.object({
         'TWO_FACTOR_ENCRYPTION_KEY must decode to exactly 32 bytes',
     }),
 
+  // ---- Media: Cloudinary (docs/ARCHITECTURE.md §10.0) ----
+  // Without these outside production, uploads are disabled (503) and books show typographic covers.
+  CLOUDINARY_CLOUD_NAME: requiredInProduction(Joi.string()),
+  CLOUDINARY_API_KEY: requiredInProduction(Joi.string()),
+  CLOUDINARY_API_SECRET: requiredInProduction(Joi.string()),
+  // Keeps environments apart inside one Cloudinary account, e.g. "book-selling/production".
+  CLOUDINARY_FOLDER: optionalString().default('book-selling/development'),
+  // Must not exceed the Cloudinary plan's own maximum upload size.
+  MANUSCRIPT_MAX_MB: Joi.number().integer().min(1).max(2000).default(100),
+  IMAGE_MAX_MB: Joi.number().integer().min(1).max(100).default(15),
+  // Lets the API tell the storefront to refresh cached catalogue pages after an edit.
+  FRONTEND_REVALIDATE_SECRET: optionalString().min(16).optional(),
+
   // ---- Brand (appears in emails) ----
   BRAND_NAME: Joi.string().default('Engineering Books'),
   SUPPORT_EMAIL: optionalString().email().optional(),

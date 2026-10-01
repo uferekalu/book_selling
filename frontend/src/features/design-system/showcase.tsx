@@ -195,9 +195,9 @@ export function DesignSystemShowcase() {
 
           <DemoSection id="type" title="Typography" intro="Fraunces for display, Inter for reading and UI, JetBrains Mono for ISBNs and order numbers. Display sizes are fluid.">
             <div className="flex flex-col gap-5">
-              <p className="font-display text-7xl font-medium tracking-tightest wrap-anywhere hyphens-auto">Aa Thermodynamics</p>
-              <p className="font-display text-5xl font-medium">Heat, work and energy</p>
-              <p className="font-display text-3xl">The second law, explained plainly</p>
+              <p className="font-display text-7xl font-medium tracking-tightest wrap-anywhere hyphens-auto">Aa Solidification</p>
+              <p className="font-display text-5xl font-medium">Melting, pouring and solidification</p>
+              <p className="font-display text-3xl">Hardening steel, explained plainly</p>
               <p className="text-xl">Lead paragraph: a clear, practical introduction for students and working engineers.</p>
               <p className="max-w-prose text-base text-text-muted">
                 Body text at 16px with a generous line height, set in Inter for long-form readability on phones. Prices use
@@ -346,7 +346,7 @@ export function DesignSystemShowcase() {
               <Button variant="outline" onClick={() => setConfirmOpen(true)}>
                 Confirm dialog
               </Button>
-              <Button variant="outline" onClick={() => toast({ title: "Added to cart", description: "Engineering Thermodynamics (Ebook)", tone: "success", action: { label: "View cart", onClick: () => setDrawerOpen(true) } })}>
+              <Button variant="outline" onClick={() => toast({ title: "Added to cart", description: "Principles of Foundry Technology (Ebook)", tone: "success", action: { label: "View cart", onClick: () => setDrawerOpen(true) } })}>
                 Success toast
               </Button>
               <Button variant="outline" onClick={() => toast({ title: "Couldn't start payment", description: "Please try again in a moment.", tone: "danger" })}>
@@ -383,8 +383,8 @@ export function DesignSystemShowcase() {
                 items={[
                   { label: "Home", href: "/" },
                   { label: "Books", href: "/books" },
-                  { label: "Thermodynamics", href: "/books?category=thermodynamics" },
-                  { label: "Engineering Thermodynamics, 3rd Edition" },
+                  { label: "Foundry Technology", href: "/books?category=foundry-technology" },
+                  { label: "Principles of Foundry Technology, 3rd Edition" },
                 ]}
               />
             </Demo>
@@ -394,8 +394,8 @@ export function DesignSystemShowcase() {
                 value={tab}
                 onChange={setTab}
                 items={[
-                  { value: "about", label: "About", content: <p className="text-text-muted">A practical introduction to energy, heat and work.</p> },
-                  { value: "contents", label: "Contents", content: <p className="text-text-muted">1. Basic concepts · 2. Properties of pure substances · …</p> },
+                  { value: "about", label: "About", content: <p className="text-text-muted">A practical guide to moulding, melting and casting sound metal parts.</p> },
+                  { value: "contents", label: "Contents", content: <p className="text-text-muted">1. The foundry and its processes · 2. Patterns and pattern allowances · 3. Moulding sands · …</p> },
                   { value: "reviews", label: "Reviews", count: 24, content: <p className="text-text-muted">Reviews from verified buyers.</p> },
                 ]}
               />
@@ -423,17 +423,17 @@ export function DesignSystemShowcase() {
 
           <DemoSection id="books" title="Books & commerce" intro="Covers render as objects with a spine, page edges and a resting shadow. Hover to see them turn.">
             <Demo label="Covers (typographic fallback when there is no artwork)" className="flex flex-wrap items-end gap-6 sm:gap-10">
-              <BookCover title="Engineering Thermodynamics" author="Prof. A. Author" size="xl" />
-              <BookCover title="Fluid Mechanics in Practice" author="Prof. A. Author" size="lg" />
-              <BookCover title="Strength of Materials" author="Prof. A. Author" size="md" />
-              <BookCover title="Machine Design" size="sm" />
+              <BookCover title="Principles of Foundry Technology" author="Prof. A. Author" size="xl" />
+              <BookCover title="Heat Treatment of Steels" author="Prof. A. Author" size="lg" />
+              <BookCover title="Sand Moulding and Core Making" author="Prof. A. Author" size="md" />
+              <BookCover title="Non-Ferrous Casting" size="sm" />
             </Demo>
             <Demo label="Book cards: 2 columns on a phone, up to 5 on desktop" className="grid grid-cols-2 gap-x-4 gap-y-8 sm:grid-cols-3 lg:grid-cols-5">
-              <BookCard href="#" title="Engineering Thermodynamics, 3rd Edition" author="Prof. A. Author" price={{ amount: 1_500_000, currency: "NGN" }} priceIsFrom formats={["ebook", "print"]} rating={{ value: 4.8, count: 42 }} highlight="Bestseller" />
-              <BookCard href="#" title="Fluid Mechanics in Practice" author="Prof. A. Author" price={{ amount: 2400, currency: "GBP" }} compareAt={{ amount: 3000, currency: "GBP" }} formats={["ebook"]} rating={{ value: 4.5, count: 18 }} />
-              <BookCard href="#" title="Strength of Materials: Worked Problems" author="Prof. A. Author" price={{ amount: 2999, currency: "USD" }} formats={["print"]} highlight="New" />
-              <BookCard href="#" title="Machine Design Fundamentals" author="Prof. A. Author" price={{ amount: 2850, currency: "EUR" }} formats={["ebook", "print"]} rating={{ value: 5, count: 7 }} />
-              <BookCard href="#" title="Heat Transfer" author="Prof. A. Author" price={{ amount: 1_200_000, currency: "NGN" }} formats={["ebook"]} />
+              <BookCard href="#" title="Principles of Foundry Technology, 3rd Edition" author="Prof. A. Author" price={{ amount: 1_500_000, currency: "NGN" }} priceIsFrom formats={["ebook", "print"]} rating={{ value: 4.8, count: 42 }} highlight="Bestseller" />
+              <BookCard href="#" title="Heat Treatment of Steels" author="Prof. A. Author" price={{ amount: 2400, currency: "GBP" }} compareAt={{ amount: 3000, currency: "GBP" }} formats={["ebook"]} rating={{ value: 4.5, count: 18 }} />
+              <BookCard href="#" title="Casting Defects: Causes and Remedies" author="Prof. A. Author" price={{ amount: 2999, currency: "USD" }} formats={["print"]} highlight="New" />
+              <BookCard href="#" title="Furnaces and Melting Practice" author="Prof. A. Author" price={{ amount: 2850, currency: "EUR" }} formats={["ebook", "print"]} rating={{ value: 5, count: 7 }} />
+              <BookCard href="#" title="Annealing, Quenching and Tempering" author="Prof. A. Author" price={{ amount: 1_200_000, currency: "NGN" }} formats={["ebook"]} />
             </Demo>
             <Demo label="Prices">
               <PriceTag price={{ amount: 2_500_000, currency: "NGN" }} size="xl" />
@@ -512,7 +512,7 @@ export function DesignSystemShowcase() {
         }
       >
         <div className="flex gap-4">
-          <BookCover title="Engineering Thermodynamics" author="Prof. A. Author" size="sm" interactive={false} />
+          <BookCover title="Principles of Foundry Technology" author="Prof. A. Author" size="sm" interactive={false} />
           <p className="text-sm text-text-muted">
             Unlock all 342 pages instantly and pick up right where you stopped, on page 19.
           </p>
@@ -536,9 +536,9 @@ export function DesignSystemShowcase() {
         }
       >
         <div className="flex gap-4">
-          <BookCover title="Engineering Thermodynamics" author="Prof. A. Author" size="xs" interactive={false} />
+          <BookCover title="Principles of Foundry Technology" author="Prof. A. Author" size="xs" interactive={false} />
           <div className="flex flex-1 flex-col gap-2">
-            <p className="font-display font-medium">Engineering Thermodynamics</p>
+            <p className="font-display font-medium">Principles of Foundry Technology</p>
             <Badge size="sm">Ebook</Badge>
             <PriceTag price={{ amount: 1_500_000, currency: "NGN" }} size="sm" />
           </div>

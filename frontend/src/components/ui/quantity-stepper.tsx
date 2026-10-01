@@ -10,7 +10,7 @@ export interface QuantityStepperProps {
   onChange: (value: number) => void;
   min?: number;
   max?: number;
-  /** Names what is being counted, e.g. "Quantity of Applied Thermodynamics". */
+  /** Names what is being counted, e.g. "Quantity of Heat Treatment of Steels". */
   label: string;
   size?: "sm" | "md";
   disabled?: boolean;

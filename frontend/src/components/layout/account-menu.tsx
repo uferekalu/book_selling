@@ -1,6 +1,6 @@
 "use client";
 
-import { LogOut, ShieldCheck, User } from "lucide-react";
+import { LayoutDashboard, LogOut, ShieldCheck, User } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Avatar, Button, ButtonLink, DropdownMenu, Icon, Skeleton, useToast } from "@/components/ui";
 import { useLogoutMutation } from "@/lib/api/auth-api";
@@ -34,6 +34,9 @@ export function AccountMenu() {
       items={[
         { label: "Your account", icon: User, onSelect: () => router.push("/account") },
         { label: "Security", icon: ShieldCheck, onSelect: () => router.push("/account/security") },
+        ...(user.role === "admin" || user.role === "owner"
+          ? [{ label: "Store admin", icon: LayoutDashboard, onSelect: () => router.push("/admin") }]
+          : []),
         {
           label: "Sign out",
           icon: LogOut,

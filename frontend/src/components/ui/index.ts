@@ -33,6 +33,7 @@ export {
 } from "./layout";
 export { ButtonLink, TextLink, type ButtonLinkProps, type TextLinkProps } from "./link";
 export { Modal, type ModalProps } from "./modal";
+export { MoneyInput, type MoneyInputProps } from "./money-input";
 export { Pagination, pageWindow, type PaginationProps } from "./pagination";
 export { OtpInput, type OtpInputProps } from "./otp-input";
 export { PasswordInput, type PasswordInputProps } from "./password-input";

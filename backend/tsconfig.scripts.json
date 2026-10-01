@@ -1,0 +1,15 @@
+{
+  // Compiles scripts that boot the Nest application (e.g. seed-demo) with real `tsc`.
+  // tsx/esbuild does not emit decorator metadata, so Nest's dependency injection silently gets
+  // `undefined` for every constructor parameter when such a script runs under tsx.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "./build/scripts",
+    "incremental": false,
+    "declaration": false,
+    "sourceMap": false
+  },
+  "include": ["src", "scripts"],
+  "exclude": ["node_modules", "test", "dist", "build", "**/*.spec.ts"]
+}

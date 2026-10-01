@@ -26,6 +26,8 @@ export interface BookCoverProps {
   src?: string | null;
   /** Tiny base64 placeholder from the API (`cover.blurDataUrl`). */
   blurDataUrl?: string | null;
+  /** The artwork's dominant colour, shown behind it while it loads (from the API). */
+  dominantColor?: string | null;
   size?: keyof typeof widths;
   /** Tilt in 3D on hover (pointer devices only). Turn off for dense lists. */
   interactive?: boolean;
@@ -47,6 +49,7 @@ export function BookCover({
   author,
   src,
   blurDataUrl,
+  dominantColor,
   size = "md",
   interactive = true,
   priority = false,
@@ -65,7 +68,11 @@ export function BookCover({
           aria-hidden="true"
           className="absolute inset-y-[1.5%] -right-[3.5%] w-[6%] rounded-r-xs bg-[repeating-linear-gradient(90deg,var(--color-paper-50)_0_1px,var(--color-paper-300)_1px_2px)] shadow-sm"
         />
-        <div className="absolute inset-0 overflow-hidden rounded-r-sm rounded-l-xs bg-brown-800 shadow-book">
+        <div
+          className="absolute inset-0 overflow-hidden rounded-r-sm rounded-l-xs bg-brown-800 shadow-book"
+          // Content data (each cover's own colour), not a design value, so inline is correct here.
+          style={src && dominantColor ? { backgroundColor: dominantColor } : undefined}
+        >
           {src ? (
             <Image
               src={src}

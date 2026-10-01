@@ -114,3 +114,98 @@
     display: none;
   }
 }
+
+/*
+ * Long-form text written by the lecturer (descriptions, abstracts, bios): Markdown rendered and
+ * sanitised by the API. Comfortable reading measure and rhythm, engineering tables that scroll
+ * sideways on phones instead of widening the page.
+ */
+@layer components {
+  .prose-book {
+    color: var(--color-text);
+    font-size: var(--text-base);
+    line-height: 1.75;
+    max-width: 68ch;
+    overflow-wrap: break-word;
+  }
+  .prose-book > * + * {
+    margin-top: 1em;
+  }
+  .prose-book h2,
+  .prose-book h3,
+  .prose-book h4 {
+    margin-top: 1.6em;
+    font-weight: 500;
+    line-height: 1.25;
+  }
+  .prose-book h2 {
+    font-size: var(--text-2xl);
+  }
+  .prose-book h3 {
+    font-size: var(--text-xl);
+  }
+  .prose-book h4 {
+    font-size: var(--text-lg);
+  }
+  .prose-book ul,
+  .prose-book ol {
+    padding-left: 1.4em;
+  }
+  .prose-book ul {
+    list-style: disc;
+  }
+  .prose-book ol {
+    list-style: decimal;
+  }
+  .prose-book li + li {
+    margin-top: 0.35em;
+  }
+  .prose-book li::marker {
+    color: var(--color-accent);
+  }
+  .prose-book a {
+    color: var(--color-primary);
+    text-decoration: underline;
+    text-underline-offset: 4px;
+  }
+  .prose-book strong {
+    font-weight: 600;
+  }
+  .prose-book blockquote {
+    border-left: 3px solid var(--color-accent);
+    padding-left: 1em;
+    color: var(--color-text-muted);
+    font-style: italic;
+  }
+  .prose-book code {
+    font-family: var(--font-mono);
+    font-size: 0.9em;
+    background: var(--color-surface-sunken);
+    padding: 0.1em 0.35em;
+    border-radius: var(--radius-xs);
+  }
+  .prose-book pre {
+    overflow-x: auto;
+    background: var(--color-surface-sunken);
+    padding: 1em;
+    border-radius: var(--radius-md);
+  }
+  .prose-book table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+    border-collapse: collapse;
+    font-size: var(--text-sm);
+  }
+  .prose-book th,
+  .prose-book td {
+    border: 1px solid var(--color-border);
+    padding: 0.5em 0.75em;
+    text-align: left;
+    white-space: nowrap;
+  }
+  .prose-book th {
+    background: var(--color-surface-sunken);
+    font-weight: 600;
+  }
+}

@@ -6,8 +6,10 @@ them is a bug. Ask which before "fixing" either. Technical design is in
 
 ## 1. The product
 
-An online bookstore for **one author**, a mechanical engineering lecturer, selling his own
-books to readers **anywhere in the world**, in two formats:
+An online bookstore for **one author**, a **Foundry lecturer in mechanical engineering**, selling his
+own books on **foundry technology (metal casting) and heat treatment** to readers **anywhere in the
+world**, in two formats. Every sample cover, demo book, category and example in the product depicts
+these subjects:
 
 - **Ebook (PDF)**: instant access after payment. Read online in the browser or download.
 - **Print**: a physical copy shipped to the buyer's address.

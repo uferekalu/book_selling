@@ -33,6 +33,10 @@ const COMMON_PASSWORDS = new Set([
   'engineering123',
   'mechanical',
   'thermodynamics',
+  'foundry123',
+  'casting123',
+  'metallurgy',
+  'heattreatment',
 ]);
 
 /** Returns a human-readable problem, or `null` when the password is acceptable. */

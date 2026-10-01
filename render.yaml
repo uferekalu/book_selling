@@ -8,7 +8,12 @@ services:
     runtime: node
     rootDir: backend
     plan: starter
-    buildCommand: npm ci && npm run build
+    # --include=dev: NODE_ENV=production below would otherwise make npm skip the build tools
+    # (@nestjs/cli, typescript) and migrate-mongo.
+    buildCommand: npm ci --include=dev && npm run build
+    # Runs after a successful build and before the new version takes traffic; a failed migration
+    # stops the deploy and the previous version keeps serving (docs/DEPLOYMENT.md §7).
+    preDeployCommand: npm run migrate:up
     startCommand: npm run start:prod
     healthCheckPath: /health
     envVars:
@@ -46,3 +51,21 @@ services:
         sync: false
       - key: BCRYPT_COST
         value: "12"
+      # Cloudinary (docs/ARCHITECTURE.md §10.0); all three required in production
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
+      # One folder per environment, so staging never touches production assets
+      - key: CLOUDINARY_FOLDER
+        value: book-selling/production
+      # Match the Cloudinary plan’s maximum upload size (MB)
+      - key: MANUSCRIPT_MAX_MB
+        sync: false
+      - key: IMAGE_MAX_MB
+        value: "15"
+      # Same value as the storefront’s REVALIDATE_SECRET (Vercel)
+      - key: FRONTEND_REVALIDATE_SECRET
+        sync: false

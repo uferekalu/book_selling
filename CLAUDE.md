@@ -1,6 +1,7 @@
 # Book Selling Platform
 
-Online bookstore for a mechanical engineering lecturer's own books, **ebook and print**, sold
+Online bookstore for a **Foundry lecturer in mechanical engineering**: his own books on **foundry
+technology (metal casting) and heat treatment**, **ebook and print**, sold
 worldwide in **NGN, USD, GBP and EUR** through **Paystack, Flutterwave and Stripe**. Visitors can
 read each book's **abstract and introduction in an in-browser preview reader** before buying.
 

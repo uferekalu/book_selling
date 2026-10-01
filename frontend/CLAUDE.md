@@ -85,6 +85,23 @@ Full design: `../docs/ARCHITECTURE.md` §6 (design system) and §7 (frontend arc
 - Money is displayed only through `PriceTag` / `formatMoney()`. Amounts from the API are integer
   minor units.
 - Public catalogue pages are server components. Use `"use client"` only where needed.
+- **Catalogue reads** on the server go through `src/lib/catalog.ts` (`server-only`, cached with
+  tags; `getBook` handles 404 and slug redirects). Wrap optional sections in `orFallback()` so a
+  page still renders when the API is down. Tag names must match the backend's
+  `storefront-revalidator.ts`.
+- The visitor's currency is the `bs_currency` cookie (set by `src/proxy.ts`), read server-side with
+  `requestCurrency()`. Don't put it in Redux.
+- Images from Cloudinary go through `next/image` (the custom loader adds sizing); never build
+  Cloudinary size URLs by hand.
+- **Price inputs** use the kit's `MoneyInput` (major units in, integer minor units out, parsed as a
+  string by `parseMajorToMinor`). Never `Number(text) * 100`.
+- Uploads: `useUpload(kind, ownerId)` (admin) → `lib/upload.ts` (signed, chunked, retried,
+  cancellable). Don't call Cloudinary any other way.
+- Admin editor sections save independently and report unsaved state with `useReportDirty`. Sync
+  from server data during render keyed on `updatedAt`, not in an effect (React's
+  `set-state-in-effect` lint fails otherwise).
+- Rendering stored HTML (`dangerouslySetInnerHTML`) is allowed only for fields the API sanitised
+  (`*Html`); JSON-LD escapes `<` as `\u003c`.
 
 ## Local dev
 
@@ -92,5 +109,7 @@ Full design: `../docs/ARCHITECTURE.md` §6 (design system) and §7 (frontend arc
 npm run dev          # http://localhost:3000 (API expected at http://localhost:4000)
 npm run lint
 npm test
-npm run build        # production build; set CI=true locally if API_URL isn't set (API_URL is baked in at build)
+npm run build        # production build; set API_URL=http://localhost:4000 (or CI=true) locally: API_URL is baked in at build
+# Production server for check:responsive: use `node node_modules/next/dist/bin/next start -p 3100`
+# in Git Bash (the npx shim exited with 127 mid-run there).
 ```

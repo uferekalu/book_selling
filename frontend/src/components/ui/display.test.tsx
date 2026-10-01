@@ -104,15 +104,15 @@ describe("Pagination", () => {
 
 describe("BookCover and BookCard", () => {
   it("gives a typographic cover an accessible name when there is no artwork", () => {
-    render(<BookCover title="Applied Thermodynamics" author="Prof. A. Author" />);
-    expect(screen.getByRole("img", { name: "Cover of Applied Thermodynamics by Prof. A. Author" })).toBeInTheDocument();
+    render(<BookCover title="Principles of Foundry Technology" author="Prof. A. Author" />);
+    expect(screen.getByRole("img", { name: "Cover of Principles of Foundry Technology by Prof. A. Author" })).toBeInTheDocument();
   });
 
   it("makes the whole card one link named by the book title", () => {
     render(
       <BookCard
-        href="/books/applied-thermodynamics"
-        title="Applied Thermodynamics"
+        href="/books/principles-of-foundry-technology"
+        title="Principles of Foundry Technology"
         author="Prof. A. Author"
         price={{ amount: 1_500_000, currency: "NGN" }}
         priceIsFrom
@@ -122,8 +122,8 @@ describe("BookCover and BookCard", () => {
     );
     const links = screen.getAllByRole("link");
     expect(links).toHaveLength(1);
-    expect(links[0]).toHaveAccessibleName("Applied Thermodynamics");
-    expect(links[0]).toHaveAttribute("href", "/books/applied-thermodynamics");
+    expect(links[0]).toHaveAccessibleName("Principles of Foundry Technology");
+    expect(links[0]).toHaveAttribute("href", "/books/principles-of-foundry-technology");
     expect(screen.getByText("From")).toBeInTheDocument();
     expect(screen.getByText("Ebook")).toBeInTheDocument();
   });

@@ -1,6 +1,6 @@
 # Roadmap
 
-**Next planned ticket: BS-5** · **Next reactive ticket: BS-20**
+**Next planned ticket: BS-6** · **Next reactive ticket: BS-20**
 
 Each ticket is one branch (`feature/BS-<n>-<suffix>`) and one squash-merged PR. The order is
 deliberate: each ticket builds only on merged work. When a ticket finishes, its row is rewritten
@@ -14,7 +14,7 @@ so planned numbers never shift; they get a new row at the end of the table.
 | BS-2 | `design-system` | See detail below | ✅ Done |
 | BS-3 | `email-outbox` | See detail below | ✅ Done |
 | BS-4 | `auth-accounts` | See detail below | ✅ Done |
-| BS-5 | `catalog` | Authors, categories, books with formats and per-currency prices; **Cloudinary upload pipeline** (ARCHITECTURE §10.0): signed direct uploads, Admin-API verification, 2:3 cover cropper, blur placeholders, dominant colour, `next/image` Cloudinary loader, authenticated manuscript with PDF checks and page count, orphan cleanup; `migrate-mongo`; admin step-by-step book editor with autosave and a publish checklist; storefront home, `/books` (search, filters, sort), book detail (RSC, JSON-LD, abstract as HTML), author page, header/footer/mobile nav, currency detection and switcher, recently viewed | ⏳ Planned |
+| BS-5 | `catalog` | See detail below | ✅ Done |
 | BS-6 | `preview-reader` | **Read-before-you-buy** (ARCHITECTURE §10.1, PRODUCT_RULES §4): server-side preview PDF generation (pdf-lib, page-range copy, "Preview" stamp, metadata strip), blurred locked teasers, outline extraction; public preview endpoint; admin preview section picker with thumbnails and 15% cap; pdf.js reader (worker, text layer, scroll/spread/zoom/fullscreen, keyboard, sepia), TOC with locked chapters, progress, end-of-preview "Continue reading" card, 80% nudge, `reading_progress`, `preview_events`; preview leak tests | ⏳ Planned |
 | BS-7 | `cart-checkout-orders` | `common/money`, carts (guest and user, merge on login, repricing), shipping zones and rates, coupon engine, server quote, order placement with idempotency key and transaction (stock reservation, coupon hold, already-owned check, guest → unclaimed account), order state machine, expiry job, order numbers; frontend cart drawer, checkout steps, **checkout drawer inside the reader**, order history and detail | ⏳ Planned |
 | BS-8 | `payments` | Stripe, Paystack and Flutterwave adapters; `payments` and `webhook_events` collections; initiate, webhooks (raw-body signature verification), verify-on-return, the single `settle()` with amount/currency assertion inside a transaction (entitlements, stock commit, outbox receipt); reconciliation job; refunds (two-phase, outcome-unknown); out-of-band refund and dispute detection; provider switcher UI; `/checkout/callback` (verify + poll + return to the reader at the saved page); the **full payment test matrix** | ⏳ Planned |
@@ -302,3 +302,66 @@ checklist is reviewed whenever a ticket is planned, so nothing important is forg
   hint present means restore).
 - **Process**: hotfix branched from `main` with BS-5 work stashed; introduced separate "next
   planned" and "next reactive" ticket numbers so planned numbers never shift.
+
+## BS-5: Catalogue, Cloudinary uploads, storefront and book editor (✅ Done, 2026-10-01)
+
+- **Backend** (`catalog` and `uploads` modules; ARCHITECTURE §10.0 is the as-built design):
+  - Authors, categories (subjects) and books: formats (ebook/print) with an explicit price per
+    currency in integer minor units, optional sale prices, print stock/reserved/weight/limit,
+    denormalised `fromPrices`, text search index, slug history with redirects, sanitised Markdown
+    (`marked` + `sanitize-html`), and the **publish checklist** (`publishProblems`), enforced by
+    the API and returned as `problems` when publishing is refused.
+  - Status rules: publish, unpublish, archive; only never-published drafts can be deleted; a
+    published book can't lose its last format on sale; stock can't drop below reserved copies.
+  - **Cloudinary pipeline**: signed direct uploads per owner folder, Admin-API verification before
+    attaching (folder, format, size, dimensions, pages, etag), crop-first delivery URLs, blur
+    placeholder, dominant colour, the manuscript as an `authenticated` asset whose URL is never
+    returned, and `UploadCleanupJob` (hourly, job-locked) that deletes abandoned `pending`
+    uploads after checking the database for references.
+  - Public `/catalog/*` (list with search, subject, author, format, price and sort; detail with
+    redirects; related; subjects with counts; authors; sitemap) and staff-only
+    `/admin/catalog/*` (with 2FA), including `markdown-preview`. Every edit is audit-logged and
+    refreshes the storefront cache through `/internal/revalidate`.
+  - `migrate-mongo` with a baseline migration (run by Render's pre-deploy step); a demo seed of 8
+    foundry and heat-treatment books (`seed:demo`, refuses production, `--remove`).
+- **Frontend**:
+  - Storefront (server components): new home page (hero with featured covers, subjects, new and
+    notable, the author, FAQ), `/books` with search, subject and format filters (bottom sheet on
+    phones), sort and pagination in the URL; the book page (cover, sample pages, format picker with
+    stock, abstract, description/contents/details tabs, related books, JSON-LD); author pages;
+    not-found page; `sitemap.xml` and `robots.txt`; **recently viewed** (this browser only, no
+    prices stored).
+  - Currency detection in `proxy.ts` (country, then language), a switcher in the header and
+    drawer; Cloudinary `next/image` loader.
+  - **Admin**: book list (search, status tabs, new-book dialog) and a one-page book editor with
+    independent sections (details, abstract and description with live preview, table of contents
+    as text, cover upload with a 2:3 cropper, sample pages, chunked book-PDF upload with progress
+    and cancel, formats and prices), a status card with the checklist, and an unsaved-changes guard;
+    authors (with photo) and subjects managers.
+  - New kit component `MoneyInput`; `parseMajorToMinor` (string parsing, never float maths);
+    `lib/upload.ts` (chunks, retries, re-signing, cancel).
+- **Not done here, by design**: buying (BS-7/8, the buttons say checkout opens shortly), the
+  preview builder and reader (BS-6; publishing requires it, so nothing can go on sale before BS-6),
+  rejecting encrypted PDFs (BS-6, the first step that reads pages), filling the contents from the
+  PDF outline (later).
+- **Tests**: backend 166 unit tests (rich text, catalogue rules, Cloudinary signing and
+  verification, 18 catalogue service tests including cleanup) and 22 e2e tests (admin 2FA gate,
+  editor flow over HTTP, float prices rejected, sanitised Markdown preview); frontend 266 tests
+  (money parsing, upload client, crop maths, contents parser, editor logic, `MoneyInput`, currency
+  detection, image loader, recently viewed).
+- **Verified live** against the real API with the demo catalogue and the production build:
+  `check:responsive` passed on 9 pages × 6 widths × 2 themes; the admin area was checked at 375px
+  and 1440px after a real sign-in with a 2FA code (books, editor, authors, subjects, new-book
+  dialog), with no overflow and no console errors.
+- **Incidents and decisions**:
+  1. **Render build would have failed on first deploy**: `NODE_ENV=production` makes `npm ci`
+     skip devDependencies (the Nest CLI and TypeScript). The build is now
+     `npm ci --include=dev`, and migrations run as the pre-deploy command.
+  2. Explicit per-section saves instead of autosave (ARCHITECTURE §10.0 explains why).
+  3. `tsx` doesn't emit decorator metadata, so the DI-based seed script is compiled with `tsc`.
+  4. React's `set-state-in-effect` lint rejected syncing editor state in effects; sections now
+     sync during render, keyed on `updatedAt`.
+  5. Under full parallel load, a 1.5s database-backed test hit vitest's 5s default; the backend
+     timeout is now 20s.
+  6. Covers and copy now depict foundry and heat treatment (the lecturer's field), not
+     thermodynamics.

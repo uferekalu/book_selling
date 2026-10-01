@@ -31,6 +31,10 @@ const COMMON_PASSWORDS = new Set([
   "engineering123",
   "mechanical",
   "thermodynamics",
+  "foundry123",
+  "casting123",
+  "metallurgy",
+  "heattreatment",
 ]);
 
 export function passwordProblem(password: string, context: { email?: string; name?: string } = {}): string | null {
