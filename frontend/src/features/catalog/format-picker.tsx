@@ -1,9 +1,15 @@
 "use client";
 
 import { BookOpen, Download, ShoppingBag, Truck } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { Badge, Button, ButtonLink, Icon, PriceTag, RadioGroup } from "@/components/ui";
+import { Badge, Button, ButtonLink, Icon, PriceTag, RadioGroup, useToast } from "@/components/ui";
+import { useAddToCartMutation } from "@/lib/api/commerce-api";
+import { errorMessage, errorStatus } from "@/lib/api/errors";
 import type { FormatType, PublicFormat } from "@/lib/catalog-types";
+import { useCurrency } from "@/lib/client-currency";
+import { useAppDispatch } from "@/lib/redux/hooks";
+import { cartOpened } from "@/lib/redux/slices/cart-ui-slice";
 
 const LABEL: Record<FormatType, string> = { ebook: "Ebook (PDF)", print: "Print" };
 const DESCRIPTION: Record<FormatType, string> = {
@@ -19,30 +25,55 @@ function stockBadge(format: PublicFormat) {
 }
 
 /**
- * Choose a format and see its price in your currency. Buying arrives with checkout (BS-7) and the
- * free reader with BS-6; until then the buttons say so plainly rather than pretending to work.
+ * Choose a format and see its price in your currency. "Buy ebook" goes straight to checkout;
+ * "Add to cart" (print) opens the cart. Inside the reader, `onCheckout` opens checkout in a drawer
+ * over the book instead of leaving it.
  */
 export function FormatPicker({
+  bookId,
   slug,
   formats,
   hasPreview,
   showPreviewButton = true,
+  onCheckout,
 }: {
+  bookId: string;
   slug: string;
   formats: PublicFormat[];
   hasPreview: boolean;
   /** Off inside the reader itself. */
   showPreviewButton?: boolean;
+  onCheckout?: () => void;
 }) {
   const purchasable = formats.filter((f) => f.price);
-  const [selected, setSelected] = useState<FormatType | undefined>(
-    (purchasable.find((f) => f.available) ?? purchasable[0])?.type,
-  );
+  const [selected, setSelected] = useState<FormatType | undefined>((purchasable.find((f) => f.available) ?? purchasable[0])?.type);
   const current = purchasable.find((f) => f.type === selected);
+  const currency = useCurrency();
+  const [add, addState] = useAddToCartMutation();
+  const [owned, setOwned] = useState(false);
+  const router = useRouter();
+  const dispatch = useAppDispatch();
+  const { toast } = useToast();
 
   if (purchasable.length === 0) {
     return <p className="text-text-muted">This book isn&rsquo;t available in your currency yet.</p>;
   }
+
+  const buy = async () => {
+    if (!current || !currency) return;
+    try {
+      await add({ bookId, format: current.type, quantity: 1, currency }).unwrap();
+      if (onCheckout) onCheckout();
+      else if (current.type === "ebook") router.push("/checkout");
+      else {
+        dispatch(cartOpened());
+        toast({ title: "Added to your cart", tone: "success" });
+      }
+    } catch (error) {
+      if (errorStatus(error) === 409 && current.type === "ebook") setOwned(true);
+      toast({ title: errorMessage(error), tone: "danger" });
+    }
+  };
 
   return (
     <div className="flex flex-col gap-5">
@@ -50,7 +81,10 @@ export function FormatPicker({
         legend="Choose a format"
         variant="cards"
         value={selected}
-        onChange={setSelected}
+        onChange={(value) => {
+          setSelected(value);
+          setOwned(false);
+        }}
         options={purchasable.map((format) => ({
           value: format.type,
           label: (
@@ -65,16 +99,24 @@ export function FormatPicker({
         }))}
       />
       <div className="flex flex-col gap-3 sm:flex-row">
-        <Button
-          size="lg"
-          variant="accent"
-          fullWidth
-          disabled
-          aria-describedby="checkout-note"
-          leadingIcon={<Icon icon={current?.type === "print" ? ShoppingBag : Download} size="sm" />}
-        >
-          {current?.type === "print" ? "Add to cart" : "Buy ebook"}
-        </Button>
+        {owned ? (
+          <ButtonLink href="/account/orders" size="lg" variant="outline" fullWidth>
+            In your library
+          </ButtonLink>
+        ) : (
+          <Button
+            size="lg"
+            variant="accent"
+            fullWidth
+            disabled={!current?.available || !currency}
+            isLoading={addState.isLoading}
+            loadingLabel="Adding"
+            onClick={() => void buy()}
+            leadingIcon={<Icon icon={current?.type === "print" ? ShoppingBag : Download} size="sm" />}
+          >
+            {current?.type === "print" ? "Add to cart" : "Buy ebook"}
+          </Button>
+        )}
         {!showPreviewButton ? null : hasPreview ? (
           <ButtonLink href={`/books/${slug}/read`} size="lg" variant="outline" fullWidth>
             <Icon icon={BookOpen} size="sm" />
@@ -86,9 +128,7 @@ export function FormatPicker({
           </Button>
         )}
       </div>
-      <p id="checkout-note" className="text-sm text-text-muted">
-        Online checkout opens shortly. Secure payment with Paystack, Flutterwave or Stripe.
-      </p>
+      <p className="text-sm text-text-muted">Secure payment with Paystack, Flutterwave or Stripe.</p>
       {current?.type === "print" && (
         <p className="flex items-center gap-2 text-sm text-text-muted">
           <Icon icon={Truck} size="sm" /> Ships worldwide; the cost for your country is shown before you pay.

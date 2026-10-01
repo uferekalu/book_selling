@@ -2,11 +2,13 @@ import { combineReducers, configureStore } from "@reduxjs/toolkit";
 import { setupListeners } from "@reduxjs/toolkit/query";
 import { api } from "@/lib/api/api";
 import { sessionSlice } from "./slices/session-slice";
+import { cartUiSlice } from "./slices/cart-ui-slice";
 import { themeSlice } from "./slices/theme-slice";
 
 const rootReducer = combineReducers({
   [themeSlice.name]: themeSlice.reducer,
   [sessionSlice.name]: sessionSlice.reducer,
+  [cartUiSlice.name]: cartUiSlice.reducer,
   [api.reducerPath]: api.reducer,
 });
 

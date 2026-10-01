@@ -45,6 +45,19 @@ Transactions (used by checkout and payment settlement) **need a replica set**. P
   mongosh --eval 'rs.initiate()'
   # MONGODB_URI=mongodb://localhost:27017/book_selling?replicaSet=rs0
   ```
+- **MongoDB installed as a Windows service** (the owner's machine): make the service a single-node
+  replica set once, from an **administrator** PowerShell:
+  1. Edit `C:\Program Files\MongoDB\Server\<version>\bin\mongod.cfg` and add
+     ```yaml
+     replication:
+       replSetName: rs0
+     ```
+  2. `Restart-Service MongoDB`
+  3. `mongosh --eval "rs.initiate()"` (once; it answers `{ ok: 1 }`)
+  4. In `backend/.env`: `MONGODB_URI=mongodb://localhost:27017/book_selling?replicaSet=rs0`
+  Existing data is kept. Without this, browsing works but checkout answers "temporarily
+  unavailable" and the API log says MongoDB is not a replica set.
+
 Tests don't need either: they use `mongodb-memory-server`.
 
 ### Provider webhooks locally

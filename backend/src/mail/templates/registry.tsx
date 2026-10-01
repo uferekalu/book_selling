@@ -14,6 +14,7 @@ import {
   type WelcomeData,
 } from './auth.js';
 import { EmailDeadLetter, type EmailDeadLetterData } from './ops.js';
+import { CompleteYourOrder, type CompleteYourOrderData } from './orders.js';
 import type { EmailBrand } from './theme.js';
 
 export interface TemplateDefinition<D> {
@@ -33,6 +34,22 @@ const define = <D,>(definition: TemplateDefinition<D>) => definition;
  * sample, and the render test plus `npm run email:preview` cover it automatically.
  */
 export const EMAIL_TEMPLATES = {
+  'order.complete-your-order': define<CompleteYourOrderData>({
+    subject: (data) => `Your order ${data.orderNumber} wasn’t completed`,
+    render: (data, brand) => <CompleteYourOrder data={data} brand={brand} />,
+    category: 'notification',
+    sensitive: false,
+    sample: {
+      name: 'Ada',
+      orderNumber: 'BS-2026-000123',
+      items: [
+        'Principles of Foundry Technology (ebook)',
+        'Heat Treatment of Steels (print × 1)',
+      ],
+      total: '₦40,000.00',
+      cartUrl: 'https://example.com/cart',
+    },
+  }),
   'auth.verify-email': define<VerifyEmailData>({
     subject: (_, brand) => `Confirm your email for ${brand.name}`,
     render: (data, brand) => <VerifyEmail data={data} brand={brand} />,

@@ -100,6 +100,12 @@ Full design: `../docs/ARCHITECTURE.md` §6 (design system) and §7 (frontend arc
 - Admin editor sections save independently and report unsaved state with `useReportDirty`. Sync
   from server data during render keyed on `updatedAt`, not in an effect (React's
   `set-state-in-effect` lint fails otherwise).
+- **Cart and checkout**: read the cart with `useCart()` (waits for the session check, follows the
+  currency store `lib/client-currency.ts`; `CartSessionSync` refetches on sign-in/out). Every
+  amount shown on Review comes from `POST /checkout/quote`; the client never computes a price.
+  Place orders with `checkoutKeyFor(fingerprintOf(...))`: same details → same Idempotency-Key (a
+  safe retry), anything changed → a new one; `forgetCheckoutKey()` after success. A guest's key is
+  kept with `rememberGuestOrder` and only ever sent in request bodies.
 - **Preview reader** (`src/features/reader`, route `src/app/(reader)/books/[slug]/read`, no site
   chrome): client-only (`next/dynamic` with `ssr: false`), pdf.js loaded on demand with its worker
   (`new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url)`), canvas plus text layer per

@@ -1,6 +1,6 @@
 # Roadmap
 
-**Next planned ticket: BS-7** · **Next reactive ticket: BS-20**
+**Next planned ticket: BS-8** · **Next reactive ticket: BS-20**
 
 Each ticket is one branch (`feature/BS-<n>-<suffix>`) and one squash-merged PR. The order is
 deliberate: each ticket builds only on merged work. When a ticket finishes, its row is rewritten
@@ -16,7 +16,7 @@ so planned numbers never shift; they get a new row at the end of the table.
 | BS-4 | `auth-accounts` | See detail below | ✅ Done |
 | BS-5 | `catalog` | See detail below | ✅ Done |
 | BS-6 | `preview-reader` | See detail below | ✅ Done |
-| BS-7 | `cart-checkout-orders` | `common/money`, carts (guest and user, merge on login, repricing), shipping zones and rates, coupon engine, server quote, order placement with idempotency key and transaction (stock reservation, coupon hold, already-owned check, guest → unclaimed account), order state machine, expiry job, order numbers; frontend cart drawer, checkout steps, **checkout drawer inside the reader**, order history and detail | ⏳ Planned |
+| BS-7 | `cart-checkout-orders` | See detail below | ✅ Done |
 | BS-8 | `payments` | Stripe, Paystack and Flutterwave adapters; `payments` and `webhook_events` collections; initiate, webhooks (raw-body signature verification), verify-on-return, the single `settle()` with amount/currency assertion inside a transaction (entitlements, stock commit, outbox receipt); reconciliation job; refunds (two-phase, outcome-unknown); out-of-band refund and dispute detection; provider switcher UI; `/checkout/callback` (verify + poll + return to the reader at the saved page); the **full payment test matrix** | ⏳ Planned |
 | BS-9 | `library-fulfillment` | Entitlements, My Library, online full reader (signed range-request URL, synced progress), downloads (5-min signed URLs, rate limit), per-buyer PDF stamping; shipments admin flow with tracking; receipt with PDF invoice; all commerce emails | ⏳ Planned |
 | BS-10 | `messaging` | Socket.IO gateway (handshake auth, rooms, rejoin on reconnect), conversations and messages, staff inbox, "Ask the author" and order-linked threads, read receipts and unread counts, offline email fallback via delayed outbox, contact form (Turnstile/honeypot), in-app notifications bell | ⏳ Planned |
@@ -417,3 +417,62 @@ checklist is reviewed whenever a ticket is planned, so nothing important is forg
      is now 120s.
   5. A Render instance needs about 4× the largest manuscript in RAM for preview builds
      (DEPLOYMENT §4a).
+
+## BS-7: Cart, checkout and orders (✅ Done, 2026-10-01)
+
+- **Backend** (`src/commerce`; ARCHITECTURE §8.2 "As built"):
+  - `common/money/money.ts`: the only money arithmetic (checked integers, currency-safe,
+    half-up percentage once, provider major-unit strings, display formatting).
+  - One pure pricing function for cart, quote and placement: availability, owned ebooks, stock
+    and per-order limits, shipping by zone and currency, one coupon on the item subtotal, no free
+    orders.
+  - Carts for guests (httpOnly cookie) and users, merged on sign-in, re-priced on every read, with
+    "the price changed since you added it". `@OptionalAuth()` so a stale token renews instead of
+    showing a guest cart.
+  - Shipping zones (one zone per country, an "everywhere else" zone) and coupons (percent or fixed
+    per currency, minimum spend, dates, total and per-customer limits, book/format restrictions):
+    admin APIs and audit entries.
+  - Orders: idempotent placement (hashed checkout key, which also proves a guest's access), one
+    transaction for buyer, re-quote, one open checkout per buyer, optimistic stock hold, coupon
+    hold, order number and the 30-minute window; a totals invariant on every save; cancel and
+    expiry release holds exactly once; one "complete your order" email per expired order, queued
+    in the same transaction; the order state machine with an exhaustive table.
+  - Entitlement schema (library) so owned ebooks are refused now; granting comes with settlement.
+- **Frontend**: cart button and drawer in the header, `/cart`, `/checkout` (Details → Shipping
+  for print → Review & pay, server-quoted totals, discount code, terms, idempotent "Place order"),
+  checkout in a drawer over the preview reader (returning to the reader page after payment, from
+  BS-8), "Buy ebook"/"Add to cart" wired, "In your library" for owned ebooks, account Orders list
+  and detail with cancel, the guest order page, admin **Shipping** zones editor and **Orders** list.
+  The order confirmation says plainly that online payment opens with the next update.
+- **Not done here, by design** (BS-8): taking payment, settlement, receipts, clearing the cart on
+  success, and the 15-minute "payment in progress" grace in expiry and in one-open-checkout.
+  Coupon admin screens: BS-11 (the API is complete).
+- **Money-path review** (`.claude/skills/money-path-review`): amounts, transitions, transactions,
+  idempotency and concurrency items pass; settlement, webhook and refund items are BS-8/BS-9.
+  Fixed during the review: two places summed money outside the money module (the coupon's
+  eligible subtotal and the order invariant), the expiry reminder was queued after the commit
+  (now inside the transaction), and the per-customer coupon count now reads inside the order
+  transaction.
+- **Tests**: backend 223 unit tests (money, pricing and coupons table-driven, the state machine's
+  full table, 14 order integration tests including the same key sent twice at once and two
+  buyers racing for the last copy, expiry releasing exactly once, superseded checkouts, guests,
+  owned ebooks, coupon limits, the totals invariant) and 28 e2e tests (guest cookie attributes,
+  strict validation, stale token 401, idempotent placement, guest lookup by key only, customer
+  isolation, admin gating); frontend 280 tests (checkout key, plus the earlier suites).
+- **Verified live** on a 375px phone against a replica-set database: add print to cart (drawer),
+  "Buy ebook" to checkout, validation, shipping address, a wrong discount code explained, "Place
+  order · ₦42,500.00" (₦25,000 + ₦15,000 + ₦2,500 shipping), order reserved, the guest order page,
+  and checkout opening over the reader; the database showed the older checkout replaced and its
+  stock released, one copy held, and an unclaimed account for the guest. No console errors or
+  layout widening; `check:responsive` passed on home, book, cart, checkout and reader pages × 6
+  widths × 2 themes.
+- **Incidents and decisions**:
+  1. The local MongoDB is a standalone Windows service, so transactions fail there; checkout now
+     answers 503 with a clear log, and DEPLOYMENT §2 has the four steps to make the service a
+     replica set.
+  2. `POST /orders/guest/cancel` would have been captured by `/orders/:orderNumber/cancel`;
+     guest routes moved to `/guest-orders/…`.
+  3. The cart is kept until payment (not cleared at placement), so an expired order loses
+     nothing; a newer checkout replaces an older unpaid one instead.
+  4. Accepted: for guests, "already in your library" is checked against the account with that
+     email (prevents paying twice; reveals ownership only to someone who types that email).

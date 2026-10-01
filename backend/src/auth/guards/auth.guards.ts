@@ -7,7 +7,10 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
-import { IS_PUBLIC_KEY } from '../../common/decorators/public.decorator.js';
+import {
+  IS_PUBLIC_KEY,
+  OPTIONAL_AUTH_KEY,
+} from '../../common/decorators/public.decorator.js';
 import { STAFF_ROLES, type UserRole } from '../../users/schemas/user.schema.js';
 import {
   ROLES_KEY,
@@ -24,7 +27,8 @@ function bearerToken(request: AuthenticatedRequest): string | null {
 /**
  * Global, default-deny authentication (ARCHITECTURE §5): every route needs a valid access token
  * unless marked `@Public()`. On public routes a valid token is still attached (personalisation),
- * and an invalid one is ignored rather than rejected.
+ * and an invalid one is ignored rather than rejected, except on `@OptionalAuth()` routes, where a
+ * stale token gets 401 so the client renews it.
  */
 @Injectable()
 export class AccessTokenGuard implements CanActivate {
@@ -53,7 +57,16 @@ export class AccessTokenGuard implements CanActivate {
       }
     }
     if (payload) request.user = payload;
-    if (isPublic) return true;
+    if (isPublic) {
+      const optionalAuth = this.reflector.getAllAndOverride<boolean>(
+        OPTIONAL_AUTH_KEY,
+        [context.getHandler(), context.getClass()],
+      );
+      if (optionalAuth && token && !payload) {
+        throw new UnauthorizedException('Your session expired');
+      }
+      return true;
+    }
     if (!payload) throw new UnauthorizedException('Please sign in to continue');
     return true;
   }

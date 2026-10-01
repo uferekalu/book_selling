@@ -10,9 +10,11 @@ import { cn } from "@/lib/cn";
 import { useAppSelector } from "@/lib/redux/hooks";
 
 export const ADMIN_NAV = [
+  { href: "/admin/orders", label: "Orders" },
   { href: "/admin/books", label: "Books" },
   { href: "/admin/authors", label: "Authors" },
   { href: "/admin/categories", label: "Subjects" },
+  { href: "/admin/shipping", label: "Shipping" },
 ] as const;
 
 /**
@@ -27,7 +29,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
           <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <Eyebrow>Store admin</Eyebrow>
-              <h1 className="text-4xl font-medium">Catalogue</h1>
+              <h1 className="text-4xl font-medium">Store</h1>
             </div>
             <AdminNav />
           </div>

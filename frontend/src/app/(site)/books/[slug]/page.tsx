@@ -158,7 +158,7 @@ export default async function BookPage({ params }: PageProps<"/books/[slug]">) {
               )}
             </div>
 
-            <FormatPicker slug={book.slug} formats={book.formatDetails} hasPreview={book.hasPreview} />
+            <FormatPicker bookId={book.id} slug={book.slug} formats={book.formatDetails} hasPreview={book.hasPreview} />
 
             {book.abstractHtml && (
               <section aria-labelledby="abstract-heading" className="flex flex-col gap-3 rounded-2xl border border-border bg-surface p-5 sm:p-7">
