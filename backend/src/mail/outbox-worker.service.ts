@@ -52,12 +52,13 @@ export class OutboxWorker {
     config: ConfigService,
   ) {
     this.from =
-      config.get<string>('MAIL_FROM') ??
+      config.get<string>('MAIL_FROM') ||
       `${renderer.brand.name} <onboarding@resend.dev>`;
     this.replyTo =
-      config.get<string>('MAIL_REPLY_TO') ??
-      config.get<string>('SUPPORT_EMAIL');
-    this.ownerAlertEmail = config.get<string>('OWNER_ALERT_EMAIL');
+      config.get<string>('MAIL_REPLY_TO') ||
+      config.get<string>('SUPPORT_EMAIL') ||
+      undefined;
+    this.ownerAlertEmail = config.get<string>('OWNER_ALERT_EMAIL') || undefined;
     // Tests drive `processDue()` directly with a controlled clock instead of the timer.
     this.enabled = config.get<string>('NODE_ENV') !== 'test';
   }

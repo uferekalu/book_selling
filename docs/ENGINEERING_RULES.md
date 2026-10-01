@@ -11,8 +11,11 @@ A rule with a "why" came from a real incident, mostly in the sister project `foo
 - Every change goes on a branch named **`feature/BS-<n>-<short-kebab-description>`**, for example
   `feature/BS-7-cart-checkout-orders`. Use `fix/BS-<n>-…` for a bug fix if you like; the ticket
   number is what matters.
-- `<n>` is the **"Next ticket number"** at the top of [`ROADMAP.md`](ROADMAP.md). Bump it in the
-  same branch.
+- `<n>` comes from the top of [`ROADMAP.md`](ROADMAP.md): **"Next planned ticket"** for roadmap work,
+  **"Next reactive ticket"** for bug fixes, hotfixes and follow-ups (numbered after the last planned
+  ticket so planned numbers never shift). Bump the one you used, in the same branch. A hotfix that
+  interrupts in-progress work: `git stash -u`, branch from an updated `main`, fix, merge, then return
+  and `git stash pop`.
 - Commit messages start with the ticket: `BS-7: reserve print stock atomically at order placement`.
 - Open a PR against `main` with `gh pr create`. The body has a **Summary**, **Why**, and a
   **Test plan** listing the commands run and their results.

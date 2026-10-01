@@ -57,6 +57,29 @@ describe('envValidationSchema', () => {
     expect(error?.message).toMatch(/32 bytes/);
   });
 
+  it('treats empty values (KEY= in .env.example) as unset', () => {
+    const { error, value } = envValidationSchema.validate({
+      ...valid,
+      RESEND_API_KEY: '',
+      RESEND_WEBHOOK_SECRET: '',
+      MAIL_FROM: '',
+      SUPPORT_EMAIL: '',
+      OWNER_ALERT_EMAIL: '',
+    });
+    expect(error).toBeUndefined();
+    expect(value.RESEND_API_KEY).toBeUndefined();
+  });
+
+  it('still requires production mail settings when they are empty', () => {
+    const { error } = envValidationSchema.validate({
+      ...valid,
+      ...productionMail,
+      NODE_ENV: 'production',
+      RESEND_API_KEY: '',
+    });
+    expect(error?.message).toContain('RESEND_API_KEY');
+  });
+
   it('allows missing mail settings outside production', () => {
     expect(envValidationSchema.validate(valid).error).toBeUndefined();
   });
