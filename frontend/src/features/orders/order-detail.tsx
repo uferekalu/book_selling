@@ -3,6 +3,7 @@
 import { Badge, BookCover, Button, Card, Divider } from "@/components/ui";
 import type { OrderStatus, OrderView } from "@/lib/api/commerce-api";
 import { countryName } from "@/lib/countries";
+import { PayNow } from "@/features/checkout/pay-now";
 import { formatMoney } from "@/lib/money";
 
 export const ORDER_STATUS: Record<OrderStatus, { label: string; tone: "neutral" | "info" | "success" | "warning" | "danger" }> = {
@@ -24,7 +25,18 @@ export function OrderStatusBadge({ order }: { order: Pick<OrderView, "status" | 
 }
 
 /** One order: items, totals, delivery and history. */
-export function OrderDetail({ order, onCancel, cancelling }: { order: OrderView; onCancel?: () => void; cancelling?: boolean }) {
+export function OrderDetail({
+  order,
+  onCancel,
+  cancelling,
+  guest = false,
+}: {
+  order: OrderView;
+  onCancel?: () => void;
+  cancelling?: boolean;
+  /** A guest order (paying needs the key kept on this device). */
+  guest?: boolean;
+}) {
   const money = (amount: number) => formatMoney({ amount, currency: order.currency });
   return (
     <div className="flex flex-col gap-6">
@@ -37,14 +49,17 @@ export function OrderDetail({ order, onCancel, cancelling }: { order: OrderView;
       </div>
 
       {order.awaitingPayment && (
-        <Card variant="sunken" className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm text-text">
-            Waiting for payment until {new Date(order.expiresAt!).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}. Online
-            payment opens in the next update; nothing has been charged.
-          </p>
+        <Card className="flex flex-col gap-4">
+          <div className="flex flex-col gap-1">
+            <h2 className="text-xl font-medium">Complete your payment</h2>
+            <p className="text-sm text-text-muted">
+              Your books are held until {new Date(order.expiresAt!).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}. Nothing has been charged yet.
+            </p>
+          </div>
+          <PayNow order={order} guest={guest} />
           {onCancel && (
-            <Button variant="outline" size="sm" isLoading={cancelling} onClick={onCancel}>
-              Cancel order
+            <Button variant="ghost" size="sm" className="self-start" isLoading={cancelling} onClick={onCancel}>
+              Cancel this order
             </Button>
           )}
         </Card>

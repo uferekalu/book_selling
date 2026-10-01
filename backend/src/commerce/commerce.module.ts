@@ -35,6 +35,7 @@ import {
   ShippingZoneSchema,
 } from './schemas/shipping-zone.schema.js';
 import { ShippingService } from './shipping.service.js';
+import { Payment, PaymentSchema } from '../payments/schemas/payment.schema.js';
 
 /** Cart, pricing, shipping, coupons and orders (ARCHITECTURE §8). Payments arrive in BS-8. */
 @Module({
@@ -53,6 +54,8 @@ import { ShippingService } from './shipping.service.js';
       { name: Order.name, schema: OrderSchema },
       { name: Counter.name, schema: CounterSchema },
       { name: Entitlement.name, schema: EntitlementSchema },
+      // Read-only here: expiry and one-open-checkout skip orders with a payment in progress.
+      { name: Payment.name, schema: PaymentSchema },
     ]),
   ],
   controllers: [CartController, CheckoutController, AdminCommerceController],

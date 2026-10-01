@@ -43,6 +43,7 @@ export function GuestOrder({ orderNumber }: { orderNumber: string }) {
       ) : (
         <OrderDetail
           order={order}
+          guest
           cancelling={cancelState.isLoading}
           onCancel={() => {
             const key = guestOrderKey(orderNumber);

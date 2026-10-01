@@ -14,7 +14,16 @@ import {
   type WelcomeData,
 } from './auth.js';
 import { EmailDeadLetter, type EmailDeadLetterData } from './ops.js';
-import { CompleteYourOrder, type CompleteYourOrderData } from './orders.js';
+import {
+  CompleteYourOrder,
+  NewSale,
+  OrderReceipt,
+  PaymentAttention,
+  type CompleteYourOrderData,
+  type NewSaleData,
+  type OrderReceiptData,
+  type PaymentAttentionData,
+} from './orders.js';
 import type { EmailBrand } from './theme.js';
 
 export interface TemplateDefinition<D> {
@@ -34,6 +43,65 @@ const define = <D,>(definition: TemplateDefinition<D>) => definition;
  * sample, and the render test plus `npm run email:preview` cover it automatically.
  */
 export const EMAIL_TEMPLATES = {
+  'order.receipt': define<OrderReceiptData>({
+    subject: (data, brand) =>
+      `Your receipt from ${brand.name}: order ${data.orderNumber}`,
+    render: (data, brand) => <OrderReceipt data={data} brand={brand} />,
+    category: 'critical',
+    sensitive: false,
+    sample: {
+      name: 'Ada',
+      orderNumber: 'BS-2026-000123',
+      paidAt: '1 October 2026, 14:05',
+      paymentMethod: 'Paystack',
+      items: [
+        {
+          title: 'Principles of Foundry Technology',
+          detail: 'Ebook (PDF)',
+          amount: '₦15,000.00',
+        },
+        {
+          title: 'Heat Treatment of Steels',
+          detail: 'Print × 1',
+          amount: '₦22,000.00',
+        },
+      ],
+      subtotal: '₦37,000.00',
+      discount: '₦3,700.00',
+      shipping: '₦2,500.00',
+      total: '₦35,800.00',
+      hasEbook: true,
+      hasPrint: true,
+      shippingTo: 'Lagos, Nigeria',
+      orderUrl: 'https://example.com/account/orders/BS-2026-000123',
+      claimPending: true,
+    },
+  }),
+  'order.new-sale': define<NewSaleData>({
+    subject: (data) => `New sale ${data.orderNumber}: ${data.total}`,
+    render: (data, brand) => <NewSale data={data} brand={brand} />,
+    category: 'notification',
+    sensitive: false,
+    sample: {
+      orderNumber: 'BS-2026-000123',
+      customer: 'Ada Obi (ada@example.com)',
+      total: '₦35,800.00',
+      items: ['Principles of Foundry Technology (ebook)'],
+      adminUrl: 'https://example.com/admin/orders/BS-2026-000123',
+    },
+  }),
+  'order.payment-attention': define<PaymentAttentionData>({
+    subject: (data) => `Action needed: order ${data.orderNumber}`,
+    render: (data, brand) => <PaymentAttention data={data} brand={brand} />,
+    category: 'critical',
+    sensitive: false,
+    sample: {
+      orderNumber: 'BS-2026-000123',
+      reason:
+        'The provider confirmed ₦35,000.00 but the order total is ₦35,800.00.',
+      adminUrl: 'https://example.com/admin/orders/BS-2026-000123',
+    },
+  }),
   'order.complete-your-order': define<CompleteYourOrderData>({
     subject: (data) => `Your order ${data.orderNumber} wasn’t completed`,
     render: (data, brand) => <CompleteYourOrder data={data} brand={brand} />,

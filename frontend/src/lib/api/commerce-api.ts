@@ -130,6 +130,47 @@ export interface ShippingZone {
 
 export type ShippingZoneInput = Omit<ShippingZone, "id">;
 
+export type Provider = "stripe" | "paystack" | "flutterwave";
+
+export interface PaymentOptions {
+  currency: Currency;
+  providers: Array<{ id: Provider; label: string }>;
+  default: Provider | null;
+}
+
+export interface PaymentVerification {
+  status: "paid" | "pending" | "failed";
+  orderNumber: string;
+  orderStatus: OrderStatus;
+  returnPath: string | null;
+  provider: Provider;
+}
+
+export interface AdminPayment {
+  reference: string;
+  provider: Provider;
+  status: "initiated" | "succeeded" | "failed" | "abandoned" | "partially_refunded" | "refunded";
+  amount: number;
+  currency: Currency;
+  verifiedAmount: number | null;
+  failureReason: string | null;
+  reconciliationRequired: boolean;
+  reconciliationReason: string | null;
+  createdAt: string;
+  succeededAt: string | null;
+  refunds: Array<{
+    refundId: string;
+    amount: number;
+    status: "pending" | "succeeded" | "failed" | "outcome_unknown";
+    reason: string;
+    requestedBy: string;
+    createdAt: string;
+    failureReason: string | null;
+  }>;
+}
+
+export type AdminOrderView = OrderView & { attention: { required: boolean; reason: string } };
+
 type CartLineKey = { bookId: string; format: FormatType; quantity: number; currency: Currency };
 
 export const commerceApi = api.injectEndpoints({
@@ -181,6 +222,32 @@ export const commerceApi = api.injectEndpoints({
       query: (body) => ({ url: "/guest-orders/cancel", method: "POST", body }),
     }),
 
+    paymentOptions: builder.query<PaymentOptions, Currency>({
+      query: (currency) => ({ url: "/payments/options", params: { currency } }),
+    }),
+    initiatePayment: builder.mutation<{ redirectUrl: string; reference: string }, { orderNumber: string; provider: Provider; checkoutKey?: string }>({
+      query: (body) => ({ url: "/payments/initiate", method: "POST", body }),
+    }),
+    verifyPayment: builder.mutation<PaymentVerification, string>({
+      query: (reference) => ({ url: "/payments/verify", method: "POST", body: { reference } }),
+      invalidatesTags: ["Orders", "Cart"],
+    }),
+    adminOrder: builder.query<AdminOrderView, string>({
+      query: (orderNumber) => `/admin/orders/${orderNumber}`,
+      providesTags: (_r, _e, n) => [{ type: "AdminOrders", id: n }],
+    }),
+    adminOrderPayments: builder.query<AdminPayment[], string>({
+      query: (orderNumber) => `/admin/orders/${orderNumber}/payments`,
+      providesTags: (_r, _e, n) => [{ type: "AdminOrders", id: n }],
+    }),
+    refundOrder: builder.mutation<{ refundId: string; status: "succeeded" | "pending" | "outcome_unknown" }, { orderNumber: string; amount: number; reason: string }>({
+      query: ({ orderNumber, ...body }) => ({ url: `/admin/orders/${orderNumber}/refunds`, method: "POST", body }),
+      invalidatesTags: (_r, _e, { orderNumber }) => [{ type: "AdminOrders", id: orderNumber }, "AdminOrders"],
+    }),
+    resolveAttention: builder.mutation<OrderView, { orderNumber: string; note: string }>({
+      query: ({ orderNumber, note }) => ({ url: `/admin/orders/${orderNumber}/resolve-attention`, method: "POST", body: { note } }),
+      invalidatesTags: (_r, _e, { orderNumber }) => [{ type: "AdminOrders", id: orderNumber }, "AdminOrders"],
+    }),
     adminShippingZones: builder.query<ShippingZone[], void>({
       query: () => "/admin/shipping-zones",
       providesTags: ["AdminShipping"],
@@ -197,7 +264,7 @@ export const commerceApi = api.injectEndpoints({
       query: (id) => ({ url: `/admin/shipping-zones/${id}`, method: "DELETE" }),
       invalidatesTags: ["AdminShipping"],
     }),
-    adminOrders: builder.query<OrderView[], { status?: string; q?: string }>({
+    adminOrders: builder.query<AdminOrderView[], { status?: string; q?: string }>({
       query: (params) => ({ url: "/admin/orders", params }),
       providesTags: ["AdminOrders"],
     }),
@@ -221,4 +288,11 @@ export const {
   useUpdateShippingZoneMutation,
   useDeleteShippingZoneMutation,
   useAdminOrdersQuery,
+  usePaymentOptionsQuery,
+  useInitiatePaymentMutation,
+  useVerifyPaymentMutation,
+  useAdminOrderQuery,
+  useAdminOrderPaymentsQuery,
+  useRefundOrderMutation,
+  useResolveAttentionMutation,
 } = commerceApi;

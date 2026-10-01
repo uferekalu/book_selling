@@ -2,7 +2,8 @@
 
 import { Package, Search } from "lucide-react";
 import { useDeferredValue, useState } from "react";
-import { Card, EmptyState, FormField, Icon, Input, Select, Skeleton } from "@/components/ui";
+import NextLink from "next/link";
+import { Badge, Card, EmptyState, FormField, Icon, Input, Select, Skeleton } from "@/components/ui";
 import { OrderStatusBadge, ORDER_STATUS } from "@/features/orders/order-detail";
 import { useAdminOrdersQuery } from "@/lib/api/commerce-api";
 import { formatMoney } from "@/lib/money";
@@ -47,7 +48,8 @@ export function OrdersAdmin() {
         <ul className="flex flex-col gap-3">
           {data.map((order) => (
             <li key={order.orderNumber}>
-              <Card className="flex flex-wrap items-center gap-x-6 gap-y-2">
+              <NextLink href={`/admin/orders/${order.orderNumber}`} className="block rounded-2xl">
+              <Card interactive className="flex flex-wrap items-center gap-x-6 gap-y-2">
                 <div className="flex min-w-0 flex-1 flex-col">
                   <span className="font-medium">{order.orderNumber}</span>
                   <span className="truncate text-sm text-text-muted">
@@ -60,7 +62,13 @@ export function OrdersAdmin() {
                 <span className="text-sm text-text-muted">{when.format(new Date(order.createdAt))}</span>
                 <span className="font-medium tabular-nums">{formatMoney({ amount: order.total, currency: order.currency })}</span>
                 <OrderStatusBadge order={order} />
+                {order.attention?.required && (
+                  <Badge tone="warning" size="sm">
+                    Needs attention
+                  </Badge>
+                )}
               </Card>
+              </NextLink>
             </li>
           ))}
         </ul>

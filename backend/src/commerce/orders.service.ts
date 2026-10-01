@@ -21,6 +21,7 @@ import type { Currency } from '../common/money/currency.js';
 import { formatMoney, money } from '../common/money/money.js';
 import { Book } from '../catalog/schemas/book.schema.js';
 import { MailService } from '../mail/mail.service.js';
+import { Payment } from '../payments/schemas/payment.schema.js';
 import { User } from '../users/schemas/user.schema.js';
 import { normaliseEmail, UsersService } from '../users/users.service.js';
 import { CartService, type CartOwner } from './cart.service.js';
@@ -38,6 +39,8 @@ import {
 
 /** How long stock and the coupon are held for payment (PRODUCT_RULES §6). */
 export const PAYMENT_WINDOW_MS = 30 * 60_000;
+/** A payment started this recently may still be completing on the provider's page. */
+export const PAYMENT_GRACE_MS = 15 * 60_000;
 const DUPLICATE_KEY = 11000;
 
 export interface PlaceOrderInput {
@@ -80,6 +83,7 @@ export class OrdersService {
     @InjectModel(Counter.name) private readonly counters: Model<Counter>,
     @InjectModel(Book.name) private readonly books: Model<Book>,
     @InjectModel(User.name) private readonly users: Model<User>,
+    @InjectModel(Payment.name) private readonly payments: Model<Payment>,
     private readonly usersService: UsersService,
     private readonly pricing: PricingService,
     private readonly coupons: CouponsService,
@@ -134,6 +138,8 @@ export class OrdersService {
           .session(session)
           .exec();
         for (const order of older) {
+          // Never replace an order whose buyer may be paying for it right now.
+          if (await this.paymentInProgress(order._id, now, session)) continue;
           await this.close(
             order,
             'cancel',
@@ -215,6 +221,7 @@ export class OrdersService {
               },
               expiresAt: new Date(now.getTime() + PAYMENT_WINDOW_MS),
               checkoutKeyHash: keyHash,
+              guestCartId: input.owner.guestId ?? null,
               returnPath: safeReturnPath(input.returnPath),
               statusHistory: [
                 {
@@ -401,8 +408,8 @@ export class OrdersService {
 
   /**
    * Expires unpaid orders past their window (run every minute by OrderExpiryJob) and sends one
-   * "complete your order" email each. BS-8 adds: skip orders with a payment attempt started in
-   * the last 15 minutes (the buyer may still be on the provider's page).
+   * "complete your order" email each, except while a payment attempt from the last 15 minutes is
+   * still open (the buyer may still be on the provider's page).
    */
   async expireDue(now: Date = new Date(), limit = 50): Promise<number> {
     const due = await this.orders
@@ -412,6 +419,8 @@ export class OrdersService {
       .exec();
     let expired = 0;
     for (const order of due) {
+      // The buyer may still be on the provider's page: give them time (ARCHITECTURE §8.6).
+      if (await this.paymentInProgress(order._id, now)) continue;
       // The status change and the reminder are one unit: both happen, or neither (no lost or
       // doubled email if the job crashes in between).
       const done = await this.inTransaction(async (session) => {
@@ -459,6 +468,23 @@ export class OrdersService {
         { session },
       )
       .exec();
+  }
+
+  /** A payment attempt started within the grace period and not yet finished. */
+  private async paymentInProgress(
+    orderId: Types.ObjectId,
+    now: Date,
+    session?: ClientSession,
+  ): Promise<boolean> {
+    const attempt = await this.payments
+      .exists({
+        orderId,
+        status: 'initiated',
+        createdAt: { $gt: new Date(now.getTime() - PAYMENT_GRACE_MS) },
+      })
+      .session(session ?? null)
+      .exec();
+    return attempt !== null;
   }
 
   // ---------------------------------------------------------------- reading

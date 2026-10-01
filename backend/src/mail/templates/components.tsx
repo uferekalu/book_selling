@@ -259,3 +259,82 @@ export function Mono({ children }: { children: ReactNode }) {
     <span style={{ fontFamily: t.font.mono, fontSize: 14 }}>{children}</span>
   );
 }
+
+/** Order lines: item on the left, amount on the right; a bold total row at the end. */
+export function ItemTable({
+  items,
+  totals = [],
+}: {
+  items: Array<{ name: string; detail?: string; amount?: string }>;
+  totals?: Array<{ label: string; amount: string; strong?: boolean }>;
+}) {
+  const cell: CSSProperties = {
+    padding: '8px 0',
+    fontSize: 14,
+    lineHeight: '20px',
+    color: t.color.text,
+    borderBottom: `1px solid ${t.color.border}`,
+    verticalAlign: 'top',
+  };
+  return (
+    <Section style={{ margin: '0 0 20px' }}>
+      <table width="100%" cellPadding={0} cellSpacing={0} role="presentation">
+        <tbody>
+          {items.map((item, index) => (
+            <tr key={`item-${index}`}>
+              <td style={cell}>
+                {item.name}
+                {item.detail ? (
+                  <span
+                    style={{
+                      display: 'block',
+                      color: t.color.textMuted,
+                      fontSize: 13,
+                    }}
+                  >
+                    {item.detail}
+                  </span>
+                ) : null}
+              </td>
+              <td
+                style={{
+                  ...cell,
+                  textAlign: 'right',
+                  whiteSpace: 'nowrap',
+                  paddingLeft: 12,
+                }}
+              >
+                {item.amount ?? ''}
+              </td>
+            </tr>
+          ))}
+          {totals.map((row, index) => (
+            <tr key={`total-${index}`}>
+              <td
+                style={{
+                  ...cell,
+                  borderBottom: 'none',
+                  fontWeight: row.strong ? 700 : 400,
+                  color: row.strong ? t.color.text : t.color.textMuted,
+                }}
+              >
+                {row.label}
+              </td>
+              <td
+                style={{
+                  ...cell,
+                  borderBottom: 'none',
+                  textAlign: 'right',
+                  whiteSpace: 'nowrap',
+                  fontWeight: row.strong ? 700 : 400,
+                }}
+              >
+                {row.amount}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </Section>
+  );
+}

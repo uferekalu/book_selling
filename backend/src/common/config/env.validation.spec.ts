@@ -16,6 +16,8 @@ const productionRequired = {
   CLOUDINARY_CLOUD_NAME: 'books-cloud',
   CLOUDINARY_API_KEY: '123456789012345',
   CLOUDINARY_API_SECRET: 'cloudinary-secret',
+  // Payments must say test or live explicitly in production (BS-8).
+  PAYMENTS_MODE: 'test',
 };
 
 describe('envValidationSchema', () => {
@@ -108,5 +110,82 @@ describe('envValidationSchema', () => {
       NODE_ENV: 'production',
     });
     expect(error).toBeUndefined();
+  });
+
+  describe('payment keys', () => {
+    const check = (env: Record<string, string>) =>
+      envValidationSchema.validate({ ...valid, ...env }).error?.message;
+
+    it('defaults to test mode and accepts test keys', () => {
+      const { value } = envValidationSchema.validate(valid);
+      expect(value.PAYMENTS_MODE).toBe('test');
+      expect(
+        check({
+          STRIPE_SECRET_KEY: 'sk_test_abc',
+          STRIPE_WEBHOOK_SECRET: 'whsec_abc',
+          PAYSTACK_SECRET_KEY: 'sk_test_abc',
+          FLUTTERWAVE_SECRET_KEY: 'FLWSECK_TEST-abc',
+          FLUTTERWAVE_WEBHOOK_HASH: 'a-long-shared-secret-hash',
+        }),
+      ).toBeUndefined();
+    });
+
+    it('refuses live keys outside live mode (a dev machine never charges real cards)', () => {
+      expect(check({ PAYSTACK_SECRET_KEY: 'sk_live_abc' })).toMatch(
+        /not a test key/,
+      );
+      expect(
+        check({
+          FLUTTERWAVE_SECRET_KEY: 'FLWSECK-abc',
+          FLUTTERWAVE_WEBHOOK_HASH: 'a-long-shared-secret-hash',
+        }),
+      ).toMatch(/not a test key/);
+    });
+
+    it('refuses test keys in live mode', () => {
+      expect(
+        check({
+          PAYMENTS_MODE: 'live',
+          STRIPE_SECRET_KEY: 'sk_test_abc',
+          STRIPE_WEBHOOK_SECRET: 'whsec_abc',
+        }),
+      ).toMatch(/not a live key/);
+      expect(
+        check({
+          PAYMENTS_MODE: 'live',
+          FLUTTERWAVE_SECRET_KEY: 'FLWSECK_TEST-abc',
+          FLUTTERWAVE_WEBHOOK_HASH: 'a-long-shared-secret-hash',
+        }),
+      ).toMatch(/not a live key/);
+    });
+
+    it('needs the webhook secret that goes with each provider key', () => {
+      expect(check({ STRIPE_SECRET_KEY: 'sk_test_abc' })).toMatch(
+        /STRIPE_WEBHOOK_SECRET is required/,
+      );
+      expect(check({ FLUTTERWAVE_SECRET_KEY: 'FLWSECK_TEST-abc' })).toMatch(
+        /FLUTTERWAVE_WEBHOOK_HASH is required/,
+      );
+    });
+
+    it('needs an explicit mode and, when live, a provider in production', () => {
+      const production = {
+        ...productionRequired,
+        NODE_ENV: 'production',
+        BCRYPT_COST: '12',
+      };
+      const { PAYMENTS_MODE: _omit, ...withoutMode } = production;
+      expect(check(withoutMode)).toMatch(/PAYMENTS_MODE/);
+      expect(check({ ...production, PAYMENTS_MODE: 'live' })).toMatch(
+        /at least one provider/,
+      );
+      expect(
+        check({
+          ...production,
+          PAYMENTS_MODE: 'live',
+          PAYSTACK_SECRET_KEY: 'sk_live_abc',
+        }),
+      ).toBeUndefined();
+    });
   });
 });

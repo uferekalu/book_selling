@@ -149,7 +149,11 @@ For **each** provider:
 - [ ] Business account verified (KYC complete). *From the reference project: an unverified Paystack
       "starter business" can collect payments but is blocked from some APIs. Check the account
       tier before launch, not after.*
-- [ ] Live secret key set in production Render only; test key on staging.
+- [ ] `PAYMENTS_MODE=live` and the live secret key set in production Render only;
+      `PAYMENTS_MODE=test` and test keys on staging. The API refuses to boot if a key doesn't match
+      the mode, so live keys can't end up on staging or a laptop.
+- [ ] To switch a provider off (for example Stripe until there is a supported company), leave its
+      keys empty: it is simply not offered.
 - [ ] Webhook URL set in the **live** dashboard:
       `https://api.<domain>/payments/webhooks/stripe` · `/paystack` · `/flutterwave`
 - [ ] Webhook secret set (`STRIPE_WEBHOOK_SECRET`; Paystack signs with the secret key;
@@ -157,9 +161,16 @@ For **each** provider:
 - [ ] Currencies enabled on the account: Paystack NGN; Flutterwave NGN, USD, GBP and EUR as the
       account allows; Stripe USD, GBP, EUR and NGN if the account supports it (otherwise disable Stripe
       for NGN in settings).
-- [ ] Stripe: the event list includes `checkout.session.completed`,
+- [ ] Events to send: **Stripe** `checkout.session.completed`,
       `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`,
-      `charge.refunded` and `charge.dispute.created`.
+      `checkout.session.expired`, `charge.refunded`, `charge.dispute.created`; **Paystack**
+      `charge.success`, `refund.processed`, `refund.failed`, `charge.dispute.create` (Paystack
+      sends all events to one URL); **Flutterwave** `charge.completed`.
+- [ ] `OWNER_ALERT_EMAIL` set: amount mismatches, second payments, disputes, refunds made in a
+      dashboard and refunds with an unknown outcome are emailed there and flagged on the order.
+- [ ] Refunds are made **from the admin**, not the provider dashboard (a dashboard refund is
+      detected and recorded for Stripe and Paystack, but the admin keeps everything consistent).
+      Only the owner can refund.
 - [ ] **A real small live transaction** per provider, then a refund of it. Confirm the order,
       receipt email, library entitlement and refund all behave correctly.
 - [ ] The reconciliation job has run and logged a clean pass.
