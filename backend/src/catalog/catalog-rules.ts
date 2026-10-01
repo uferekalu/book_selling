@@ -31,8 +31,8 @@ export const MIN_ABSTRACT_CHARS = 80;
 
 /**
  * Everything stopping a book from going on sale (PRODUCT_RULES §3), in words the editor shows as a
- * checklist. Empty means it can be published. The preview requirement is enforced from the start;
- * BS-6 adds the preview builder that satisfies it.
+ * checklist. Empty means it can be published. `preview.enabled` means a built preview PDF is being
+ * served (BS-6).
  */
 export function publishProblems(
   book: Pick<
@@ -43,9 +43,8 @@ export function publishProblems(
     | 'descriptionMarkdown'
     | 'formats'
     | 'manuscript'
-    | 'preview'
     | 'authorIds'
-  >,
+  > & { preview?: { enabled?: boolean } | null },
 ): string[] {
   const problems: string[] = [];
   if (!book.title.trim()) problems.push('Add a title');

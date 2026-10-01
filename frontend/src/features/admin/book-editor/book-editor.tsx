@@ -11,6 +11,7 @@ import { DirtyProvider, useDirtyRegistry } from "./dirty";
 import { FormatsSection } from "./formats-section";
 import { ManuscriptSection } from "./manuscript-section";
 import { MediaSection } from "./media-section";
+import { PreviewSection } from "./preview-section";
 import { PublishPanel } from "./publish-panel";
 import { SECTIONS } from "./section";
 import { TextSection } from "./text-section";
@@ -21,6 +22,9 @@ import { TextSection } from "./text-section";
  */
 export function BookEditor({ id }: { id: string }) {
   const { data: book, error, isLoading, refetch } = useAdminBookQuery(id);
+  // While a preview builds on the server, check every few seconds so the status updates itself.
+  const building = book?.preview.status === "queued" || book?.preview.status === "building";
+  useAdminBookQuery(id, { pollingInterval: building ? 2500 : 0 });
 
   if (error) return <AdminQueryError error={error} onRetry={() => void refetch()} />;
   if (isLoading || !book) {
@@ -54,6 +58,7 @@ export function BookEditor({ id }: { id: string }) {
             <TextSection book={book} />
             <MediaSection book={book} />
             <ManuscriptSection book={book} />
+            <PreviewSection book={book} />
             <FormatsSection book={book} />
           </div>
         </div>

@@ -14,6 +14,15 @@ import { Book, BookSchema } from './schemas/book.schema.js';
 import { Category, CategorySchema } from './schemas/category.schema.js';
 import { StorefrontRevalidator } from './storefront-revalidator.js';
 import { UploadCleanupJob } from './upload-cleanup.job.js';
+import {
+  PreviewEvent,
+  PreviewEventSchema,
+  PreviewEventsService,
+} from '../preview/preview-events.js';
+import { PreviewStorage } from '../preview/preview-storage.js';
+import { PublicPreviewController } from '../preview/preview.controller.js';
+import { PreviewService } from '../preview/preview.service.js';
+import { PreviewWorker } from '../preview/preview.worker.js';
 
 @Module({
   imports: [
@@ -23,10 +32,16 @@ import { UploadCleanupJob } from './upload-cleanup.job.js';
       { name: Book.name, schema: BookSchema },
       { name: Author.name, schema: AuthorSchema },
       { name: Category.name, schema: CategorySchema },
+      { name: PreviewEvent.name, schema: PreviewEventSchema },
     ]),
   ],
   // UploadsController lives here: signing an upload checks that the book/author exists.
-  controllers: [CatalogController, AdminCatalogController, UploadsController],
+  controllers: [
+    CatalogController,
+    AdminCatalogController,
+    UploadsController,
+    PublicPreviewController,
+  ],
   providers: [
     BooksService,
     AuthorsService,
@@ -34,6 +49,10 @@ import { UploadCleanupJob } from './upload-cleanup.job.js';
     CatalogQueryService,
     StorefrontRevalidator,
     UploadCleanupJob,
+    PreviewStorage,
+    PreviewService,
+    PreviewWorker,
+    PreviewEventsService,
   ],
   exports: [BooksService, CatalogQueryService, MongooseModule],
 })

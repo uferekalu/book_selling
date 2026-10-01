@@ -102,6 +102,17 @@ filters, decorators, `money/`, `utils/`). The module map and ticket per module a
 - **Migrations**: `npm run migrate:create -- <name>` → `migrations/`; Render runs `migrate:up` before
   each deploy. Keep them backward-compatible with the running version.
 
+## Preview (BS-6)
+
+- **The preview is a separate PDF built on the server** (`src/preview/preview-builder.ts`, pdf-lib)
+  from the chosen pages only, stored in GridFS (`PreviewStorage`, bucket `previews`). Never add an
+  endpoint that serves manuscript pages, page images or the manuscript URL to the public.
+- Builds are queued (`queuePreviewBuild`) and run by `PreviewWorker`; never build in a request.
+  Any change that makes the built file stale (new manuscript, new sections) must queue a rebuild.
+- `PreviewBuildError` = permanent, shown to the editor as is; any other error is retried.
+- The public preview shape is derived on read (`presentPreview`); tests assert on the served bytes
+  (each test page has a unique width), not just metadata.
+
 ## Testing
 
 - The e2e specs are the **only** check that the real `AppModule` wiring boots (circular module

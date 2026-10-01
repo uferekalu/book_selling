@@ -6,8 +6,10 @@
  *   npm run seed:demo -- --remove
  *
  * Everything it creates is tagged `demo`. Books are published directly, bypassing the publish
- * checklist (no cover image, manuscript or preview yet), which is why this is never run against
- * production. Ratings are left empty: no fake reviews, ever.
+ * checklist (no cover image), which is why this is never run against production. Each book gets a
+ * typeset stand-in manuscript (never uploaded anywhere) and a real preview built from it by the
+ * production preview builder, so the reader can be tried locally. Ratings are left empty: no fake
+ * reviews, ever.
  */
 import { NestFactory } from '@nestjs/core';
 import { getModelToken } from '@nestjs/mongoose';
@@ -20,6 +22,9 @@ import { CategoriesService } from '../src/catalog/categories.service.js';
 import { Author } from '../src/catalog/schemas/author.schema.js';
 import { Book } from '../src/catalog/schemas/book.schema.js';
 import { Category } from '../src/catalog/schemas/category.schema.js';
+import { buildPreview } from '../src/preview/preview-builder.js';
+import { PreviewStorage } from '../src/preview/preview-storage.js';
+import { demoManuscript } from './demo-manuscript.js';
 
 if (process.env.NODE_ENV === 'production') {
   console.error('Refusing to seed demo data into production.');
@@ -290,6 +295,12 @@ try {
   const categoryModel = app.get<Model<Category>>(getModelToken(Category.name));
 
   if (remove) {
+    const storage = app.get(PreviewStorage);
+    for (const book of await bookModel
+      .find({ tags: 'demo' }, { preview: 1 })
+      .lean()) {
+      if (book.preview?.fileId) await storage.remove(book.preview.fileId);
+    }
     const removed = await bookModel.deleteMany({ tags: 'demo' });
     const demoAuthor = await authorModel.deleteMany({
       slug: 'prof-a-author',
@@ -388,8 +399,89 @@ try {
       );
       created += 1;
     }
+    // Previews for every demo book that doesn't have one yet (also upgrades older demo data).
+    const storage = app.get(PreviewStorage);
+    let previews = 0;
+    for (const demo of BOOKS) {
+      const book = await bookModel.findOne({ title: demo.title, tags: 'demo' });
+      if (!book || book.preview?.fileId) continue;
+      const manuscript = await demoManuscript({
+        title: demo.title,
+        subtitle: demo.subtitle,
+        edition: demo.edition,
+        author: author.name,
+        abstract: demo.abstract,
+        chapters: demo.toc,
+        pages: demo.pages,
+      });
+      const sections = [
+        {
+          label: 'Abstract',
+          fromPage: manuscript.abstractPage,
+          toPage: manuscript.abstractPage,
+        },
+        { label: 'Introduction', ...manuscript.introduction },
+      ];
+      const built = await buildPreview(manuscript.bytes, {
+        title: demo.title,
+        sections,
+        maxPercent: 15,
+      });
+      const checksum = `demo-${book._id.toString()}`;
+      const fileId = await storage.save(
+        built.bytes,
+        `${book.slug}-preview.pdf`,
+        {
+          bookId: book._id.toString(),
+          sourceChecksum: checksum,
+        },
+      );
+      await bookModel.updateOne(
+        { _id: book._id },
+        {
+          $set: {
+            tableOfContents: ['Introduction', ...demo.toc].map((title, i) => ({
+              title,
+              page: manuscript.chapterPages[i],
+              children: [],
+            })),
+            pageCount: manuscript.pages,
+            manuscript: {
+              publicId: `demo/${book.slug}`,
+              version: 1,
+              bytes: manuscript.bytes.length,
+              pages: manuscript.pages,
+              checksum,
+              uploadedAt: new Date(),
+            },
+            preview: {
+              enabled: true,
+              status: 'ready',
+              sections,
+              pageOffset: manuscript.frontMatter,
+              fileId,
+              pageMap: sections.flatMap((s) =>
+                Array.from(
+                  { length: s.toPage - s.fromPage + 1 },
+                  (_, i) => s.fromPage + i,
+                ),
+              ),
+              sourceChecksum: checksum,
+              teasers: [],
+              error: null,
+              buildToken: 1,
+              attempts: 0,
+              queuedAt: null,
+              startedAt: null,
+              generatedAt: new Date(),
+            },
+          },
+        },
+      );
+      previews += 1;
+    }
     console.log(
-      `Demo catalogue ready: ${created} new book(s), ${BOOKS.length - created} already present.`,
+      `Demo catalogue ready: ${created} new book(s), ${BOOKS.length - created} already present, ${previews} preview(s) built.`,
     );
   }
 } finally {

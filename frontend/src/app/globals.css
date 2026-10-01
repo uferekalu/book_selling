@@ -209,3 +209,59 @@
     font-weight: 600;
   }
 }
+
+/* ------------------------------------------------------------------------------------------
+ * Preview reader: pdf.js text layer (transparent, selectable text over each page canvas so it can
+ * be selected, searched and read by screen readers). The essentials of pdfjs-dist's
+ * web/pdf_viewer.css, which is 6,000+ lines we don't need.
+ * ------------------------------------------------------------------------------------------ */
+.reader-page {
+  --scale-factor: 1;
+  --user-unit: 1;
+  --total-scale-factor: calc(var(--scale-factor) * var(--user-unit));
+  --scale-round-x: 1px;
+  --scale-round-y: 1px;
+}
+.reader-page .textLayer {
+  position: absolute;
+  inset: 0;
+  overflow: clip;
+  text-align: initial;
+  line-height: 1;
+  letter-spacing: normal;
+  word-spacing: normal;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  overflow-wrap: normal;
+  hyphens: none;
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+.reader-page .textLayer :is(span, br) {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+  user-select: text;
+}
+.reader-page .textLayer > :not(.markedContent),
+.reader-page .textLayer .markedContent span:not(.markedContent) {
+  z-index: 1;
+  --font-height: 0;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  --scale-x: 1;
+  --rotate: 0deg;
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+.reader-page .textLayer .markedContent {
+  display: contents;
+}
+.reader-page .textLayer ::selection {
+  background: color-mix(in srgb, var(--color-accent) 40%, transparent);
+}
+.reader-page .textLayer br::selection {
+  background: transparent;
+}

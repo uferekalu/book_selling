@@ -10,11 +10,20 @@ import {
   Post,
   Put,
   Query,
+  Res,
+  StreamableFile,
+  Header,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { CurrentUser, Roles } from '../auth/decorators/auth.decorators.js';
 import type { AccessTokenPayload } from '../auth/interfaces/auth.types.js';
 import { markdownToSafeHtml } from '../common/text/rich-text.js';
+import {
+  ManuscriptPagesQuery,
+  SetPreviewDto,
+} from '../preview/preview.controller.js';
+import { PreviewService, previewLimits } from '../preview/preview.service.js';
 import { CloudinaryService } from '../uploads/cloudinary.service.js';
 import { AuthorsService } from './authors.service.js';
 import { BooksService } from './books.service.js';
@@ -48,6 +57,7 @@ export class AdminCatalogController {
     private readonly books: BooksService,
     private readonly authors: AuthorsService,
     private readonly categories: CategoriesService,
+    private readonly previews: PreviewService,
     media: CloudinaryService,
   ) {
     this.present = new CatalogPresenter(media);
@@ -149,6 +159,50 @@ export class AdminCatalogController {
     @CurrentUser() me: AccessTokenPayload,
   ) {
     return this.adminBook(await this.books.attachManuscript(id, dto, me));
+  }
+
+  // ---- preview (ARCHITECTURE §10.1) ----------------------------------------
+
+  /** Signed thumbnails of manuscript pages, for choosing the preview sections. */
+  @Get('books/:id/manuscript-pages')
+  manuscriptPages(
+    @Param('id') id: string,
+    @Query() query: ManuscriptPagesQuery,
+  ) {
+    return this.previews.manuscriptPages(id, query.from, query.to);
+  }
+
+  /** Saves the sections and queues the build; poll the book for `preview.status`. */
+  @Put('books/:id/preview')
+  async setPreview(
+    @Param('id') id: string,
+    @Body() dto: SetPreviewDto,
+    @CurrentUser() actor: AccessTokenPayload,
+  ) {
+    return this.adminBook(await this.previews.setSections(id, dto, actor));
+  }
+
+  /** The built preview PDF (also for drafts), so staff can check it before publishing. */
+  @Get('books/:id/preview-file')
+  @Header('Cache-Control', 'private, no-store')
+  async previewFile(
+    @Param('id') id: string,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    const file = await this.previews.openFileForStaff(id);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Length', String(file.size));
+    res.setHeader('Content-Disposition', `inline; filename="${file.filename}"`);
+    return new StreamableFile(file.stream);
+  }
+
+  @Post('books/:id/preview/rebuild')
+  @HttpCode(HttpStatus.OK)
+  async rebuildPreview(
+    @Param('id') id: string,
+    @CurrentUser() actor: AccessTokenPayload,
+  ) {
+    return this.adminBook(await this.previews.rebuild(id, actor));
   }
 
   @Post('books/:id/publish')
@@ -305,7 +359,25 @@ export class AdminCatalogController {
             uploadedAt: book.manuscript.uploadedAt.toISOString(),
           }
         : null,
-      preview: { enabled: book.preview?.enabled === true },
+      preview: {
+        enabled: book.preview?.enabled === true,
+        status: book.preview?.status ?? 'none',
+        sections: (book.preview?.sections ?? []).map((s) => ({
+          label: s.label,
+          fromPage: s.fromPage,
+          toPage: s.toPage,
+        })),
+        pageOffset: book.preview?.pageOffset ?? 0,
+        pageCount: book.preview?.pageMap?.length ?? 0,
+        teasers: book.preview?.teasers?.length ?? 0,
+        error: book.preview?.error ?? null,
+        generatedAt: book.preview?.generatedAt?.toISOString() ?? null,
+        builtFromCurrentFile: Boolean(
+          book.manuscript &&
+          book.preview?.sourceChecksum === book.manuscript.checksum,
+        ),
+        ...previewLimits(book.manuscript?.pages, this.previews.maxPercent()),
+      },
       formats: book.formats,
       publishProblems: publishProblems(book),
       updatedAt: (

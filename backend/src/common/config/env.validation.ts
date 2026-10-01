@@ -72,6 +72,8 @@ export const envValidationSchema = Joi.object({
   // Must not exceed the Cloudinary plan's own maximum upload size.
   MANUSCRIPT_MAX_MB: Joi.number().integer().min(1).max(2000).default(100),
   IMAGE_MAX_MB: Joi.number().integer().min(1).max(100).default(15),
+  // Largest share of a book the free preview may show (PRODUCT_RULES §4). Owner-editable in BS-12.
+  PREVIEW_MAX_PERCENT: Joi.number().integer().min(1).max(50).default(15),
   // Lets the API tell the storefront to refresh cached catalogue pages after an edit.
   FRONTEND_REVALIDATE_SECRET: optionalString().min(16).optional(),
 

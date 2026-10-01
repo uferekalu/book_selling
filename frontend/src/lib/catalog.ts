@@ -2,7 +2,7 @@ import "server-only";
 import { notFound } from "next/navigation";
 import { getBackendUrl } from "@/lib/backend-url";
 import type { Currency } from "@/lib/money";
-import type { BookFilters, BookPage, PublicAuthor, PublicBook, PublicCategory } from "./catalog-types";
+import type { BookFilters, BookPage, PreviewData, PublicAuthor, PublicBook, PublicCategory } from "./catalog-types";
 
 /**
  * Server-side catalogue reads. Responses are cached and tagged, and the API refreshes the tags
@@ -89,4 +89,9 @@ export async function orFallback<T>(read: Promise<T>, fallback: T): Promise<T> {
     }
     throw error;
   }
+}
+
+/** The free preview's description (file URL, page map, contents), or null when the book has none. */
+export async function getPreview(slug: string): Promise<PreviewData | null> {
+  return get<PreviewData>(`/catalog/books/${encodeURIComponent(slug)}/preview`, [bookTag(slug)]);
 }

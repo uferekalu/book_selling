@@ -52,10 +52,32 @@ export interface AdminBook {
   cover: (PublicImage & { source: { width: number; height: number }; crop: Crop | null }) | null;
   gallery: Array<PublicImage & { publicId: string }>;
   manuscript: { pages: number; bytes: number; uploadedAt: string } | null;
-  preview: { enabled: boolean };
+  preview: AdminPreview;
   formats: AdminFormat[];
   publishProblems: string[];
   updatedAt: string;
+}
+
+export type PreviewStatus = "none" | "queued" | "building" | "ready" | "failed";
+
+export interface PreviewSectionInput {
+  label: string;
+  fromPage: number;
+  toPage: number;
+}
+
+export interface AdminPreview {
+  enabled: boolean;
+  status: PreviewStatus;
+  sections: PreviewSectionInput[];
+  pageOffset: number;
+  pageCount: number;
+  teasers: number;
+  error: string | null;
+  generatedAt: string | null;
+  builtFromCurrentFile: boolean;
+  maxPercent: number;
+  maxPages: number | null;
 }
 
 export interface AdminBookRow {
@@ -171,6 +193,17 @@ export const catalogAdminApi = api.injectEndpoints({
       query: (id) => ({ url: `/admin/catalog/books/${id}`, method: "DELETE" }),
       invalidatesTags: ["AdminBooks"],
     }),
+    setPreview: builder.mutation<AdminBook, { id: string; sections: PreviewSectionInput[]; pageOffset: number }>({
+      query: ({ id, ...body }) => ({ url: `/admin/catalog/books/${id}/preview`, method: "PUT", body }),
+      invalidatesTags: (_r, _e, { id }) => bookTags(id),
+    }),
+    rebuildPreview: builder.mutation<AdminBook, string>({
+      query: (id) => ({ url: `/admin/catalog/books/${id}/preview/rebuild`, method: "POST" }),
+      invalidatesTags: (_r, _e, id) => bookTags(id),
+    }),
+    manuscriptPages: builder.query<Array<{ page: number; url: string }>, { id: string; from: number; to: number }>({
+      query: ({ id, from, to }) => ({ url: `/admin/catalog/books/${id}/manuscript-pages`, params: { from, to } }),
+    }),
     markdownPreview: builder.mutation<{ html: string }, string>({
       query: (markdown) => ({ url: "/admin/catalog/markdown-preview", method: "POST", body: { markdown } }),
     }),
@@ -232,6 +265,9 @@ export const {
   useBookStatusMutation,
   useDeleteBookMutation,
   useMarkdownPreviewMutation,
+  useSetPreviewMutation,
+  useRebuildPreviewMutation,
+  useManuscriptPagesQuery,
   useAdminAuthorsQuery,
   useCreateAuthorMutation,
   useUpdateAuthorMutation,

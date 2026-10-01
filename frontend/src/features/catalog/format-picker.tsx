@@ -22,7 +22,18 @@ function stockBadge(format: PublicFormat) {
  * Choose a format and see its price in your currency. Buying arrives with checkout (BS-7) and the
  * free reader with BS-6; until then the buttons say so plainly rather than pretending to work.
  */
-export function FormatPicker({ slug, formats, hasPreview }: { slug: string; formats: PublicFormat[]; hasPreview: boolean }) {
+export function FormatPicker({
+  slug,
+  formats,
+  hasPreview,
+  showPreviewButton = true,
+}: {
+  slug: string;
+  formats: PublicFormat[];
+  hasPreview: boolean;
+  /** Off inside the reader itself. */
+  showPreviewButton?: boolean;
+}) {
   const purchasable = formats.filter((f) => f.price);
   const [selected, setSelected] = useState<FormatType | undefined>(
     (purchasable.find((f) => f.available) ?? purchasable[0])?.type,
@@ -64,7 +75,7 @@ export function FormatPicker({ slug, formats, hasPreview }: { slug: string; form
         >
           {current?.type === "print" ? "Add to cart" : "Buy ebook"}
         </Button>
-        {hasPreview ? (
+        {!showPreviewButton ? null : hasPreview ? (
           <ButtonLink href={`/books/${slug}/read`} size="lg" variant="outline" fullWidth>
             <Icon icon={BookOpen} size="sm" />
             Read the introduction

@@ -17,7 +17,7 @@ const CHECKS: Array<{ label: string; section: string; matches: (problem: string)
   { label: "Description", section: "text", matches: (p) => /description/i.test(p) },
   { label: "Cover", section: "media", matches: (p) => /cover/i.test(p) },
   { label: "Book PDF", section: "file", matches: (p) => /manuscript|PDF/i.test(p) },
-  { label: "Free preview", section: "file", matches: (p) => /preview/i.test(p) },
+  { label: "Free preview", section: "preview", matches: (p) => /preview/i.test(p) },
   { label: "Formats and prices", section: "formats", matches: (p) => /format|price/i.test(p) },
 ];
 
@@ -92,9 +92,6 @@ export function PublishPanel({ book }: { book: AdminBook }) {
               );
             })}
           </ul>
-          {book.publishProblems.some((p) => /preview/i.test(p)) && (
-            <p className="text-xs text-text-subtle">The free-preview builder (choose the introduction pages) arrives with the reader update.</p>
-          )}
         </div>
       )}
 

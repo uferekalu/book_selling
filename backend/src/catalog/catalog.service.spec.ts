@@ -67,6 +67,9 @@ class FakeCloudinary {
   blurDataUrl() {
     return Promise.resolve(null);
   }
+  destroyPreviewTeasers() {
+    return Promise.resolve();
+  }
   stale: PendingAsset[] = [];
   stalePendingAssets() {
     return Promise.resolve(this.stale);
@@ -304,15 +307,23 @@ describe('Catalog (books, authors, categories, storefront queries)', () => {
       expect(media.attached).toContain(`books/${id}/images/c2`);
     });
 
-    it('turns off the preview when a different manuscript replaces the old one', async () => {
+    it('queues a preview rebuild when a different manuscript replaces the old one, still serving the current preview', async () => {
       const book = await readyBook();
       const id = book._id.toString();
+      await bookModel.updateOne(
+        { _id: book._id },
+        {
+          'preview.sections': [{ label: 'Intro', fromPage: 1, toPage: 2 }],
+          'preview.status': 'ready',
+        },
+      );
       const replaced = await books.attachManuscript(
         id,
         { publicId: `books/${id}/manuscript/v2` },
         admin,
       );
-      expect(replaced.preview.enabled).toBe(false);
+      expect(replaced.preview.status).toBe('queued');
+      expect(replaced.preview.enabled).toBe(true);
       expect(replaced.manuscript?.pages).toBe(312);
     });
 
