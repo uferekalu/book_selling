@@ -21,10 +21,10 @@ export class TemplateRendererService {
 
   constructor(config: ConfigService) {
     this.brand = {
-      name: config.get<string>('BRAND_NAME') ?? 'Engineering Books',
+      name: config.get<string>('BRAND_NAME') || 'Engineering Books',
       siteUrl: config.getOrThrow<string>('FRONTEND_URL'),
-      supportEmail: config.get<string>('SUPPORT_EMAIL'),
-      postalAddress: config.get<string>('BUSINESS_POSTAL_ADDRESS'),
+      supportEmail: config.get<string>('SUPPORT_EMAIL') || undefined,
+      postalAddress: config.get<string>('BUSINESS_POSTAL_ADDRESS') || undefined,
     };
   }
 

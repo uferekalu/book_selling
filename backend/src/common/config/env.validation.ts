@@ -1,8 +1,14 @@
 import Joi from 'joi';
 
+/**
+ * An empty value (`KEY=` in a .env file, as in .env.example) means "not set", not "invalid".
+ * Without this, copying .env.example as-is made the API refuse to boot (fixed in BS-19).
+ */
+const optionalString = () => Joi.string().empty('');
+
 /** Required in production, optional elsewhere (local dev and tests use safe fallbacks). */
 const requiredInProduction = (schema: Joi.StringSchema) =>
-  schema.when('NODE_ENV', {
+  schema.empty('').when('NODE_ENV', {
     is: 'production',
     // Joi's conditional API is literally named `then`; this object is never awaited.
     // oxlint-disable-next-line unicorn/no-thenable
@@ -58,16 +64,16 @@ export const envValidationSchema = Joi.object({
 
   // ---- Brand (appears in emails) ----
   BRAND_NAME: Joi.string().default('Engineering Books'),
-  SUPPORT_EMAIL: Joi.string().email().optional(),
+  SUPPORT_EMAIL: optionalString().email().optional(),
   // Postal address in email footers (CAN-SPAM / good practice for a trading business).
-  BUSINESS_POSTAL_ADDRESS: Joi.string().optional(),
+  BUSINESS_POSTAL_ADDRESS: optionalString().optional(),
 
   // ---- Email (docs/ARCHITECTURE.md §11) ----
   // Without a key outside production, emails are rendered and logged instead of sent.
   RESEND_API_KEY: requiredInProduction(Joi.string()),
   RESEND_WEBHOOK_SECRET: requiredInProduction(Joi.string()),
   MAIL_FROM: requiredInProduction(Joi.string()),
-  MAIL_REPLY_TO: Joi.string().email().optional(),
+  MAIL_REPLY_TO: optionalString().email().optional(),
   // Where operational alerts go (dead-letter emails; later payment reconciliation).
-  OWNER_ALERT_EMAIL: Joi.string().email().optional(),
+  OWNER_ALERT_EMAIL: optionalString().email().optional(),
 });

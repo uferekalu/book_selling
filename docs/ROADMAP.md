@@ -1,11 +1,12 @@
 # Roadmap
 
-**Next ticket number: BS-5**
+**Next planned ticket: BS-5** · **Next reactive ticket: BS-20**
 
 Each ticket is one branch (`feature/BS-<n>-<suffix>`) and one squash-merged PR. The order is
 deliberate: each ticket builds only on merged work. When a ticket finishes, its row is rewritten
 with what actually shipped (docs/ENGINEERING_RULES.md §8). Tickets created reactively (bug reports,
-follow-ups) take the next number and get a new row.
+follow-ups, hotfixes) take the **next reactive** number, which starts after the last planned ticket,
+so planned numbers never shift; they get a new row at the end of the table.
 
 | # | Branch suffix | Scope | Status |
 |---|---|---|---|
@@ -27,6 +28,7 @@ follow-ups) take the next number and get a new row.
 | BS-16 | `institutional-orders` | Universities, libraries and lecturers: **bulk orders** with quantity pricing, request-a-quote, **proforma invoice and bank transfer / purchase order** payment with manual confirmation (audited), multi-seat ebook licences with named readers, tax invoice PDFs with the buyer organisation's details | ⏳ Planned |
 | BS-17 | `reader-pro` | Reader for owners: **bookmarks, highlights and notes** synced across devices, in-book search, reading stats, **offline reading** (installable PWA, owned ebooks cached encrypted with a licence check), errata and "updated edition" notices | ⏳ Planned |
 | BS-18 | `engagement-marketing` | Newsletter with **double opt-in** and one-click unsubscribe; **back-in-stock**, **price-drop** and **new-edition** alerts; **abandoned-cart** reminder (consent-aware, once); public **Q&A** on book pages answered by the author; referral codes; privacy-friendly analytics with a consent banner; UTM tracking | ⏳ Planned |
+| BS-19 | `instant-auth-header` (hotfix) | See detail below | ✅ Done |
 
 **Launch line.** BS-1 to BS-14 are the launch. The store goes live after BS-14 with the complete
 buying, reading, email, messaging and admin experience. BS-15 to BS-18 are growth features shipped
@@ -273,3 +275,30 @@ checklist is reviewed whenever a ticket is planned, so nothing important is forg
      empty-state padding tightened on phones.
   7. Script robustness: the responsive check now rejects Git Bash–mangled paths and sanitises `?`
      in screenshot names.
+
+## BS-19: Sign-in buttons appear instantly; local setup fixes (✅ Done, 2026-10-01, hotfix)
+
+- **Reported**: "I tried to open the create account and sign in page but it did not open."
+- **Cause, reproduced in a real browser against the owner's dev server**: the header showed a
+  placeholder instead of **Sign in / Create account** until the on-load session check answered.
+  The API wasn't running locally (no `backend/.env`), so the check went to the dev proxy, took
+  **5.3 s** and failed with 500. For those seconds there was nothing to click. The pages themselves
+  always opened when visited directly.
+- **Fix**: a readable, secret-free session hint cookie `bs_session=1` (path `/`,
+  `SameSite=Strict`, same expiry as the refresh cookie). It is set with every session and cleared
+  on sign-out, logout-everywhere, failed refresh, and a cookie-less refresh. Without the hint, the
+  storefront marks the visitor signed out **immediately, with no request**. Sign-in buttons now show
+  as soon as the page hydrates, and anonymous visitors no longer call `/auth/refresh` at all.
+- **Second bug found while setting up**: empty values in `.env` (`RESEND_API_KEY=`, exactly as
+  in `.env.example`) failed Joi validation, so copying the example made the API refuse to boot.
+  Optional strings now use `.empty('')` (empty means "not set"), production still rejects empty
+  required values, and `||` defaults replace `??` where an empty string must fall back.
+- **Local setup**: generated a git-ignored `backend/.env` for the owner's machine (fresh secrets,
+  local MongoDB, email printed to the terminal). Verified: the API boots, the proxy works, and the
+  full desktop flow passes (header Create account → sign up → sign out → header Sign in) with no
+  console errors.
+- **Tests**: e2e assertions for the hint cookie's attributes and its clearing on sign-out; env
+  tests for empty values; `SessionBootstrap` tests (no hint means signed out with zero requests,
+  hint present means restore).
+- **Process**: hotfix branched from `main` with BS-5 work stashed; introduced separate "next
+  planned" and "next reactive" ticket numbers so planned numbers never shift.

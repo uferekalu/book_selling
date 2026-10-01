@@ -333,6 +333,10 @@ Code: `backend/src/auth/`, `backend/src/users/`, `backend/src/audit/`; frontend 
   - "Is this race?" checks whether the session was **deliberately ended** (logout, theft,
     password change), not whether it currently holds a live token. The concurrent winner may not
     have saved its new token yet. A race test caught the naive version logging two-tab users out.
+- **Session hint cookie (BS-19).** `bs_session=1`: readable, secret-free, path `/`, `SameSite=Strict`,
+  same expiry as the refresh cookie. It is set with every session and cleared whenever the session
+  ends. The storefront restores a session only when the hint is present, so signed-out visitors see
+  Sign in / Create account at once and send no refresh request.
 - **No cookie is not an error.** `POST /auth/refresh` without a cookie returns
   `200 { status: 'anonymous' }`. Every page load checks for a session, and a 401 would put an
   error in every anonymous visitor's browser console. A *bad* cookie still gets 401 and is cleared.

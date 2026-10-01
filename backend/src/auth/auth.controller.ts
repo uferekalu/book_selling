@@ -60,6 +60,28 @@ export function buildRefreshCookieOptions(
   };
 }
 
+/**
+ * A readable, secret-free flag meaning "this browser has a session worth restoring". The refresh
+ * cookie itself is httpOnly and path-scoped, so page code can't see it. Without this hint every
+ * page load had to ask the API, and the header showed no Sign in / Create account buttons until it
+ * answered (5+ seconds when the API was down: the BS-19 bug). No hint: the storefront knows the
+ * visitor is signed out instantly and makes no request at all.
+ */
+export const SESSION_HINT_COOKIE = 'bs_session';
+
+export function buildSessionHintCookieOptions(
+  isProduction: boolean,
+  expires?: Date,
+): CookieOptions {
+  return {
+    httpOnly: false,
+    secure: isProduction,
+    sameSite: 'strict',
+    path: '/',
+    ...(expires ? { expires } : {}),
+  };
+}
+
 type SessionResponse = {
   status: 'authenticated';
   user: PublicUser;
@@ -152,15 +174,15 @@ export class AuthController {
     ];
     // No cookie is a normal visitor, not an error: every page load checks for a session, and a
     // 401 here would put an error in the browser console for every anonymous visit.
-    if (!raw) return { status: 'anonymous' };
+    if (!raw) {
+      this.endSessionCookies(res);
+      return { status: 'anonymous' };
+    }
     try {
       const { user, session } = await this.auth.refresh(raw, client);
       return this.startSession(res, user, session);
     } catch (error) {
-      res.clearCookie(
-        REFRESH_COOKIE,
-        buildRefreshCookieOptions(this.isProduction),
-      );
+      this.endSessionCookies(res);
       throw error;
     }
   }
@@ -176,10 +198,7 @@ export class AuthController {
       REFRESH_COOKIE
     ];
     if (raw) await this.sessions.revokeByToken(raw);
-    res.clearCookie(
-      REFRESH_COOKIE,
-      buildRefreshCookieOptions(this.isProduction),
-    );
+    this.endSessionCookies(res);
   }
 
   @ApiBearerAuth()
@@ -190,10 +209,7 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response,
   ): Promise<void> {
     await this.sessions.revokeAllForUser(me.sub, 'logout');
-    res.clearCookie(
-      REFRESH_COOKIE,
-      buildRefreshCookieOptions(this.isProduction),
-    );
+    this.endSessionCookies(res);
   }
 
   @ApiBearerAuth()
@@ -378,6 +394,25 @@ export class AuthController {
       session.refreshToken,
       buildRefreshCookieOptions(this.isProduction, session.refreshExpiresAt),
     );
+    res.cookie(
+      SESSION_HINT_COOKIE,
+      '1',
+      buildSessionHintCookieOptions(
+        this.isProduction,
+        session.refreshExpiresAt,
+      ),
+    );
     return { status: 'authenticated', user, accessToken: session.accessToken };
+  }
+
+  private endSessionCookies(res: Response): void {
+    res.clearCookie(
+      REFRESH_COOKIE,
+      buildRefreshCookieOptions(this.isProduction),
+    );
+    res.clearCookie(
+      SESSION_HINT_COOKIE,
+      buildSessionHintCookieOptions(this.isProduction),
+    );
   }
 }

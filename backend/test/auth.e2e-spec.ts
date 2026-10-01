@@ -53,6 +53,15 @@ describe('Auth (e2e)', () => {
     expect(setCookie).toMatch(/SameSite=Strict/i);
     expect(setCookie).toMatch(/Path=\/api\/auth/);
 
+    // The readable "has a session" hint: no secret, visible to page code, site-wide.
+    const hint = ([] as string[])
+      .concat(reg.headers['set-cookie'])
+      .find((c) => c.startsWith('bs_session='))!;
+    expect(hint).toMatch(/^bs_session=1;/);
+    expect(hint).not.toMatch(/HttpOnly/i);
+    expect(hint).toMatch(/Path=\/;/);
+    expect(hint).toMatch(/SameSite=Strict/i);
+
     await http()
       .get('/auth/me')
       .set('Authorization', `Bearer ${reg.body.accessToken}`)
@@ -64,10 +73,18 @@ describe('Auth (e2e)', () => {
       .expect(200);
     expect(refreshed.body.accessToken).toBeTruthy();
 
-    await http()
+    const loggedOut = await http()
       .post('/auth/logout')
       .set('Cookie', refreshCookie(refreshed))
       .expect(204);
+    // Both cookies are cleared (expired) on sign-out.
+    const cleared = ([] as string[]).concat(loggedOut.headers['set-cookie']);
+    expect(cleared.find((c) => c.startsWith('bs_rt=;'))).toMatch(
+      /Expires=Thu, 01 Jan 1970/,
+    );
+    expect(cleared.find((c) => c.startsWith('bs_session=;'))).toMatch(
+      /Expires=Thu, 01 Jan 1970/,
+    );
     await http()
       .post('/auth/refresh')
       .set('Cookie', refreshCookie(refreshed))
@@ -82,7 +99,10 @@ describe('Auth (e2e)', () => {
       .expect(401);
     // No cookie at all is simply "not signed in"; a bad cookie is rejected.
     await http().post('/auth/refresh').expect(200, { status: 'anonymous' });
-    await http().post('/auth/refresh').set('Cookie', 'bs_rt=forged').expect(401);
+    await http()
+      .post('/auth/refresh')
+      .set('Cookie', 'bs_rt=forged')
+      .expect(401);
     // Public routes stay open.
     await http().get('/health').expect(200);
   });

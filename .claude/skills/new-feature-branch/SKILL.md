@@ -10,11 +10,12 @@ build, test)` required, admins included). Nothing is ever pushed to `main` direc
 
 ## Steps
 
-1. **Find the ticket number.** Read the `**Next ticket number: BS-<n>**` line at the top of
-   `docs/ROADMAP.md`.
-   - A planned ticket: use its row's "Branch suffix" and scope.
-   - Reactive work (bug report, follow-up, the user's new idea): take `<n>` anyway, choose a 2–4
-     word kebab-case suffix, and add a new row to the table when the work is done.
+1. **Find the ticket number** at the top of `docs/ROADMAP.md`:
+   - Planned roadmap work: **"Next planned ticket"**. Use its row's "Branch suffix" and scope.
+   - Reactive work (bug report, hotfix, follow-up, the user's new idea): **"Next reactive ticket"**.
+     Choose a 2–4 word kebab-case suffix, and add a row at the end of the table when done.
+   - If other work is in progress, `git stash push -u -m "<what>"` first, and `git stash pop`
+     on that branch after the fix is merged (and rebased on `main`).
 2. **Update main.**
    ```
    git fetch origin
