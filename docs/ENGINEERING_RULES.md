@@ -48,6 +48,11 @@ A rule with a "why" came from a real incident, mostly in the sister project `foo
 - Small, single-purpose functions. Business rules in services or pure functions, never in
   controllers or components.
 - Match the surrounding code's style. Prettier formats the backend; ESLint rules the frontend.
+- **Dependency licences**: only permissive licences (MIT, BSD, Apache-2.0, ISC, MPL-2.0 or
+  similar) in either app. **No GPL, AGPL, SSPL or BUSL.** AGPL in a web service can oblige
+  publishing the whole application's source. Check `license` in a new package's `package.json`
+  before adding it. *Why:* ua-parser-js 2.x turned out to be AGPL and was removed in BS-4. CI runs
+  `node scripts/check-licenses.mjs` on every PR.
 
 ## 4. Backend rules
 

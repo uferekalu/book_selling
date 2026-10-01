@@ -59,6 +59,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       <Portal>
         {/* Bottom-centre above the thumb zone on phones, bottom-right on larger screens. */}
         <div
+          data-toast-region
           aria-live="polite"
           aria-relevant="additions"
           className="pointer-events-none fixed inset-x-0 bottom-0 z-(--z-toast) flex flex-col items-center gap-2 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:inset-x-auto sm:right-0 sm:items-end sm:p-6"

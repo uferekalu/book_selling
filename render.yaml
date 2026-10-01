@@ -40,3 +40,9 @@ services:
         sync: false
       - key: OWNER_ALERT_EMAIL
         sync: false
+      - key: JWT_ACCESS_SECRET
+        sync: false
+      - key: TWO_FACTOR_ENCRYPTION_KEY
+        sync: false
+      - key: BCRYPT_COST
+        value: "12"

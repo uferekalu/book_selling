@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Fraunces, Inter, JetBrains_Mono } from "next/font/google";
+import { SessionBootstrap } from "@/components/session-bootstrap";
 import { ThemeSync } from "@/components/theme-sync";
 import { ToastProvider } from "@/components/ui";
 import { StoreProvider } from "@/lib/redux/store-provider";
@@ -61,6 +62,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         </a>
         <StoreProvider>
           <ThemeSync />
+          <SessionBootstrap />
           <ToastProvider>{children}</ToastProvider>
         </StoreProvider>
       </body>

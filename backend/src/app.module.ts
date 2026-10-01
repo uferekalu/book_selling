@@ -4,11 +4,15 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { LoggerModule } from 'nestjs-pino';
+import { AuditModule } from './audit/audit.module.js';
+import { AccessTokenGuard, RolesGuard } from './auth/guards/auth.guards.js';
+import { AuthModule } from './auth/auth.module.js';
 import { envValidationSchema } from './common/config/env.validation.js';
 import { DatabaseModule } from './database/database.module.js';
 import { HealthModule } from './health/health.module.js';
 import { JobsModule } from './jobs/jobs.module.js';
 import { MailModule } from './mail/mail.module.js';
+import { UsersModule } from './users/users.module.js';
 
 @Module({
   imports: [
@@ -52,8 +56,16 @@ import { MailModule } from './mail/mail.module.js';
     DatabaseModule,
     HealthModule,
     JobsModule,
+    AuditModule,
     MailModule,
+    UsersModule,
+    AuthModule,
   ],
-  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
+  // Order matters: rate limit first, then authentication (default-deny), then roles.
+  providers: [
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
+    { provide: APP_GUARD, useExisting: AccessTokenGuard },
+    { provide: APP_GUARD, useExisting: RolesGuard },
+  ],
 })
 export class AppModule {}

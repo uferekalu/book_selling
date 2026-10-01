@@ -19,6 +19,12 @@ import { chromium } from "playwright";
 
 const BASE_URL = process.env.BASE_URL ?? "http://localhost:3100";
 const paths = process.argv.slice(2).length ? process.argv.slice(2) : ["/", "/design-system"];
+const mangled = paths.find((path) => !path.startsWith("/"));
+if (mangled) {
+  // Git Bash on Windows rewrites "/x" arguments into "C:/Program Files/Git/x".
+  console.error(`Not a site path: "${mangled}". In Git Bash, prefix the command with MSYS_NO_PATHCONV=1.`);
+  process.exit(2);
+}
 const WIDTHS = [320, 375, 414, 768, 1024, 1440];
 const THEMES = ["light", "dark"];
 const OUT = ".responsive-shots";
@@ -46,7 +52,9 @@ for (const path of paths) {
         layoutWidth: window.innerWidth,
         scrollWidth: document.documentElement.scrollWidth,
       }));
-      const name = `${path === "/" ? "home" : path.slice(1).replaceAll("/", "_")}-${theme}-${width}`;
+      // Paths may carry a query string; keep file names portable (no ? or = on Windows).
+      const slug = path === "/" ? "home" : path.slice(1).replace(/[^A-Za-z0-9-]+/g, "_");
+      const name = `${slug}-${theme}-${width}`;
       await page.screenshot({ path: `${OUT}/${name}.png`, fullPage: true });
       if (layoutWidth !== width || scrollWidth > width + 1 || errors.length) {
         failures.push({ page: name, layoutWidth, scrollWidth, errors });

@@ -121,7 +121,7 @@ floats. See §8.
 | role | `customer` \| `admin` \| `owner` | `owner` = the lecturer; only an owner can manage admins or approve refunds above a threshold |
 | accountStatus | `active` \| `unclaimed` \| `suspended` | guest checkout creates `unclaimed` (§8.2) |
 | emailVerifiedAt | Date \| null | |
-| twoFactor | `{ enabled, secretEnc, recoveryCodeHashes[] }` | TOTP; **required** for `admin`/`owner` |
+| twoFactor | `{ enabled, secretSealed, pendingSecretSealed, recoveryCodeHashes[], enabledAt, lastUsedStep }` | TOTP; seed AES-GCM sealed; **required** for `admin`/`owner` (§5) |
 | preferredCurrency | `NGN` \| `USD` \| `GBP` \| `EUR` | |
 | country | ISO-3166 alpha-2 | |
 | addresses | embedded `Address[]` (max 10) | `{ label, fullName, phone, line1, line2, city, state, postalCode, country, isDefault }` |
@@ -309,38 +309,110 @@ mutation and every money event; never updated or deleted.
 **`settings`**: singleton. Store name, support email, enabled currencies, per-provider enable
 switches, order expiry minutes, download policy.
 
-## 5. Auth and authorization
+## 5. Auth and authorization (built in BS-4)
 
-Ported from the reference project, where it is proven in production:
+Code: `backend/src/auth/`, `backend/src/users/`, `backend/src/audit/`; frontend `src/lib/api/`,
+`src/features/auth/`, `src/features/account/`. Ported from the reference project, then hardened. The
+"Improved" notes mark where this differs from the reference.
 
-- **Access token**: JWT, 15 minutes, returned in the response body, and held **only in Redux
-  memory** (never `localStorage`, which limits XSS token theft). Payload: `sub`, `role`, `email`.
-- **Refresh token**: opaque random 256-bit string in an `httpOnly; Secure` cookie with path
-  `/api/auth`. It is stored hashed per session (§4.1), **rotated on every use**, and a replay of a
-  rotated token revokes the whole family.
-- **Cookie `SameSite`**: `Lax` in development, `None; Secure` in production. **All browser calls are
-  proxied through the storefront's own origin** (`/api/*` → API via a Next.js rewrite, §7), so
-  the cookie is first-party and survives Safari and private windows. This fixed a real
-  "logged out on reload" bug in the reference project.
-- **Default-deny guards**: `JwtAuthGuard` and `RolesGuard` are registered as `APP_GUARD`. Every route
-  requires auth unless marked `@Public()`. `@Roles('admin', 'owner')` adds role checks.
-  **Ownership is checked in services** (an order belongs to the requester) because a role label
-  can't know which order is yours.
-- **Admin 2FA**: `admin` and `owner` accounts must enrol TOTP. Admin routes also require the access
-  token claim `mfa: true`, set only after a successful TOTP step. This is new compared with the
-  reference; it matters because admins can issue refunds.
-- **Rate limits**: login 5/min, register 5/min, forgot-password 3/15 min, all per IP. Lockout
-  after 10 failed logins per account in 15 minutes.
-- **Guest checkout → unclaimed account** (§8.2). An unclaimed account can't log in with a
-  password until the buyer sets one through the emailed `claim_account` link. Their orders and
-  library are already attached.
-- **Refresh concurrency**: the frontend serialises refreshes with one `async-mutex` lock shared by
-  the 401-retry path and the on-mount session restore. Without it, two concurrent refreshes race the
-  single-use token, trip reuse detection and log the user out. This was a real bug in the reference
-  project, hit right after a payment redirect.
-- **Roles**: `customer` is the only role anyone can give themselves. The first `owner` is created
-  with `npm run seed:owner -- email@example.com` once per environment. The owner grants and
-  revokes `admin` through the API.
+**Tokens**
+- **Access token**: JWT (HS256, with issuer and audience pinned), 15 minutes. Claims are `sub`,
+  `email`, `role`, `mfa`, `sid` (session id) and `typ: 'access'`. The frontend keeps it **in Redux
+  memory only**, never in `localStorage`.
+- **Refresh token**: 256-bit random, stored as SHA-256 only (`refresh_tokens`), one document per
+  rotation, grouped by `familyId`. One family is one signed-in device.
+  - It is **rotated on every use**, atomically (`findOneAndUpdate` on `revokedAt: null`).
+  - It lives in an `httpOnly` cookie `bs_rt`, `Path=/api/auth`, `Secure` in production.
+  - **Improved: `SameSite=Strict` in every environment**, the strongest CSRF setting. This is
+    possible because browsers only ever talk to the storefront's own origin (`/api/*` proxy). The
+    reference needed `None` in production.
+- **Reuse detection, with a grace window (improved).**
+  - Replaying a rotated token **more than 30s** after rotation revokes the whole session (theft).
+  - Within 30s, it's treated as a same-device race: two tabs reloading together, or a retried
+    request. The session survives, and the late request gets a sibling token.
+  - "Is this race?" checks whether the session was **deliberately ended** (logout, theft,
+    password change), not whether it currently holds a live token. The concurrent winner may not
+    have saved its new token yet. A race test caught the naive version logging two-tab users out.
+- **No cookie is not an error.** `POST /auth/refresh` without a cookie returns
+  `200 { status: 'anonymous' }`. Every page load checks for a session, and a 401 would put an
+  error in every anonymous visitor's browser console. A *bad* cookie still gets 401 and is cleared.
+- **Sessions are visible to the user**: `GET /auth/sessions` lists each device ("Chrome on
+  Android", last active, this-device flag), `DELETE /auth/sessions/:id` signs one out, and
+  `POST /auth/logout-all` signs out everywhere. Device names come from a small hand-written parser,
+  because ua-parser-js 2.x is AGPL.
+
+**Guards: default-deny.** `APP_GUARD` runs in order: throttler, `AccessTokenGuard`, `RolesGuard`.
+- Every route needs a valid access token unless it is `@Public()`. Public routes still attach a
+  valid token (`@OptionalUser()`) for personalisation.
+- MFA challenge tokens are signed with the same key but are rejected as access tokens (`typ`).
+- `@Roles('admin' | 'owner' | ...)` checks the role. **Staff roles also need an `mfa: true`
+  session**. Otherwise the response is 403 with `code: 'two_factor_required'`, and the frontend
+  sends them to 2FA setup.
+- **Ownership is checked in services** ("is this *your* order").
+
+**Passwords**
+- bcrypt, with the cost from `BCRYPT_COST`. Env validation enforces at least **12 in production**;
+  tests use 4.
+- Policy (NIST 800-63B): at least 10 characters, a block on common passwords, and no email local
+  part or name. Mirrored on the frontend for live feedback, with a strength meter; the server check
+  is authoritative.
+- Sign-in failures are generic ("Incorrect email or password") for a wrong password, an unknown
+  email or an unclaimed account. Unknown emails still run a bcrypt compare against a dummy hash, so
+  response time doesn't reveal which accounts exist.
+- **Lockout**: 10 consecutive failures (password or 2FA code) lock the account for 15 minutes
+  (429). A password reset clears the lock.
+
+**Two-step verification (TOTP)**: `otpauth`, 30s steps, ±1 step window.
+- The seed is encrypted at rest with AES-256-GCM (`TWO_FACTOR_ENCRYPTION_KEY`, `SecretBox`).
+- Each time step is accepted **once** (an atomic `lastUsedStep` update, so no replay).
+- Setup is three steps: confirm the password, scan the QR code (an SVG rendered as an image, on
+  white even in dark mode), then save **10 single-use recovery codes** (stored hashed; copy and
+  download offered).
+- Staff can't turn it off. A reset link never bypasses it: after the reset, the person must sign in
+  with a code.
+- Enabling it upgrades the current session to `mfa: true` (`SessionService.markMfa`), so staff
+  don't have to sign in again.
+
+**Email links** (`auth_tokens`): random, hashed, **single-use**, consumed atomically, and issuing a
+new one invalidates older ones. **Improved:** the reference used JWT links, which stay valid until
+they expire.
+
+| Link | Lifetime | Effect |
+|---|---|---|
+| verify email | 24 h | marks verified, sends welcome |
+| reset password | 60 min | sets password, verifies email, revokes every session, security email, signs in (unless 2FA) |
+| claim account | 7 days | as reset, plus `unclaimed` → `active` (guest checkout) |
+
+Mail scanners can't consume a link: the verify page POSTs the token from the browser, not on GET.
+Token pages send `Referrer-Policy: no-referrer` and are `noindex`.
+
+**Account states and roles**
+- Registration gives `customer`, with **terms version and acceptance time recorded**, and marketing
+  opt-in only by explicit tick, timestamped (NDPA/GDPR consent evidence).
+- Registering with a **guest's** email never sets a password from an unverified request. It emails
+  a claim link instead (`202 claim_email_sent`); otherwise anyone could take over a guest's library.
+- `UsersService.findOrCreateForGuest` (used by BS-7) is an idempotent upsert.
+- The owner is bootstrapped once per environment with `npm run seed:owner -- email`. The owner
+  grants and removes `admin` (`PATCH /users/:id/role`), which revokes the target's sessions and
+  writes an audit entry. The owner role itself can't be granted through the API.
+
+**Security emails** (`auth.security-notice`): sign-in from a new kind of device, password changed,
+2FA on or off.
+
+**Audit log** (`audit_logs`, global `AuditService`): role changes, 2FA changes, recovery code use.
+Append-only.
+
+**Frontend session handling**
+- `SessionBootstrap` restores the session once per page load through
+  `restoreSession`, a `queryFn` that takes `refreshMutex` itself.
+- `baseQueryWithReauth`: on a 401 (except on auth endpoints), one shared renewal, then a retry.
+- `renewSession()` uses the raw base query. Going through the wrapper would wait on the lock its
+  caller holds: the self-deadlock the reference shipped.
+- Tests cover: renew and retry; 5 concurrent 401s giving **1** refresh; a failed renewal signing
+  out; an anonymous reply; sign-in errors never triggering a refresh.
+- Signed-in pages use `RequireAuth`, which shows a skeleton while checking, then redirects to
+  `/login?next=…`. `next` is sanitised by `safeNextPath` (same-site relative paths only, so no open
+  redirect).
 
 ## 6. Design system (frontend)
 

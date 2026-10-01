@@ -44,11 +44,13 @@ component.
    server-generated PDF.
 4. **No secrets committed.** Real values live in `.env` (gitignored) or Vercel/Render settings. New
    env vars go into Joi validation, `.env.example` and `render.yaml` together.
-5. **Every endpoint validates with a DTO; every form validates with Zod.** Guards are default-deny;
+5. **Every endpoint validates with a DTO; every form validates with Zod.** Guards are default-deny
+   (`@Public()` to open a route); staff routes need `@Roles()` plus a two-step-verified session;
    ownership is checked in services.
 6. **Frontend is tokens + UI kit only.** No raw colours, no one-off styled elements; extend the kit.
    Both themes, 375px width, keyboard-accessible.
-7. **Definition of done** (ENGINEERING_RULES §2): lint, typecheck, build, unit and e2e tests pass in
+7. **Permissive licences only** (no GPL/AGPL/SSPL/BUSL); CI runs `scripts/check-licenses.mjs`.
+8. **Definition of done** (ENGINEERING_RULES §2): lint, typecheck, build, unit and e2e tests pass in
    both apps, and the docs are updated (the ROADMAP row, and the ARCHITECTURE section touched).
 
 ## Repo structure

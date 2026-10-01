@@ -34,7 +34,9 @@ export {
 export { ButtonLink, TextLink, type ButtonLinkProps, type TextLinkProps } from "./link";
 export { Modal, type ModalProps } from "./modal";
 export { Pagination, pageWindow, type PaginationProps } from "./pagination";
+export { OtpInput, type OtpInputProps } from "./otp-input";
 export { PasswordInput, type PasswordInputProps } from "./password-input";
+export { PasswordStrength, type PasswordStrengthProps } from "./password-strength";
 export { Portal, useMounted } from "./portal";
 export { PriceTag, type PriceTagProps } from "./price-tag";
 export { ProgressBar, type ProgressBarProps } from "./progress-bar";
