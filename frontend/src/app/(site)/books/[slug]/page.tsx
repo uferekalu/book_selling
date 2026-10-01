@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import NextLink from "next/link";
 import { permanentRedirect } from "next/navigation";
-import { Badge, BookCover, Breadcrumbs, Container, Eyebrow, PriceTag, Rating, Section } from "@/components/ui";
+import { Badge, BookCover, Breadcrumbs, Container, Eyebrow, PriceTag, Rating, Section, TextLink } from "@/components/ui";
 import { BookTabs } from "@/features/catalog/book-tabs";
 import { BookGrid } from "@/features/catalog/catalog-book-card";
 import { RecentlyViewed, RecordView } from "@/features/catalog/recently-viewed";
@@ -167,6 +167,11 @@ export default async function BookPage({ params }: PageProps<"/books/[slug]">) {
                   Abstract
                 </h2>
                 <div className="prose-book" dangerouslySetInnerHTML={{ __html: book.abstractHtml }} />
+                {book.hasPreview && (
+                  <TextLink href={`/books/${book.slug}/read`} className="self-start font-medium">
+                    Read the introduction free →
+                  </TextLink>
+                )}
               </section>
             )}
 

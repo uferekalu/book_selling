@@ -69,10 +69,57 @@ export class Seo {
 }
 const SeoSchema = SchemaFactory.createForClass(Seo);
 
-/** BS-6 fills this in (server-generated preview PDF). Present now so publishing can require it. */
+@Schema({ _id: false })
+export class PreviewSection {
+  @Prop({ type: String, required: true, trim: true, maxlength: 80 })
+  label: string;
+  /** 1-based PDF pages of the manuscript, inclusive. */
+  @Prop({ type: Number, required: true, min: 1 }) fromPage: number;
+  @Prop({ type: Number, required: true, min: 1 }) toPage: number;
+}
+const PreviewSectionSchema = SchemaFactory.createForClass(PreviewSection);
+
+export const PREVIEW_STATUSES = [
+  'none',
+  'queued',
+  'building',
+  'ready',
+  'failed',
+] as const;
+export type PreviewStatus = (typeof PREVIEW_STATUSES)[number];
+
+/**
+ * The free "read before you buy" preview (ARCHITECTURE §10.1): a separate PDF built on the server
+ * from the chosen sections only, stored in GridFS (`previews` bucket). `enabled` means a built
+ * file is being served; it stays on while a rebuild runs, so the store never loses its preview.
+ */
 @Schema({ _id: false })
 export class Preview {
   @Prop({ type: Boolean, default: false }) enabled: boolean;
+  @Prop({ type: String, enum: PREVIEW_STATUSES, default: 'none' })
+  status: PreviewStatus;
+  @Prop({ type: [PreviewSectionSchema], default: [] })
+  sections: PreviewSection[];
+  /**
+   * PDF page number of printed page 1, minus one (front matter). Maps the table of contents'
+   * printed page numbers to PDF pages.
+   */
+  @Prop({ type: Number, default: 0, min: 0 }) pageOffset: number;
+  /** GridFS id of the served preview PDF. */
+  @Prop({ type: Types.ObjectId, default: null }) fileId: Types.ObjectId | null;
+  /** Manuscript page number of each preview page, in order. */
+  @Prop({ type: [Number], default: [] }) pageMap: number[];
+  /** Manuscript checksum the served file was built from. */
+  @Prop({ type: String, default: null }) sourceChecksum: string | null;
+  /** Public URLs of two tiny, blurred images of the pages just after the preview. */
+  @Prop({ type: [String], default: [] }) teasers: string[];
+  @Prop({ type: String, default: null }) error: string | null;
+  /** Changes on every queue, so a stale build can't overwrite a newer request. */
+  @Prop({ type: Number, default: 0 }) buildToken: number;
+  @Prop({ type: Number, default: 0 }) attempts: number;
+  @Prop({ type: Date, default: null }) queuedAt: Date | null;
+  @Prop({ type: Date, default: null }) startedAt: Date | null;
+  @Prop({ type: Date, default: null }) generatedAt: Date | null;
 }
 const PreviewSchema = SchemaFactory.createForClass(Preview);
 
@@ -135,6 +182,16 @@ export type BookDocument = HydratedDocument<Book>;
 export const BookSchema = SchemaFactory.createForClass(Book);
 
 BookSchema.index({ status: 1, listedAt: -1 });
+// The preview worker's queue (only books with a pending or running build).
+BookSchema.index(
+  { 'preview.status': 1, 'preview.queuedAt': 1 },
+  {
+    partialFilterExpression: {
+      'preview.status': { $in: ['queued', 'building'] },
+    },
+  },
+);
+BookSchema.index({ 'preview.fileId': 1 }, { sparse: true });
 BookSchema.index({ status: 1, featured: -1, listedAt: -1 });
 for (const currency of CURRENCIES)
   BookSchema.index({ status: 1, [`fromPrices.${currency}`]: 1 });

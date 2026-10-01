@@ -11,6 +11,8 @@ import type { AccessTokenPayload } from '../auth/interfaces/auth.types.js';
 import { CURRENCIES } from '../common/money/currency.js';
 import { markdownToSafeHtml } from '../common/text/rich-text.js';
 import { toObjectId } from '../common/utils/object-id.js';
+import { PreviewStorage } from '../preview/preview-storage.js';
+import { queuePreviewBuild } from '../preview/preview.service.js';
 import { CloudinaryService } from '../uploads/cloudinary.service.js';
 import { normaliseIsbn13, publishProblems } from './catalog-rules.js';
 import type {
@@ -47,6 +49,7 @@ export class BooksService {
     private readonly media: CloudinaryService,
     private readonly audit: AuditService,
     private readonly revalidator: StorefrontRevalidator,
+    private readonly previewFiles: PreviewStorage,
   ) {}
 
   async list(query: AdminBookListQuery): Promise<{
@@ -355,8 +358,12 @@ export class BooksService {
       uploadedAt: new Date(),
     };
     if (!book.pageCount) book.pageCount = asset.pages;
-    // A different file invalidates the preview built from the old one (rebuilt in BS-6).
-    if (replaced) book.preview = { enabled: false };
+    // A different file: rebuild the preview from it. The current preview keeps being served
+    // until the new one is ready, so the store never shows a book without its preview.
+    if (replaced) {
+      queuePreviewBuild(book.preview, new Date());
+      book.markModified('preview');
+    }
     await book.save();
     await this.media.markAttached('manuscript', asset.publicId);
     await this.record(actor, 'book.manuscript_changed', book, {
@@ -410,6 +417,9 @@ export class BooksService {
     }
     if (book.manuscript)
       await this.media.destroy('manuscript', book.manuscript.publicId);
+    if (book.preview?.fileId)
+      await this.previewFiles.remove(book.preview.fileId);
+    await this.media.destroyPreviewTeasers(book._id.toString());
     await this.record(actor, 'book.deleted', book, { title: book.title });
   }
 

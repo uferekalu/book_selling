@@ -381,6 +381,96 @@ export class CloudinaryService {
     });
   }
 
+  /**
+   * Reads the private manuscript on the server (preview building). The short-lived signed URL is
+   * used once here and never leaves the process.
+   */
+  async downloadManuscript(publicId: string): Promise<Uint8Array> {
+    const url = this.privateDownloadUrl(publicId, 'pdf', 600);
+    const response = await fetch(url, {
+      signal: AbortSignal.timeout(5 * 60_000),
+    });
+    if (!response.ok) {
+      throw new Error(
+        `Could not download the manuscript from Cloudinary (${response.status})`,
+      );
+    }
+    return new Uint8Array(await response.arrayBuffer());
+  }
+
+  /**
+   * A signed image of one manuscript page, for the admin's preview picker only. Small (240px) and
+   * returned only to staff with two-step verification.
+   */
+  manuscriptPageUrl(
+    publicId: string,
+    version: number,
+    page: number,
+    width = 240,
+  ): string {
+    this.assertConfigured();
+    return cloudinary.url(publicId, {
+      resource_type: 'image',
+      type: 'authenticated',
+      sign_url: true,
+      secure: true,
+      version,
+      format: 'jpg',
+      transformation: [{ page }, { width, crop: 'scale', quality: 'auto' }],
+    });
+  }
+
+  /**
+   * Stores a deliberately unreadable hint of a locked page (48px wide, heavily blurred) as a
+   * public image, and returns its URL. Only this tiny derived image is public, never the page.
+   */
+  async createTeaser(
+    manuscriptPublicId: string,
+    version: number,
+    page: number,
+    bookId: string,
+    index: number,
+  ): Promise<string> {
+    this.assertConfigured();
+    const source = cloudinary.url(manuscriptPublicId, {
+      resource_type: 'image',
+      type: 'authenticated',
+      sign_url: true,
+      secure: true,
+      version,
+      format: 'jpg',
+      transformation: [
+        { page },
+        { width: 48, crop: 'scale' },
+        { effect: 'blur:800', quality: 30 },
+      ],
+    });
+    const result = (await cloudinary.uploader.upload(source, {
+      folder: `${this.root}/books/${bookId}/preview`,
+      public_id: `teaser-${index}`,
+      overwrite: true,
+      invalidate: true,
+      resource_type: 'image',
+      type: 'upload',
+    })) as { secure_url: string };
+    return result.secure_url;
+  }
+
+  /** Deletes a book's teaser images (when the draft is deleted). Best effort. */
+  async destroyPreviewTeasers(bookId: string): Promise<void> {
+    if (!this.configured) return;
+    try {
+      await cloudinary.api.delete_resources_by_prefix(
+        `${this.root}/books/${bookId}/preview/`,
+        { resource_type: 'image', type: 'upload' },
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Could not delete preview teasers of ${bookId}: ${(error as Error).message}`,
+      );
+    }
+  }
+
   private assertConfigured(): void {
     if (!this.configured) {
       throw new ServiceUnavailableException(

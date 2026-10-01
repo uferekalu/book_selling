@@ -1,6 +1,6 @@
 # Roadmap
 
-**Next planned ticket: BS-6** · **Next reactive ticket: BS-20**
+**Next planned ticket: BS-7** · **Next reactive ticket: BS-20**
 
 Each ticket is one branch (`feature/BS-<n>-<suffix>`) and one squash-merged PR. The order is
 deliberate: each ticket builds only on merged work. When a ticket finishes, its row is rewritten
@@ -15,7 +15,7 @@ so planned numbers never shift; they get a new row at the end of the table.
 | BS-3 | `email-outbox` | See detail below | ✅ Done |
 | BS-4 | `auth-accounts` | See detail below | ✅ Done |
 | BS-5 | `catalog` | See detail below | ✅ Done |
-| BS-6 | `preview-reader` | **Read-before-you-buy** (ARCHITECTURE §10.1, PRODUCT_RULES §4): server-side preview PDF generation (pdf-lib, page-range copy, "Preview" stamp, metadata strip), blurred locked teasers, outline extraction; public preview endpoint; admin preview section picker with thumbnails and 15% cap; pdf.js reader (worker, text layer, scroll/spread/zoom/fullscreen, keyboard, sepia), TOC with locked chapters, progress, end-of-preview "Continue reading" card, 80% nudge, `reading_progress`, `preview_events`; preview leak tests | ⏳ Planned |
+| BS-6 | `preview-reader` | See detail below | ✅ Done |
 | BS-7 | `cart-checkout-orders` | `common/money`, carts (guest and user, merge on login, repricing), shipping zones and rates, coupon engine, server quote, order placement with idempotency key and transaction (stock reservation, coupon hold, already-owned check, guest → unclaimed account), order state machine, expiry job, order numbers; frontend cart drawer, checkout steps, **checkout drawer inside the reader**, order history and detail | ⏳ Planned |
 | BS-8 | `payments` | Stripe, Paystack and Flutterwave adapters; `payments` and `webhook_events` collections; initiate, webhooks (raw-body signature verification), verify-on-return, the single `settle()` with amount/currency assertion inside a transaction (entitlements, stock commit, outbox receipt); reconciliation job; refunds (two-phase, outcome-unknown); out-of-band refund and dispute detection; provider switcher UI; `/checkout/callback` (verify + poll + return to the reader at the saved page); the **full payment test matrix** | ⏳ Planned |
 | BS-9 | `library-fulfillment` | Entitlements, My Library, online full reader (signed range-request URL, synced progress), downloads (5-min signed URLs, rate limit), per-buyer PDF stamping; shipments admin flow with tracking; receipt with PDF invoice; all commerce emails | ⏳ Planned |
@@ -365,3 +365,55 @@ checklist is reviewed whenever a ticket is planned, so nothing important is forg
      timeout is now 20s.
   6. Covers and copy now depict foundry and heat treatment (the lecturer's field), not
      thermodynamics.
+
+## BS-6: Read before you buy: the preview reader (✅ Done, 2026-10-01)
+
+- **The rule** (PRODUCT_RULES §4): anyone can read the abstract and introduction, chosen by the
+  lecturer, with no account; at the end they are invited to buy. **Only the free pages ever leave
+  the server**: the preview is a new PDF built from those pages alone.
+- **Backend** (`src/preview`; ARCHITECTURE §10.1 "As built"):
+  - `buildPreview` (pdf-lib): copies only the chosen pages, adds a "Preview · title" footer, drops
+    the master file's metadata, outline and attachments; rejects encrypted or unreadable PDFs with
+    a clear message; enforces `PREVIEW_MAX_PERCENT` (15%).
+  - Background builds (`PreviewWorker`, job-locked) with a build token so a stale build never
+    wins, retries for transient errors, and recovery of stuck builds; a replaced manuscript
+    re-queues the build while the current preview keeps being served.
+  - Storage in GridFS, served by the API with year-long caching; blurred 48px teasers of the next
+    pages via Cloudinary; contents derived from the table of contents plus a front-matter offset.
+  - Endpoints: public preview description and file (published books only), anonymous
+    `preview_events` analytics; admin sections, rebuild, page thumbnails, and a staff-only file
+    endpoint so drafts can be checked before publishing. Deleting a draft removes its preview.
+- **Frontend**:
+  - **Reader** at `/books/<slug>/read` (full screen, client-only, pdf.js in a worker): crisp pages
+    with selectable text, lazy rendering, zoom, Paper/Sepia/Night tones, full screen, keyboard
+    shortcuts, the whole contents in a drawer (locked chapters explain they're in the full book),
+    "Page 3 of 7 free pages · 405 pages in the full book", resume where you left off (`?page=`
+    for returning buyers), one dismissible hint at 80%, and the end of the preview flowing through
+    blurred locked pages into the **Continue reading** card with prices and formats.
+  - Book page: "Read the introduction free →" under the abstract and in the format picker.
+  - Admin editor: a **Free preview** section: named page ranges, the printed-page-1 offset, live
+    "7 of 52 free pages used" and problems, page thumbnails with free pages highlighted, build
+    status that updates itself, Open preview, Rebuild.
+- **Demo data**: `seed:demo` now typesets a stand-in manuscript for each demo book and builds a
+  real preview with the production builder, so the reader works locally without Cloudinary.
+- **Not done here, by design**: paying from the reader's card (the buttons say checkout opens
+  shortly) and returning to the page after payment (BS-7/BS-8); full-book reading for owners
+  (BS-9); a two-page spread on wide screens and reading the PDF's own outline (later).
+- **Tests**: backend 183 unit tests (builder: exact pages copied, proven by a unique width per
+  page, metadata dropped, cap, unreadable files; service: build and serve end to end, drafts and
+  old files never served, stale builds discarded, permanent vs retried failures, manuscript
+  replacement, analytics) and 23 e2e tests; frontend 276 tests (reader rules, section rules).
+- **Verified live** with the production build against the real API and demo previews: the reader
+  on a 375px phone and at 1440px (text layer present, contents drawer, locked chapter message,
+  end card), the admin Free preview section after a real 2FA sign-in (the staff preview file
+  served as a PDF), and `check:responsive` on the home, list, book and reader pages.
+- **Incidents and decisions**:
+  1. **Preview stored in GridFS, not Cloudinary**: small, same-origin for pdf.js (no CORS or
+     Cloudinary PDF-delivery limits), works locally, cached forever by versioned URL.
+  2. A damaged file with a PDF header "loaded" in pdf-lib and then failed later, and was being
+     retried as if temporary; any parsing failure is now a permanent "can't read this PDF".
+  3. The API hides the text of 5xx errors, so the editor explains a 503 (no Cloudinary) itself.
+  4. Under full parallel load the backend's `beforeAll` MongoDB start exceeded 10s; hook timeout
+     is now 120s.
+  5. A Render instance needs about 4× the largest manuscript in RAM for preview builds
+     (DEPLOYMENT §4a).

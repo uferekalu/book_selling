@@ -66,6 +66,9 @@ services:
         sync: false
       - key: IMAGE_MAX_MB
         value: "15"
+      # Largest share of a book the free preview may show (PRODUCT_RULES §4)
+      - key: PREVIEW_MAX_PERCENT
+        value: "15"
       # Same value as the storefront’s REVALIDATE_SECRET (Vercel)
       - key: FRONTEND_REVALIDATE_SECRET
         sync: false

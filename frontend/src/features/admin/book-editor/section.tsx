@@ -8,6 +8,7 @@ export const SECTIONS = [
   { id: "text", label: "Abstract & description" },
   { id: "media", label: "Cover & sample pages" },
   { id: "file", label: "Book file" },
+  { id: "preview", label: "Free preview" },
   { id: "formats", label: "Formats & prices" },
 ] as const;
 

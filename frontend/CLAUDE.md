@@ -100,6 +100,12 @@ Full design: `../docs/ARCHITECTURE.md` §6 (design system) and §7 (frontend arc
 - Admin editor sections save independently and report unsaved state with `useReportDirty`. Sync
   from server data during render keyed on `updatedAt`, not in an effect (React's
   `set-state-in-effect` lint fails otherwise).
+- **Preview reader** (`src/features/reader`, route `src/app/(reader)/books/[slug]/read`, no site
+  chrome): client-only (`next/dynamic` with `ssr: false`), pdf.js loaded on demand with its worker
+  (`new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url)`), canvas plus text layer per
+  page (the text-layer CSS is in `globals.css`, not pdf.js's 6,000-line stylesheet). It only ever
+  loads `/api/catalog/previews/<id>`, never anything of the full book. Page rules live in
+  `reader-logic.ts` with tests.
 - Rendering stored HTML (`dangerouslySetInnerHTML`) is allowed only for fields the API sanitised
   (`*Html`); JSON-LD escapes `<` as `\u003c`.
 

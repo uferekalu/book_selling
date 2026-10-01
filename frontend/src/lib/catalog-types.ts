@@ -107,3 +107,24 @@ export interface BookFilters {
   featured?: boolean;
   currency: Currency;
 }
+
+/** The free preview (GET /catalog/books/:slug/preview; ARCHITECTURE §10.1). */
+export interface PreviewOutlineEntry {
+  title: string;
+  level: 1 | 2;
+  page: number | null;
+  previewPage: number | null;
+}
+
+export interface PreviewData {
+  slug: string;
+  title: string;
+  fileUrl: string;
+  pageCount: number;
+  totalPages: number;
+  pageMap: number[];
+  sections: Array<{ label: string; fromPage: number; toPage: number; previewPage: number }>;
+  outline: PreviewOutlineEntry[];
+  teasers: string[];
+  continuesAt: number | null;
+}

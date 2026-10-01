@@ -165,6 +165,60 @@ describe('Catalog (e2e)', () => {
     expect((await http().get('/catalog/books').expect(200)).body.total).toBe(0);
   });
 
+  it('serves previews publicly and keeps preview admin behind staff 2FA', async () => {
+    await http().get('/catalog/books/no-such-book/preview').expect(404);
+    await http().get('/catalog/previews/64b000000000000000000009').expect(404);
+    await http().get('/catalog/previews/not-an-id').expect(404);
+    // Analytics: strict validation, 204 for a well-formed batch (even for an unknown book).
+    await http()
+      .post('/catalog/preview-events')
+      .send({ slug: 'x', sessionId: 'short', events: [{ type: 'open' }] })
+      .expect(400);
+    await http()
+      .post('/catalog/preview-events')
+      .send({
+        slug: 'no-such-book',
+        sessionId: 'abcdefgh1234',
+        events: [{ type: 'hack' }],
+      })
+      .expect(400);
+    await http()
+      .post('/catalog/preview-events')
+      .send({
+        slug: 'no-such-book',
+        sessionId: 'abcdefgh1234',
+        events: [{ type: 'open' }, { type: 'page', page: 2 }],
+      })
+      .expect(204);
+
+    const book = await http()
+      .post('/admin/catalog/books')
+      .set('Authorization', `Bearer ${staffToken}`)
+      .send({ title: 'Heat Treatment of Steels' })
+      .expect(201);
+    expect(book.body.preview).toMatchObject({
+      enabled: false,
+      status: 'none',
+      sections: [],
+      maxPercent: 15,
+      maxPages: null,
+    });
+    const route = `/admin/catalog/books/${book.body.id}/preview`;
+    const body = { sections: [{ label: 'Intro', fromPage: 1, toPage: 2 }] };
+    await http().put(route).send(body).expect(401);
+    await http()
+      .put(route)
+      .set('Authorization', `Bearer ${staffNoMfaToken}`)
+      .send(body)
+      .expect(403);
+    const noFile = await http()
+      .put(route)
+      .set('Authorization', `Bearer ${staffToken}`)
+      .send(body)
+      .expect(400);
+    expect(noFile.body.message).toMatch(/Upload the book PDF first/);
+  });
+
   it('previews Markdown through the storefront sanitizer, for staff only', async () => {
     const markdown =
       '## Sand moulding\n\n**Green sand** <script>alert(1)</script> [x](javascript:alert(1))';

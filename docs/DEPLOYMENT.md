@@ -102,8 +102,13 @@ Tests don't need either: they use `mongodb-memory-server`.
    requests sizes on the fly) and leave PDF delivery restricted; manuscripts are `authenticated`
    and never reachable without a signed URL from our API.
 4. Turn on Cloudinary **Backups** for the account, and keep the original manuscripts elsewhere too.
-5. Smoke test on staging: upload a cover (crop it), a sample page and a PDF from a phone; check
-   the cover on the book page and that the PDF URL is never exposed in the browser.
+5. **Preview building needs memory**: the API loads the whole book PDF to copy the free pages
+   (BS-6). Give the Render instance at least about 4× the largest manuscript in RAM: Starter (512MB)
+   suits books up to roughly 100MB; use Standard (2GB) for larger ones. A build that runs out of
+   memory restarts the instance and is retried automatically.
+6. Smoke test on staging: upload a cover (crop it), a sample page and a PDF from a phone; choose
+   the free preview pages and wait for "Ready"; open the reader on a phone and check that it ends
+   in the "Continue reading" card, and that the book PDF's URL never appears in the browser.
 
 ## 5. Email (Resend)
 

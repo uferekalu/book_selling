@@ -933,26 +933,53 @@ browser, and when they want to read further they are asked to buy, smoothly and 
 blurring pages client-side is not protection (anyone can open dev tools). So the preview is a
 **separate PDF built on the server** that physically contains only the preview pages:
 
-1. The admin uploads the manuscript (private master PDF) and marks the preview sections in the
-   book editor. The editor shows page thumbnails of the manuscript so they can pick "Abstract
-   pp. 1–2, Introduction pp. 3–18", and it enforces `maxPreviewPercent`.
-2. `PreviewService.generate(bookId)` (pdf-lib, runs as a background job on manuscript or section
-   change):
-   - copies only those pages into a new PDF, stamping a small "Preview · <title>" footer;
-   - strips metadata, attachments and outline entries that point outside the preview;
-   - uploads the result as the public preview asset;
-   - renders the 2 blurred **locked teasers** from the next pages at ≤ 48px wide;
-   - extracts the manuscript outline into `preview.outline`, marking each entry `inPreview`.
-3. The preview is served through `GET /books/:slug/preview` → `{ url, pageCount, sections, outline,
-   lockedTeasers, totalPages }` (`@Public()`, cached, rate-limited).
+**As built (BS-6)**:
 
-**Reader UX** (`/books/[slug]/read`, and embedded as a sheet on the book page):
+1. **Choosing the pages**: the editor's "Free preview" section takes named sections by PDF page
+   range ("Abstract 2–2, Introduction 4–9"), the PDF page of printed page 1 (front matter offset),
+   shows "7 of 52 free pages used" live, and signed 240px thumbnails of the manuscript pages
+   (`GET /admin/catalog/books/:id/manuscript-pages`, staff with 2FA) with the free pages
+   highlighted. The cap is `PREVIEW_MAX_PERCENT` (default 15, owner-editable from BS-12), checked
+   in the browser and authoritatively by the API (`sectionProblems`). `PUT
+   /admin/catalog/books/:id/preview` saves and **queues** a build; `POST …/preview/rebuild` retries.
+2. **Building** (`PreviewWorker`, every 10s, job-locked; `PreviewService.processNext`): claims the
+   oldest queued book with a conditional update, downloads the manuscript server-side through a
+   10-minute private URL, and runs `buildPreview` (pdf-lib): a **new** PDF with only the chosen
+   pages, a small "Preview · <title>" footer, no metadata, outline, attachments or scripts from the
+   master. Encrypted or unreadable PDFs and missing Cloudinary fail **permanently** with a clear
+   message; network errors retry up to 3 times. Each queue bumps `preview.buildToken`, and a
+   build only applies if the token still matches, so an older build can never overwrite a newer
+   request. A build stuck in `building` for 15 minutes is re-claimed.
+3. **Storage**: the preview PDF is stored in **MongoDB GridFS** (bucket `previews`) and served by
+   our API, not Cloudinary: it is small, always same-origin for pdf.js (no CORS, no Cloudinary PDF
+   delivery restrictions) and works without Cloudinary locally. Its URL contains the file id, which
+   changes on every rebuild, so it is cached for a year (`Cache-Control: public, immutable`). The
+   previous file is deleted after the new one is applied. While a rebuild runs (for example after
+   the manuscript is replaced), **the current preview keeps being served**.
+4. **Locked teasers**: two images of the pages after the preview, rendered by Cloudinary from the
+   private manuscript at 48px wide, heavily blurred, and stored as public images
+   (`books/<id>/preview/teaser-n`). Unreadable by design; skipped without Cloudinary.
+5. **Contents**: derived on read from the book's table of contents plus the page offset, so a
+   contents edit shows immediately without a rebuild. Each entry has `previewPage` (free) or
+   `null` (locked). Reading the PDF's own outline is a later improvement.
+6. **Public API** (`@Public`, rate-limited): `GET /catalog/books/:slug/preview` →
+   `{ fileUrl, pageCount, totalPages, pageMap, sections, outline, teasers, continuesAt }` for
+   published books only; `GET /catalog/previews/:fileId` streams the PDF only while it is a
+   published book's current preview; `POST /catalog/preview-events` stores anonymous analytics
+   (`preview_events`: book, random per-tab session id, event, page; kept 400 days). Staff can open
+   any book's built preview, drafts included, through `GET /admin/catalog/books/:id/preview-file`.
+7. Publishing still requires `preview.enabled` (a built preview exists).
+
+**Reader UX** (`/books/[slug]/read`, in its own `(reader)` route group without the site header;
+as built in BS-6 unless marked *later*):
 - A pdf.js renderer (`pdfjs-dist` in a web worker, lazy-loaded so the book page stays fast) draws
   pages to canvas with a text layer, so the text is selectable and accessible to screen readers.
-  Controls: continuous scroll, single-page or two-page spread on wide screens, zoom, fit width,
-  keyboard navigation (←/→, PgUp/PgDn, Home/End), and a full-screen focus mode. The theme follows
-  the site theme, with a "paper" or "sepia" canvas tint in dark mode.
-- **Sidebar table of contents** shows the whole book. Preview chapters are clickable; locked
+  Controls: continuous scroll (natural on phones), zoom (75–200%, fit width at 100%), keyboard
+  navigation (←/→ and PgUp/PgDn turn pages, Home, End jumps to the buying options, +/−, F),
+  full-screen focus mode, and **Paper / Sepia / Night** page tones (Night by default in dark mode;
+  remembered). Pages render lazily near the viewport, crisp on high-DPI screens; the reader is
+  client-only and loads pdf.js on demand. *Later*: a two-page spread on wide screens.
+- **Table of contents** (a drawer) shows the whole book. Preview chapters are clickable; locked
   chapters show a lock icon and open the paywall card with that chapter's name ("Chapter 4: Heat
   Exchangers is in the full book").
 - **Progress bar**: "Page 14 of 18 free pages · 342 pages in the full book".
@@ -962,7 +989,8 @@ blurring pages client-side is not protection (anyone can open dev tools). So the
   edition, ships to <country>", buy buttons, and trust badges (secure payment via
   Paystack/Stripe/Flutterwave). A gentle, dismissible nudge also appears at 80% of the preview.
   There are no pop-ups mid-read.
-- **Buying without leaving the reader**: "Buy ebook" adds the item and opens a **checkout drawer**
+- **Buying without leaving the reader** (*BS-7/BS-8*; until then the card's buy buttons say
+  checkout opens shortly): "Buy ebook" adds the item and opens a **checkout drawer**
   over the reader (the same checkout flow, §8.2). The provider's return URL carries
   `returnTo=/books/<slug>/read?page=<n>`. After settlement the buyer lands **back in the reader in
   full mode at the page they stopped on**, with a quiet "Unlocked. Enjoy the rest of the book"
@@ -970,8 +998,9 @@ blurring pages client-side is not protection (anyone can open dev tools). So the
   checkout (§5).
 - Buying print only: the reader keeps the preview and shows "Your print copy is on its way", and
   offers an ebook add-on if enabled.
-- **No login is required** to read a preview (lowest friction, and good for SEO sharing). Reading
-  progress for anonymous visitors is kept under the guest cookie.
+- **No login is required** to read a preview (lowest friction, and good for SEO sharing). The last
+  page read is kept in the visitor's browser (`localStorage`) and restored on return; `?page=<n>`
+  (a manuscript page) opens at that page, which is how a buyer returns from checkout.
 - Analytics events (`preview_events`) are batched and sent with `navigator.sendBeacon`.
 - The abstract is **also** rendered as real HTML on the book page (instant, indexable, and
   accessible without loading the reader), with a "Read the introduction" button opening the reader.
