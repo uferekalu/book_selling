@@ -11,8 +11,11 @@ import type { PreviewData } from "./reader-logic";
  * The paywall moment (PRODUCT_RULES §4.6): after the last free page, two unreadable hints of the
  * next pages fade into an inline card with the price and buy options. No pop-ups.
  */
-export const ContinueCard = forwardRef<HTMLElement, { book: PublicBook; preview: PreviewData; pageWidth: number }>(function ContinueCard(
-  { book, preview, pageWidth },
+export const ContinueCard = forwardRef<
+  HTMLElement,
+  { book: PublicBook; preview: PreviewData; pageWidth: number; onCheckout: () => void }
+>(function ContinueCard(
+  { book, preview, pageWidth, onCheckout },
   ref,
 ) {
   const author = book.authors.map((a) => a.name).join(", ");
@@ -71,7 +74,14 @@ export const ContinueCard = forwardRef<HTMLElement, { book: PublicBook; preview:
           </div>
         </div>
         <div className="mt-6">
-          <FormatPicker slug={book.slug} formats={book.formatDetails} hasPreview showPreviewButton={false} />
+          <FormatPicker
+            bookId={book.id}
+            slug={book.slug}
+            formats={book.formatDetails}
+            hasPreview
+            showPreviewButton={false}
+            onCheckout={onCheckout}
+          />
         </div>
         <p className="mt-4 flex items-center gap-2 text-xs text-text-subtle">
           <Icon icon={ShieldCheck} size="sm" /> Card details are entered with the payment provider and never touch this site.

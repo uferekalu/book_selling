@@ -8,6 +8,7 @@ import { AuditModule } from './audit/audit.module.js';
 import { AccessTokenGuard, RolesGuard } from './auth/guards/auth.guards.js';
 import { AuthModule } from './auth/auth.module.js';
 import { CatalogModule } from './catalog/catalog.module.js';
+import { CommerceModule } from './commerce/commerce.module.js';
 import { envValidationSchema } from './common/config/env.validation.js';
 import { DatabaseModule } from './database/database.module.js';
 import { HealthModule } from './health/health.module.js';
@@ -62,6 +63,7 @@ import { UsersModule } from './users/users.module.js';
     UsersModule,
     AuthModule,
     CatalogModule,
+    CommerceModule,
   ],
   // Order matters: rate limit first, then authentication (default-deny), then roles.
   providers: [

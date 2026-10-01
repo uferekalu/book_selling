@@ -677,6 +677,47 @@ This section is the heart of the system. **Every rule here has a test** (docs/EN
 6. **Webhooks** arrive independently (§9.3). Whichever of verify and webhook arrives first settles
    the payment; the other is a no-op.
 
+**As built (BS-7)**, in `backend/src/commerce`:
+- **One pricing function** (`pricing.ts`, pure): the cart view, `POST /checkout/quote` and order
+  placement all call `priceCart`, so "Review & pay" shows exactly what is charged. It prices the
+  **server-side cart** (the client never sends items or prices to the quote), excludes unavailable,
+  unpriced, owned or out-of-stock lines with a reason, caps print by stock left and `maxPerOrder`,
+  adds shipping (first copy + each additional, per currency, by zone; "everywhere else" zone `*`),
+  applies one coupon once on the eligible item subtotal (never on shipping) and refuses a zero
+  total. All arithmetic goes through `common/money/money.ts`.
+- **Carts** store items only (`seenAmount` is kept solely to say "the price changed since you
+  added it"). Guests get an httpOnly `bs_cart` cookie (`SameSite=Lax`, path `/api`, 30 days);
+  signing in merges the guest cart into the account on the next cart read. Cart, quote and
+  place-order routes use `@OptionalAuth()`: guests are welcome, but a stale token gets 401 so the
+  client renews it instead of silently showing a signed-in buyer a guest cart.
+- **Idempotency key = guest access**: `POST /orders` requires an `Idempotency-Key` (≥ 22 random
+  URL-safe characters, generated per order details by the browser). Only its SHA-256 is stored
+  (`checkoutKeyHash`, unique). A retry returns the same order (200), concurrent duplicates collapse
+  on the unique index, and the same key from a different buyer is refused (409). A guest views or
+  cancels their order by proving the key in a request **body** (`/guest-orders/lookup`,
+  `/guest-orders/cancel`), never a URL, so it never appears in logs.
+- **Placement transaction**: buyer (signed in, or guest found-or-created as `unclaimed`) →
+  re-quote with the session → reject problems and an inapplicable coupon the buyer typed → **one
+  open checkout per buyer**: any older `pending_payment` order is cancelled and its holds released
+  → hold print stock with an **optimistic exact-match update** (the stock values just read must be
+  unchanged, so concurrent checkouts can't oversell) → hold the coupon (conditional
+  `redemptionCount < maxRedemptions` increment + a `reserved` redemption) → order number from an
+  atomic counter (`BS-2026-000123`) → order `pending_payment`, `expiresAt = now + 30 min`. The
+  order's totals invariant is asserted on every save. On a standalone MongoDB (no transactions)
+  checkout answers 503 with a clear log line (DEPLOYMENT §2).
+- **The cart is kept until payment succeeds** (cleared by settlement in BS-8), so an expired or
+  cancelled order loses nothing.
+- **Closing** (`cancel` by the customer, `expire` by `OrderExpiryJob` every minute): a
+  conditional status update, then stock and coupon released, all in one transaction, so holds are
+  released exactly once. Expiry also queues one "complete your order" email inside the same
+  transaction (dedupe key per order).
+- **BS-8 must add**: expiry and the one-open-checkout rule skip orders with a payment attempt
+  started in the last 15 minutes; settlement clears the cart and handles a late payment on an
+  expired/cancelled order (the state machine already allows it).
+- Accepted trade-off: for a guest, "already in your library" is checked against the account with
+  that email, which tells whoever types that email whether it owns the ebook. Low sensitivity, and
+  it prevents a second charge for a book the person already has.
+
 ### 8.3 Stock reservation
 
 - Reserve: `updateOne({ _id, 'formats.type': 'print', $expr: stockOnHand − stockReserved ≥ qty },

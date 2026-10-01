@@ -8,6 +8,7 @@ import { Container, Divider, Drawer, Icon, IconButton, ThemeToggle } from "@/com
 import { cn } from "@/lib/cn";
 import { useAppSelector } from "@/lib/redux/hooks";
 import { ACCOUNT_NAV, MAIN_NAV } from "@/lib/site";
+import { CartButton, CartDrawer } from "@/features/cart/cart-drawer";
 import { AccountLinks, AccountMenu } from "./account-menu";
 import { CurrencySwitcher } from "./currency-switcher";
 import { Logo } from "./logo";
@@ -17,8 +18,8 @@ function isActive(pathname: string, href: string) {
 }
 
 /**
- * Sticky frosted header. From `lg` up: logo, main links, currency, theme and account inline.
- * Below `lg`: logo and a menu button opening a left drawer with the same controls as inline
+ * Sticky frosted header. From `lg` up: logo, main links, currency, theme, cart and account inline.
+ * Below `lg`: logo, the cart and a menu button opening a left drawer with the same controls as inline
  * elements (no portal-based menus inside a drawer: see frontend/CLAUDE.md).
  */
 export function SiteHeader() {
@@ -68,19 +69,25 @@ export function SiteHeader() {
             </ul>
           </nav>
         </div>
-        <div className="hidden items-center gap-3 lg:flex">
-          <CurrencySwitcher />
-          <ThemeToggle />
-          <AccountMenu />
+        <div className="flex items-center gap-1 lg:gap-3">
+          <div className="hidden items-center gap-3 lg:flex">
+            <CurrencySwitcher />
+            <ThemeToggle />
+          </div>
+          <CartButton />
+          <div className="hidden lg:block">
+            <AccountMenu />
+          </div>
+          <IconButton
+            className="lg:hidden"
+            label="Open menu"
+            aria-expanded={open}
+            onClick={() => setOpen(true)}
+            icon={<Icon icon={Menu} />}
+          />
         </div>
-        <IconButton
-          className="lg:hidden"
-          label="Open menu"
-          aria-expanded={open}
-          onClick={() => setOpen(true)}
-          icon={<Icon icon={Menu} />}
-        />
       </Container>
+      <CartDrawer />
 
       <Drawer open={open} onClose={() => setOpen(false)} side="left" title="Menu" hideTitle>
         <nav aria-label="Main" className="flex flex-col gap-6">

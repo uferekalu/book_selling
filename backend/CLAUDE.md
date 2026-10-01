@@ -102,6 +102,23 @@ filters, decorators, `money/`, `utils/`). The module map and ticket per module a
 - **Migrations**: `npm run migrate:create -- <name>` → `migrations/`; Render runs `migrate:up` before
   each deploy. Keep them backward-compatible with the running version.
 
+## Commerce (BS-7)
+
+- **Money arithmetic only through `common/money/money.ts`** (add, subtract, multiply, sum,
+  percentOf half-up once, min/max, equals, toMajorString, formatMoney for display). No `* 100`,
+  `/ 100` or raw sums of amounts anywhere else; the order totals invariant uses it too.
+- **One pricing path**: `priceCart` (pure) via `PricingService.quote` for the cart, the quote and
+  order placement. Never price anything a second way, and never accept a price from the client.
+- Every order status change goes through `order-state-machine.ts` and a conditional update with the
+  expected status in the filter. Stock and coupon holds are released only by the code path that
+  won that update.
+- Multi-document changes run in `OrdersService.inTransaction` (pass the `session` to every read and
+  write inside, including `MailService.enqueue`). Tests use a replica set (`startMongo()`).
+- Routes that personalise for guests and users use `@OptionalAuth()` (stale token → 401), not
+  plain `@Public()`.
+- Route order matters in Express: a literal path (`guest-orders/…`) must not sit under a
+  parameterised one (`orders/:orderNumber/…`).
+
 ## Preview (BS-6)
 
 - **The preview is a separate PDF built on the server** (`src/preview/preview-builder.ts`, pdf-lib)

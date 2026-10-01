@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Button, ButtonLink, Drawer, Icon, IconButton, ProgressBar, Skeleton } from "@/components/ui";
 import type { PublicBook } from "@/lib/catalog-types";
 import { cn } from "@/lib/cn";
+import { CheckoutFlow } from "@/features/checkout/checkout-flow";
 import { createTracker } from "./analytics";
 import { ContinueCard } from "./continue-card";
 import { openPdf } from "./pdf";
@@ -66,6 +67,7 @@ export function PreviewReader({ book, preview }: { book: PublicBook; preview: Pr
   const [current, setCurrent] = useState(1);
   const [contentsOpen, setContentsOpen] = useState(false);
   const [displayOpen, setDisplayOpen] = useState(false);
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [nudgeDismissed, setNudgeDismissed] = useState(() => {
     try {
@@ -340,7 +342,16 @@ export function PreviewReader({ book, preview }: { book: PublicBook; preview: Pr
                 onVisible={onVisible}
               />
             ))}
-            <ContinueCard ref={endRef} book={book} preview={preview} pageWidth={width} />
+            <ContinueCard
+              ref={endRef}
+              book={book}
+              preview={preview}
+              pageWidth={width}
+              onCheckout={() => {
+                tracker.current?.track({ type: "buy_click" });
+                setCheckoutOpen(true);
+              }}
+            />
           </div>
         )}
       </div>
@@ -378,6 +389,14 @@ export function PreviewReader({ book, preview }: { book: PublicBook; preview: Pr
           showOptions();
         }}
       />
+
+      {/* Buying without leaving the book (PRODUCT_RULES §4.7); after paying, the buyer returns here. */}
+      <Drawer open={checkoutOpen} onClose={() => setCheckoutOpen(false)} title="Checkout" side="right">
+        <CheckoutFlow
+          returnPath={`/books/${book.slug}/read?page=${preview.continuesAt ?? preview.pageMap[current - 1] ?? 1}`}
+          onNavigate={() => setCheckoutOpen(false)}
+        />
+      </Drawer>
 
       <Drawer open={displayOpen} onClose={() => setDisplayOpen(false)} title="Display" side="bottom">
         <div className="flex flex-col gap-6">
