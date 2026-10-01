@@ -26,6 +26,36 @@ export const envValidationSchema = Joi.object({
   CORS_ORIGINS: Joi.string().required(),
   FRONTEND_URL: Joi.string().uri().required(),
 
+  // ---- Auth (docs/ARCHITECTURE.md §5) ----
+  // At least 32 random bytes; different per environment (openssl rand -base64 48).
+  JWT_ACCESS_SECRET: Joi.string().min(32).required(),
+  // bcrypt work factor. Production must use at least 12; tests lower it for speed.
+  BCRYPT_COST: Joi.number()
+    .integer()
+    .max(15)
+    .when('NODE_ENV', {
+      is: 'production',
+      // oxlint-disable-next-line unicorn/no-thenable -- Joi's conditional API, never awaited.
+      then: Joi.number().min(12),
+      otherwise: Joi.number().min(4),
+    })
+    .default(12),
+  JWT_ACCESS_TTL_SECONDS: Joi.number().integer().min(60).max(3600).default(900),
+  REFRESH_TOKEN_TTL_DAYS: Joi.number().integer().min(1).max(90).default(30),
+  // AES-256-GCM key for two-step verification secrets at rest: exactly 32 bytes, base64.
+  TWO_FACTOR_ENCRYPTION_KEY: Joi.string()
+    .base64()
+    .custom((value: string, helpers) =>
+      Buffer.from(value, 'base64').length === 32
+        ? value
+        : helpers.error('any.invalid'),
+    )
+    .required()
+    .messages({
+      'any.invalid':
+        'TWO_FACTOR_ENCRYPTION_KEY must decode to exactly 32 bytes',
+    }),
+
   // ---- Brand (appears in emails) ----
   BRAND_NAME: Joi.string().default('Engineering Books'),
   SUPPORT_EMAIL: Joi.string().email().optional(),

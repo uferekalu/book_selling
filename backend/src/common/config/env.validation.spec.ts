@@ -1,6 +1,8 @@
 import { envValidationSchema } from './env.validation.js';
 
 const valid = {
+  JWT_ACCESS_SECRET: 'a'.repeat(32),
+  TWO_FACTOR_ENCRYPTION_KEY: Buffer.alloc(32, 1).toString('base64'),
   MONGODB_URI: 'mongodb://localhost:27017/book_selling',
   CORS_ORIGINS: 'http://localhost:3000',
   FRONTEND_URL: 'http://localhost:3000',
@@ -23,14 +25,17 @@ describe('envValidationSchema', () => {
     });
   });
 
-  it.each(['MONGODB_URI', 'CORS_ORIGINS', 'FRONTEND_URL'])(
-    'rejects a missing %s',
-    (key) => {
-      const env: Record<string, string> = { ...valid };
-      delete env[key];
-      expect(envValidationSchema.validate(env).error).toBeDefined();
-    },
-  );
+  it.each([
+    'MONGODB_URI',
+    'CORS_ORIGINS',
+    'FRONTEND_URL',
+    'JWT_ACCESS_SECRET',
+    'TWO_FACTOR_ENCRYPTION_KEY',
+  ])('rejects a missing %s', (key) => {
+    const env: Record<string, string> = { ...valid };
+    delete env[key];
+    expect(envValidationSchema.validate(env).error).toBeDefined();
+  });
 
   it('rejects a non-mongodb connection string', () => {
     const { error } = envValidationSchema.validate({
@@ -38,6 +43,18 @@ describe('envValidationSchema', () => {
       MONGODB_URI: 'https://example.com',
     });
     expect(error).toBeDefined();
+  });
+
+  it('rejects a short JWT secret and a 2FA key of the wrong length', () => {
+    expect(
+      envValidationSchema.validate({ ...valid, JWT_ACCESS_SECRET: 'short' })
+        .error,
+    ).toBeDefined();
+    const { error } = envValidationSchema.validate({
+      ...valid,
+      TWO_FACTOR_ENCRYPTION_KEY: Buffer.alloc(16).toString('base64'),
+    });
+    expect(error?.message).toMatch(/32 bytes/);
   });
 
   it('allows missing mail settings outside production', () => {

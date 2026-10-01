@@ -1,6 +1,6 @@
 # Roadmap
 
-**Next ticket number: BS-4**
+**Next ticket number: BS-5**
 
 Each ticket is one branch (`feature/BS-<n>-<suffix>`) and one squash-merged PR. The order is
 deliberate: each ticket builds only on merged work. When a ticket finishes, its row is rewritten
@@ -12,7 +12,7 @@ follow-ups) take the next number and get a new row.
 | BS-1 | `project-foundation` | See detail below | ✅ Done |
 | BS-2 | `design-system` | See detail below | ✅ Done |
 | BS-3 | `email-outbox` | See detail below | ✅ Done |
-| BS-4 | `auth-accounts` | Users, auth (register, login, refresh rotation with reuse detection, logout, `/auth/me`), verify email, forgot and reset password, claim account, default-deny guards, roles (`customer`/`admin`/`owner`), `seed:owner`, admin TOTP 2FA, audit module, rate limits and lockout; frontend auth pages, session restore with the shared refresh mutex, `/api` proxy base query with 401 retry, account profile, addresses and security tabs | ⏳ Planned |
+| BS-4 | `auth-accounts` | See detail below | ✅ Done |
 | BS-5 | `catalog` | Authors, categories, books with formats and per-currency prices; **Cloudinary upload pipeline** (ARCHITECTURE §10.0): signed direct uploads, Admin-API verification, 2:3 cover cropper, blur placeholders, dominant colour, `next/image` Cloudinary loader, authenticated manuscript with PDF checks and page count, orphan cleanup; `migrate-mongo`; admin step-by-step book editor with autosave and a publish checklist; storefront home, `/books` (search, filters, sort), book detail (RSC, JSON-LD, abstract as HTML), author page, header/footer/mobile nav, currency detection and switcher, recently viewed | ⏳ Planned |
 | BS-6 | `preview-reader` | **Read-before-you-buy** (ARCHITECTURE §10.1, PRODUCT_RULES §4): server-side preview PDF generation (pdf-lib, page-range copy, "Preview" stamp, metadata strip), blurred locked teasers, outline extraction; public preview endpoint; admin preview section picker with thumbnails and 15% cap; pdf.js reader (worker, text layer, scroll/spread/zoom/fullscreen, keyboard, sepia), TOC with locked chapters, progress, end-of-preview "Continue reading" card, 80% nudge, `reading_progress`, `preview_events`; preview leak tests | ⏳ Planned |
 | BS-7 | `cart-checkout-orders` | `common/money`, carts (guest and user, merge on login, repricing), shipping zones and rates, coupon engine, server quote, order placement with idempotency key and transaction (stock reservation, coupon hold, already-owned check, guest → unclaimed account), order state machine, expiry job, order numbers; frontend cart drawer, checkout steps, **checkout drawer inside the reader**, order history and detail | ⏳ Planned |
@@ -216,3 +216,60 @@ checklist is reviewed whenever a ticket is planned, so nothing important is forg
      It now steps past the maximum.
   3. Type errors in spec files only showed up under `tsc`, because Vitest doesn't type-check.
      CI runs `tsc --noEmit`, which is exactly why that step exists.
+
+
+## BS-4: Accounts, sign-in and security (✅ Done, 2026-10-01)
+
+- **Backend**: `users`, `auth` and `audit` modules (ARCHITECTURE §5 is the full as-built design).
+  - Register (terms and consent recorded); login with generic errors and dummy-hash timing.
+  - Lockout: 10 failures lock the account for 15 minutes.
+  - Rotating refresh tokens with reuse detection and a **30s grace window for multi-tab races**.
+  - `SameSite=Strict` cookie scoped to `/api/auth`.
+  - Sessions list and revoke, plus logout-everywhere.
+  - Single-use hashed email links: verify (24h), reset (60m), claim (7d).
+  - Change password (signs out other devices).
+  - TOTP two-step verification: AES-GCM-sealed seed, no replay, 10 hashed recovery codes,
+    mandatory for staff, never bypassed by a reset.
+  - Default-deny `AccessTokenGuard`, plus `RolesGuard` requiring `mfa` for staff (403
+    `two_factor_required`).
+  - Owner-only role changes, which revoke the target's sessions and are audited.
+  - Security-notice emails; `seed:owner` script; addresses (max 10, a single default).
+  - `findOrCreateForGuest`, ready for BS-7.
+- **Frontend**: RTK Query `api` with `baseQueryWithReauth` (one shared renewal per tab, no
+  self-deadlock) and `restoreSession` on load. Pages:
+  - Sign in (with a 2FA step and recovery codes), sign up (live strength meter), forgot password,
+    reset password, claim account, verify email.
+  - Account: profile (currency, country, marketing consent), addresses (bottom-sheet editor), and
+    security (password, 2FA setup with QR and recovery codes, devices).
+  - Site header with account menu, mobile drawer, footer, and placeholder legal pages with the
+    agreed principles.
+  - New kit components: `OtpInput` (paste and autofill), `PasswordStrength`.
+  - `RequireAuth`, and `safeNextPath` against open redirects.
+- **Tests**:
+  - Backend: 117 unit tests (28 auth-flow tests including the theft and race cases, crypto,
+    password policy, users), plus 16 e2e tests (cookie attributes, default-deny, strict validation,
+    the staff 2FA gate, no email enumeration).
+  - Frontend: 186 tests (reauth logic including 5 concurrent 401s → 1 refresh, OTP input, schemas,
+    safe redirects, password meter).
+- **Verified live** with Playwright against the real API, an in-memory replica set and the
+  production frontend build, on a 375px phone viewport. The journey: sign up → reload (still signed
+  in) → confirm via the emailed link → turn on 2FA → sign out → sign in with a code → save an
+  address. No layout widening and no console errors. `check:responsive` passed on 10 pages × 6
+  widths × 2 themes.
+- **Incidents and decisions**:
+  1. **ua-parser-js 2.x is AGPL.** It was replaced with a small device-name function, and a
+     licence checker (`scripts/check-licenses.mjs`) is now in CI with a rule in ENGINEERING_RULES §3.
+  2. **Grace-window race.** The first version asked "does the session have a live token?", but
+     the concurrent winner hadn't saved its new token yet, so a two-tab refresh looked like theft.
+     It now asks "was the session deliberately ended?". Caught by the race test.
+  3. bcrypt cost 12 made every service test time out. The cost is now `BCRYPT_COST` (tests 4,
+     production ≥ 12, enforced by Joi).
+  4. A refresh without a cookie returned 401, putting an error in every anonymous visitor's
+     console (and failing the responsive check). It now returns `200 { status: "anonymous" }`.
+  5. **Dialogs didn't make the background inert.** The live run found the page behind the mobile
+     drawer still reachable. Now everything outside a dialog is `inert`, except toasts and Next's
+     route announcer.
+  6. `/verify-email` was 8px too wide at 320px (a long button label). The label was shortened and
+     empty-state padding tightened on phones.
+  7. Script robustness: the responsive check now rejects Git Bash–mangled paths and sanitises `?`
+     in screenshot names.

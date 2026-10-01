@@ -69,6 +69,25 @@ describe("Modal", () => {
     expect(document.body.style.overflow).toBe("");
   });
 
+  it("makes the page behind it inert while open, and restores it on close", async () => {
+    const user = userEvent.setup();
+    render(<ModalHarness />);
+    const trigger = screen.getByRole("button", { name: "Open" });
+    await user.click(trigger);
+    expect(trigger.closest("[inert]")).not.toBeNull();
+    expect(screen.getByRole("dialog").closest("[inert]")).toBeNull();
+    // A toast raised from inside the dialog must still be announced.
+    const toastRegion = document.createElement("div");
+    toastRegion.setAttribute("data-toast-region", "");
+    document.body.appendChild(toastRegion);
+    await user.keyboard("{Escape}");
+    await user.click(trigger);
+    expect(toastRegion.hasAttribute("inert")).toBe(false);
+    toastRegion.remove();
+    await user.keyboard("{Escape}");
+    expect(trigger.closest("[inert]")).toBeNull();
+  });
+
   it("does not close from the backdrop when not dismissible", async () => {
     const user = userEvent.setup();
     const onClose = vi.fn();

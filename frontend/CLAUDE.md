@@ -53,7 +53,8 @@ Full design: `../docs/ARCHITECTURE.md` §6 (design system) and §7 (frontend arc
 - Modals are bottom sheets on phones; footers stack full-width buttons (`flex-col-reverse`). Use
   `.safe-x` / `.safe-bottom` near screen edges.
 - **Verify every UI change:** `npm run build && npx next start -p 3100`, then
-  `npm run check:responsive -- <paths>`. It loads each path at 320/375/414/768/1024/1440px in both
+  `npm run check:responsive -- <paths>` (Git Bash: prefix `MSYS_NO_PATHCONV=1`, or "/" becomes a
+  Windows path). It loads each path at 320/375/414/768/1024/1440px in both
   themes and fails if the layout viewport is wider than the device or the console logs an error.
   Review the screenshots in `.responsive-shots/`. First run on a machine needs
   `npx playwright install chromium`.
@@ -62,13 +63,25 @@ Full design: `../docs/ARCHITECTURE.md` §6 (design system) and §7 (frontend arc
 
 ## Data rules
 
-- One RTK Query `api` instance; features use `api.injectEndpoints()`. Server data never goes into a
-  plain slice. Typed hooks only (`useAppDispatch`/`useAppSelector`).
+- One RTK Query `api` instance (`src/lib/api/api.ts`); features use `api.injectEndpoints()` in
+  `src/lib/api/<area>-api.ts`. Server data never goes into a plain slice. Typed hooks only
+  (`useAppDispatch`/`useAppSelector`). Response types live in `src/lib/api/types.ts`.
 - `try/catch` around `await queryFulfilled` inside `onQueryStarted`.
 - Build mutation payloads explicitly. Never pass a form's values object (the backend rejects unknown
   fields with a 400).
-- Anything calling `/auth/refresh` directly must take the shared refresh mutex from the api module,
-  or it races the 401-retry path and logs the user out.
+- Show API errors with `errorMessage(error)` / `errorCode(error)` (`src/lib/api/errors.ts`).
+- **Session**: `state.session` = `{ status: 'checking' | 'authenticated' | 'anonymous', user,
+  accessToken }`. Render nothing account-specific while `checking` (use a Skeleton), so "Sign in"
+  never flashes for a signed-in visitor. Signed-in pages wrap in `RequireAuth`. Redirect targets go
+  through `safeNextPath()` (no open redirects).
+- Anything calling `/auth/refresh` directly must hold `refreshMutex` and use `renewSession()`, never
+  the reauth wrapper (it would wait on its own lock and deadlock). See `restoreSession` in
+  `auth-api.ts`.
+- Forms: react-hook-form + Zod schemas in `src/features/<area>/schemas.ts`. Password rules mirror
+  the backend in `src/lib/password.ts`; keep them in step.
+- Modals and drawers make everything else `inert` while open (`use-dialog.ts`), except the toast
+  region and Next's route announcer. Playwright's role queries still see inert elements, so use
+  exact names in scripts.
 - Money is displayed only through `PriceTag` / `formatMoney()`. Amounts from the API are integer
   minor units.
 - Public catalogue pages are server components. Use `"use client"` only where needed.
@@ -79,5 +92,5 @@ Full design: `../docs/ARCHITECTURE.md` §6 (design system) and §7 (frontend arc
 npm run dev          # http://localhost:3000 (API expected at http://localhost:4000)
 npm run lint
 npm test
-npm run build        # production build; set CI=true locally if API_URL isn't set
+npm run build        # production build; set CI=true locally if API_URL isn't set (API_URL is baked in at build)
 ```

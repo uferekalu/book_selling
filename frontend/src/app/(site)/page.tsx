@@ -4,7 +4,7 @@ import { BookCover, ButtonLink, Container, Eyebrow, Icon } from "@/components/ui
 // Brand preview until the storefront home is built (docs/ROADMAP.md BS-5 / BS-13).
 export default function Home() {
   return (
-    <main id="main" className="surface-grain flex flex-1 items-center overflow-hidden py-16 sm:py-24">
+    <div className="surface-grain flex flex-1 items-center overflow-hidden py-16 sm:py-24">
       <Container className="grid items-center gap-12 lg:grid-cols-[1.1fr_0.9fr] lg:gap-20">
         <div className="flex animate-rise-in flex-col items-start gap-6">
           <Eyebrow>Opening soon</Eyebrow>
@@ -30,6 +30,6 @@ export default function Home() {
           </div>
         </div>
       </Container>
-    </main>
+    </div>
   );
 }

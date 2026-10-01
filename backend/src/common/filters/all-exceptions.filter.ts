@@ -13,9 +13,17 @@ export interface ErrorBody {
   timestamp: string;
   path: string;
   message: string | string[];
+  /** Stable machine-readable reason, when the thrower gave one (e.g. 'two_factor_required'). */
+  code?: string;
 }
 
 const INTERNAL_SERVER_ERROR_CODE: number = HttpStatus.INTERNAL_SERVER_ERROR;
+
+function extractCode(response: string | object): string | undefined {
+  if (typeof response === 'string') return undefined;
+  const { code } = response as { code?: unknown };
+  return typeof code === 'string' ? code : undefined;
+}
 
 function extractMessage(response: string | object): string | string[] {
   if (typeof response === 'string') return response;
@@ -59,6 +67,11 @@ export class AllExceptionsFilter implements ExceptionFilter {
       path: request.url,
       message,
     };
+    const code =
+      isHttpException && status < INTERNAL_SERVER_ERROR_CODE
+        ? extractCode(exception.getResponse())
+        : undefined;
+    if (code) body.code = code;
     response.status(status).json(body);
   }
 }

@@ -43,6 +43,24 @@ filters, decorators, `money/`, `utils/`). The module map and ticket per module a
   webhook dedupe, one success per order), not optimisations.
 - Never return a raw document containing secrets. Map to a response DTO.
 
+## Auth and access (BS-4, ARCHITECTURE §5)
+
+- **Default-deny**: every route needs a valid access token. Mark public routes `@Public()`
+  (`common/decorators/public.decorator.ts`). On a public route that personalises, read
+  `@OptionalUser()`; on protected routes `@CurrentUser()` gives the token claims
+  (`sub`, `role`, `mfa`, `sid`).
+- `@Roles('admin', 'owner')` for staff routes. `RolesGuard` also requires an `mfa` session for
+  staff, so no extra check is needed. **Ownership ("is this your order") is checked in the service**,
+  never assumed from the role.
+- Users: never return a document directly. Map with `toPublicUser()` (secrets are `select: false`).
+  Auth code that needs secrets uses `findByEmailWithSecrets` / `findByIdWithSecrets`.
+- Guest checkout gets the buyer account with `UsersService.findOrCreateForGuest(email, name,
+  session)` and, after the order, `AuthService.sendClaimLink(user, orderNumber)`.
+- Record admin and security actions with the global `AuditService.record()`.
+- Passwords: bcrypt with `BCRYPT_COST` (tests 4, production ≥ 12). Never hard-code the cost.
+- New dependencies must have a permissive licence (`node ../scripts/check-licenses.mjs`; CI runs
+  it). ua-parser-js 2.x was AGPL and was removed.
+
 ## Email, jobs and webhooks (BS-3)
 
 - **Never call an email provider directly.** Use `MailService.enqueue()` with a `dedupeKey`

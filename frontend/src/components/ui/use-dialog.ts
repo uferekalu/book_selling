@@ -7,7 +7,8 @@ const FOCUSABLE =
 
 export function getFocusable(container: HTMLElement): HTMLElement[] {
   return Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
-    (el) => !el.hasAttribute("disabled") && el.getAttribute("aria-hidden") !== "true",
+    (el) =>
+      !el.hasAttribute("disabled") && el.getAttribute("aria-hidden") !== "true",
   );
 }
 
@@ -26,6 +27,35 @@ function lockScroll() {
     if (scrollbar > 0) document.body.style.paddingRight = `${scrollbar}px`;
   }
   lockCount += 1;
+}
+
+/**
+ * Makes everything outside the dialog `inert` (no focus, no clicks, hidden from assistive tech).
+ * `aria-modal` alone isn't honoured by every screen reader. Each dialog records exactly which
+ * elements it made inert, so closing a nested dialog leaves its parent's inert set intact.
+ */
+function inertOutside(panel: HTMLElement): () => void {
+  const root = Array.from(document.body.children).find((child) =>
+    child.contains(panel),
+  );
+  const changed: Element[] = [];
+  for (const child of Array.from(document.body.children)) {
+    // Toasts stay live: a confirmation raised from inside a dialog must still be announced.
+    if (
+      child === root ||
+      child.hasAttribute("inert") ||
+      child.tagName === "SCRIPT" ||
+      // Next.js announces page changes here; navigating from inside a drawer must still be announced.
+      child.tagName === "NEXT-ROUTE-ANNOUNCER" ||
+      child.matches("[data-toast-region]") ||
+      child.querySelector("[data-toast-region]") !== null
+    ) {
+      continue;
+    }
+    child.setAttribute("inert", "");
+    changed.push(child);
+  }
+  return () => changed.forEach((element) => element.removeAttribute("inert"));
 }
 
 function unlockScroll() {
@@ -94,8 +124,10 @@ export function useDialog({
 
     panel.addEventListener("keydown", onKeyDown);
     lockScroll();
+    const restoreInert = inertOutside(panel);
     return () => {
       panel.removeEventListener("keydown", onKeyDown);
+      restoreInert();
       unlockScroll();
       previouslyFocused?.focus?.({ preventScroll: true });
     };

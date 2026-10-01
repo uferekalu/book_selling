@@ -62,7 +62,7 @@ Tests don't need either: they use `mongodb-memory-server`.
 - Environment variables:
   | Name | Scope | Value |
   |---|---|---|
-  | `API_URL` | Production / Preview | `https://api.<domain>` / staging API URL |
+  | `API_URL` | Production / Preview, **available at build time** (the `/api` rewrite is baked into the build) | `https://api.<domain>` / staging API URL |
   | `NEXT_PUBLIC_SITE_URL` | Production / Preview | `https://<domain>` / preview URL |
 - The build **fails on purpose** if `API_URL` is missing in a production build
   (`src/lib/backend-url.ts`), so we never ship a storefront pointing at localhost.
@@ -80,6 +80,11 @@ Tests don't need either: they use `mongodb-memory-server`.
 - Custom domain `api.<domain>`. `CORS_ORIGINS` = the storefront origin(s).
 - Scheduled jobs run inside the API process with lease locks, so scaling to more than one instance is
   safe.
+- **First deploy of each environment**: register the lecturer's account on the site, then run
+  `npm run seed:owner -- <their email>` once (Render Shell, or locally with that environment's
+  `MONGODB_URI`). The owner must then turn on two-step verification before any store management
+  page opens. Admins are added by the owner from the admin area; the owner role is never granted
+  through the API.
 
 ## 5. Email (Resend)
 
@@ -149,4 +154,8 @@ For **each** provider:
 - Never commit them. `.env*` is gitignored except `.env.example`.
 - Rotate immediately if one is exposed (pasted in chat, logged, or committed by mistake), and note the
   rotation in the PR or issue.
-- JWT secrets are at least 32 random bytes (`openssl rand -base64 48`), different per environment.
+- `JWT_ACCESS_SECRET`: at least 32 random bytes (`openssl rand -base64 48`), different per
+  environment. Rotating it signs everyone out of their current access token (refresh still works).
+- `TWO_FACTOR_ENCRYPTION_KEY`: exactly 32 bytes (`openssl rand -base64 32`), different per
+  environment. **Back it up in the owner's password manager.** Losing or changing it makes every
+  enrolled authenticator unusable; staff would have to be reset by hand.
