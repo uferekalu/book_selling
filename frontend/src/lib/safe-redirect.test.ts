@@ -4,7 +4,7 @@ import { safeNextPath } from "./safe-redirect";
 describe("safeNextPath", () => {
   it.each([
     ["/account/security", "/account/security"],
-    ["/books/thermo?format=ebook#reviews", "/books/thermo?format=ebook#reviews"],
+    ["/books/heat-treatment?format=ebook#reviews", "/books/heat-treatment?format=ebook#reviews"],
   ])("keeps a relative path %s", (input, expected) => {
     expect(safeNextPath(input)).toBe(expected);
   });

@@ -20,7 +20,12 @@
     "test:debug": "vitest --inspect-brk --no-file-parallelism",
     "test:e2e": "vitest run --config ./vitest.config.e2e.ts",
     "email:preview": "tsx scripts/preview-emails.ts",
-    "seed:owner": "tsx scripts/seed-owner.ts"
+    "seed:owner": "tsx scripts/seed-owner.ts",
+    "seed:demo": "tsc -p tsconfig.scripts.json && node build/scripts/scripts/seed-demo.js",
+    "migrate:status": "migrate-mongo status",
+    "migrate:up": "migrate-mongo up",
+    "migrate:down": "migrate-mongo down",
+    "migrate:create": "migrate-mongo create"
   },
   "dependencies": {
     "@nestjs/common": "^12.0.1",
@@ -38,9 +43,11 @@
     "bcryptjs": "^3.0.3",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
+    "cloudinary": "^2.11.0",
     "cookie-parser": "^1.4.7",
     "helmet": "^8.3.0",
     "joi": "^18.2.9",
+    "marked": "^18.0.14",
     "mongoose": "^9.10.3",
     "nestjs-pino": "^5.2.1",
     "otpauth": "^9.5.2",
@@ -51,6 +58,7 @@
     "reflect-metadata": "^0.2.2",
     "resend": "^6.31.0",
     "rxjs": "^7.8.1",
+    "sanitize-html": "^2.18.0",
     "svix": "^2.6.1"
   },
   "devDependencies": {
@@ -64,8 +72,10 @@
     "@types/qrcode": "^1.5.6",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
+    "@types/sanitize-html": "^2.16.2",
     "@types/supertest": "^7.0.0",
     "@vitest/coverage-v8": "^4.1.2",
+    "migrate-mongo": "^14.0.7",
     "mongodb-memory-server": "^11.3.0",
     "oxlint": "^1.58.0",
     "oxlint-tsgolint": "^7.0.2001",

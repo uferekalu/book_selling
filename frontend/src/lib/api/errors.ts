@@ -37,3 +37,9 @@ export function errorStatus(error: QueryError): number | undefined {
   }
   return undefined;
 }
+
+/** The checklist the API attaches when it refuses to publish (`problems` in the error body). */
+export function errorProblems(error: QueryError): string[] {
+  const problems = (body(error) as { problems?: unknown } | null)?.problems;
+  return Array.isArray(problems) ? problems.filter((p): p is string => typeof p === "string") : [];
+}

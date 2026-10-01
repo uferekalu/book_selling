@@ -15,6 +15,8 @@ export interface ErrorBody {
   message: string | string[];
   /** Stable machine-readable reason, when the thrower gave one (e.g. 'two_factor_required'). */
   code?: string;
+  /** Itemised reasons, e.g. the publish checklist (BooksService.publish). */
+  problems?: string[];
 }
 
 const INTERNAL_SERVER_ERROR_CODE: number = HttpStatus.INTERNAL_SERVER_ERROR;
@@ -23,6 +25,14 @@ function extractCode(response: string | object): string | undefined {
   if (typeof response === 'string') return undefined;
   const { code } = response as { code?: unknown };
   return typeof code === 'string' ? code : undefined;
+}
+
+function extractProblems(response: string | object): string[] | undefined {
+  if (typeof response === 'string') return undefined;
+  const { problems } = response as { problems?: unknown };
+  return Array.isArray(problems) && problems.every((p) => typeof p === 'string')
+    ? problems
+    : undefined;
 }
 
 function extractMessage(response: string | object): string | string[] {
@@ -72,6 +82,11 @@ export class AllExceptionsFilter implements ExceptionFilter {
         ? extractCode(exception.getResponse())
         : undefined;
     if (code) body.code = code;
+    const problems =
+      isHttpException && status < INTERNAL_SERVER_ERROR_CODE
+        ? extractProblems(exception.getResponse())
+        : undefined;
+    if (problems) body.problems = problems;
     response.status(status).json(body);
   }
 }

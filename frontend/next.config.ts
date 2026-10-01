@@ -12,9 +12,10 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   images: {
-    // Book covers and author photos are served from Cloudinary (docs/ARCHITECTURE.md §2).
-    remotePatterns: [{ protocol: "https", hostname: "res.cloudinary.com" }],
-    formats: ["image/avif", "image/webp"],
+    // Book covers and author photos come from Cloudinary, which resizes and picks AVIF/WebP itself
+    // (src/lib/cloudinary-loader.ts), so no Next image optimisation server is needed.
+    loader: "custom",
+    loaderFile: "./src/lib/cloudinary-loader.ts",
   },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];

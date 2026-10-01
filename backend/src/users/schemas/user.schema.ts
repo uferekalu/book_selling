@@ -1,5 +1,8 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import type { HydratedDocument, Types } from 'mongoose';
+import { CURRENCIES, type Currency } from '../../common/money/currency.js';
+
+export { CURRENCIES, type Currency };
 
 export const USER_ROLES = ['customer', 'admin', 'owner'] as const;
 export type UserRole = (typeof USER_ROLES)[number];
@@ -12,9 +15,6 @@ export const ACCOUNT_STATUSES = ['active', 'unclaimed', 'suspended'] as const;
  * nobody can sign in to it until the owner of the email sets a password through an emailed link.
  */
 export type AccountStatus = (typeof ACCOUNT_STATUSES)[number];
-
-export const CURRENCIES = ['NGN', 'USD', 'GBP', 'EUR'] as const;
-export type Currency = (typeof CURRENCIES)[number];
 
 export const MAX_ADDRESSES = 10;
 

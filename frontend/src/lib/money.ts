@@ -59,3 +59,32 @@ export const CURRENCY_LABEL: Record<Currency, string> = {
   GBP: "British pound",
   EUR: "Euro",
 };
+
+/** Highest price an editor may enter, in minor units (matches the API's MAX_PRICE_MINOR). */
+export const MAX_PRICE_MINOR = 1_000_000_000;
+
+/**
+ * Parses what an editor typed ("25,000", "29.99", "₦ 1 500.5") into exact minor units by string
+ * manipulation, never floating-point maths (29.99 * 100 = 2998.9999…). Returns null for anything
+ * that is not a plain non-negative amount with at most the currency's decimal places.
+ */
+export function parseMajorToMinor(text: string, currency: Currency): number | null {
+  const exponent = EXPONENT[currency];
+  // \s also covers the no-break spaces Intl uses as group separators. A leading currency symbol
+  // is dropped, but a sign is kept so "-5" fails the pattern below instead of becoming 5.
+  const cleaned = text.replace(/[\s,]/g, "").replace(/^[^\d.+-]+/, "");
+  const match = /^(\d+)(?:\.(\d*))?$/.exec(cleaned);
+  if (!match) return null;
+  const [, whole, fraction = ""] = match;
+  if (fraction.length > exponent) return null;
+  const digits = (whole + fraction.padEnd(exponent, "0")).replace(/^0+(?=\d)/, "");
+  if (digits.length > 15) return null;
+  return Number(digits);
+}
+
+/** Minor units back to an editable string: 2999 → "29.99", 2500000 → "25000.00". */
+export function minorToInput(amount: number, currency: Currency): string {
+  const exponent = EXPONENT[currency];
+  const text = String(Math.trunc(amount)).padStart(exponent + 1, "0");
+  return exponent === 0 ? text : `${text.slice(0, -exponent)}.${text.slice(-exponent)}`;
+}

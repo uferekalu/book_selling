@@ -23,8 +23,8 @@ export default function AuthLayout({ children }: LayoutProps<"/">) {
         <p className="font-display text-xl text-paper-50">{BRAND_NAME}</p>
         <div className="relative flex items-end justify-center gap-6 py-10">
           <div className="absolute inset-x-12 bottom-6 h-24 rounded-full bg-gold-500/25 blur-3xl" />
-          <BookCover title="Engineering Thermodynamics" author="Prof. A. Author" size="lg" interactive={false} className="-rotate-6" />
-          <BookCover title="Fluid Mechanics in Practice" author="Prof. A. Author" size="md" interactive={false} className="translate-y-8 rotate-3" />
+          <BookCover title="Principles of Foundry Technology" author="Prof. A. Author" size="lg" interactive={false} className="-rotate-6" />
+          <BookCover title="Heat Treatment of Steels" author="Prof. A. Author" size="md" interactive={false} className="translate-y-8 rotate-3" />
         </div>
         <blockquote className="max-w-md">
           <p className="font-display text-3xl leading-snug text-paper-50">

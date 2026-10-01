@@ -8,10 +8,14 @@ const valid = {
   FRONTEND_URL: 'http://localhost:3000',
 };
 
-const productionMail = {
+const productionRequired = {
   RESEND_API_KEY: 're_live_key',
   RESEND_WEBHOOK_SECRET: 'whsec_abc',
   MAIL_FROM: 'Engineering Books <books@mail.example.com>',
+  // Media uploads are mandatory in production too (BS-5).
+  CLOUDINARY_CLOUD_NAME: 'books-cloud',
+  CLOUDINARY_API_KEY: '123456789012345',
+  CLOUDINARY_API_SECRET: 'cloudinary-secret',
 };
 
 describe('envValidationSchema', () => {
@@ -73,7 +77,7 @@ describe('envValidationSchema', () => {
   it('still requires production mail settings when they are empty', () => {
     const { error } = envValidationSchema.validate({
       ...valid,
-      ...productionMail,
+      ...productionRequired,
       NODE_ENV: 'production',
       RESEND_API_KEY: '',
     });
@@ -84,20 +88,23 @@ describe('envValidationSchema', () => {
     expect(envValidationSchema.validate(valid).error).toBeUndefined();
   });
 
-  it.each(Object.keys(productionMail))('requires %s in production', (key) => {
-    const env: Record<string, string> = {
-      ...valid,
-      ...productionMail,
-      NODE_ENV: 'production',
-    };
-    delete env[key];
-    expect(envValidationSchema.validate(env).error?.message).toContain(key);
-  });
+  it.each(Object.keys(productionRequired))(
+    'requires %s in production',
+    (key) => {
+      const env: Record<string, string> = {
+        ...valid,
+        ...productionRequired,
+        NODE_ENV: 'production',
+      };
+      delete env[key];
+      expect(envValidationSchema.validate(env).error?.message).toContain(key);
+    },
+  );
 
   it('accepts a complete production mail config', () => {
     const { error } = envValidationSchema.validate({
       ...valid,
-      ...productionMail,
+      ...productionRequired,
       NODE_ENV: 'production',
     });
     expect(error).toBeUndefined();

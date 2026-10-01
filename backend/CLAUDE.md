@@ -78,6 +78,30 @@ filters, decorators, `money/`, `utils/`). The module map and ticket per module a
   then `JSON.parse` the raw body yourself. Type-checking didn't catch this; only the e2e test did
   (BS-3).
 
+## Catalogue and uploads (BS-5)
+
+- **Files never pass through the API.** `CloudinaryService.signUpload(kind, ownerId)` signs a
+  direct browser upload into that owner's folder, tagged `pending`. The attach endpoint then calls
+  `verify()` (Admin API lookup: folder, format, size, dimensions, pages) **before** trusting the
+  `publicId`, saves, and calls `markAttached()`. `UploadCleanupJob` deletes `pending` assets
+  older than 24h, but only after checking no book or author references them.
+- The manuscript is `authenticated`: never return its URL, public id or a delivery URL from any
+  endpoint. Only BS-6/BS-9 server code reads it, through `privateDownloadUrl`.
+- Every catalogue write goes through the books/authors/categories services, which audit-log it and
+  call `StorefrontRevalidator.notify()` so the storefront cache refreshes. Don't write the models
+  directly from controllers.
+- Rendered Markdown only via `markdownToSafeHtml` (`common/text/rich-text.ts`); never store or
+  return unsanitised HTML.
+- Prices are integer minor units validated with `isValidMinorAmount`; `fromPrices` is recomputed
+  in a pre-save hook. Never compute it elsewhere.
+- Mongoose 9: use `QueryFilter<T>` (not `FilterQuery`).
+- **Scripts with Nest DI** (`scripts/seed-demo.ts`) are compiled with `tsconfig.scripts.json`
+  (`npm run seed:demo`); `tsx` doesn't emit decorator metadata, so injected services come out
+  `undefined`. `tsx` is fine for scripts without DI (`seed:owner`). The demo seed refuses to run
+  in production; `npm run seed:demo -- --remove` deletes it.
+- **Migrations**: `npm run migrate:create -- <name>` → `migrations/`; Render runs `migrate:up` before
+  each deploy. Keep them backward-compatible with the running version.
+
 ## Testing
 
 - The e2e specs are the **only** check that the real `AppModule` wiring boots (circular module
@@ -95,7 +119,11 @@ filters, decorators, `money/`, `utils/`). The module map and ticket per module a
   against a 6h+20%-jitter backoff was flaky in BS-3.
 - The first run on a new machine downloads a ~550MB mongod binary (about 6 minutes). A timeout on
   that first run is not a bug.
-- Never mock Mongoose for service logic. Assert on real stored state.
+- Never mock Mongoose for service logic. Assert on real stored state. Cloudinary is the exception:
+  catalogue specs override `CloudinaryService` with a fake (see `catalog.service.spec.ts`).
+- Locally on Windows, a full `npm run test:e2e` occasionally ends with "Worker exited
+  unexpectedly" from vitest's pool while every test passed. It has never happened in CI; rerun
+  before investigating.
 - Every webhook handler has a test that rejects an invalid signature. The full payment test matrix is
   in ENGINEERING_RULES §6.
 

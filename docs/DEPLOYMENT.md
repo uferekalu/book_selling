@@ -63,15 +63,18 @@ Tests don't need either: they use `mongodb-memory-server`.
   | Name | Scope | Value |
   |---|---|---|
   | `API_URL` | Production / Preview, **available at build time** (the `/api` rewrite is baked into the build) | `https://api.<domain>` / staging API URL |
-  | `NEXT_PUBLIC_SITE_URL` | Production / Preview | `https://<domain>` / preview URL |
+  | `NEXT_PUBLIC_SITE_URL` | Production / Preview | `https://<domain>` / preview URL (canonical links, sitemap, JSON-LD) |
+  | `REVALIDATE_SECRET` | Production / Preview | 16+ random characters (`openssl rand -base64 32`); the **same value** as the API's `FRONTEND_REVALIDATE_SECRET`, so catalogue edits appear at once |
 - The build **fails on purpose** if `API_URL` is missing in a production build
   (`src/lib/backend-url.ts`), so we never ship a storefront pointing at localhost.
 - Domains: `<domain>` (primary) and `www.<domain>` → redirect to the primary.
 
 ## 4. API on Render
 
-- Defined by the `render.yaml` Blueprint at the repo root (root dir `backend`, `npm ci && npm run
-  build`, `npm run start:prod`, health check `/health`).
+- Defined by the `render.yaml` Blueprint at the repo root (root dir `backend`, `npm ci --include=dev
+  && npm run build`, pre-deploy `npm run migrate:up`, `npm run start:prod`, health check `/health`).
+  `--include=dev` matters: with `NODE_ENV=production` set, a plain `npm ci` skips the build tools and
+  the build fails.
 - Every `sync: false` variable is set in the Render dashboard. **The list in `render.yaml` must
   match `backend/src/common/config/env.validation.ts`**: a missing required variable stops the API
   booting, and the Render deploy fails the health check instead of serving errors.
@@ -85,6 +88,22 @@ Tests don't need either: they use `mongodb-memory-server`.
   `MONGODB_URI`). The owner must then turn on two-step verification before any store management
   page opens. Admins are added by the owner from the admin area; the owner role is never granted
   through the API.
+
+## 4a. Cloudinary (book files and images)
+
+1. One Cloudinary account; **upgrade the plan** so its maximum upload size covers the largest book
+   PDF, then set `MANUSCRIPT_MAX_MB` on Render to that size (default 100). The admin upload screen
+   refuses larger files up front with a clear message.
+2. Render env: `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` (required in
+   production; the API will not boot without them) and `CLOUDINARY_FOLDER`: a different folder per
+   environment (`book-selling/production`, `book-selling/staging`, locally
+   `book-selling/development`). The abandoned-upload cleanup only ever touches its own folder.
+3. Cloudinary console → Settings → Security: keep **"Strict transformations"** off (the storefront
+   requests sizes on the fly) and leave PDF delivery restricted; manuscripts are `authenticated`
+   and never reachable without a signed URL from our API.
+4. Turn on Cloudinary **Backups** for the account, and keep the original manuscripts elsewhere too.
+5. Smoke test on staging: upload a cover (crop it), a sample page and a PDF from a phone; check
+   the cover on the book page and that the PDF URL is never exposed in the browser.
 
 ## 5. Email (Resend)
 
@@ -136,8 +155,12 @@ For **each** provider:
 - A database user per environment with least privilege (`readWrite` on its own database).
 - Indexes are created on boot (`autoIndex: true`). Watch the first deploy after an index change on a
   large collection.
-- Migrations (`migrate-mongo`, from BS-5): run `npm run migrate:up` against production **before**
-  deploying code that depends on them. The PR says so explicitly.
+- Migrations (`migrate-mongo`, from BS-5) run automatically as Render's **pre-deploy command**
+  (`npm run migrate:up`), after the build and before the new version takes traffic; a failing
+  migration stops the deploy and the old version keeps serving. A lock stops two deploys migrating
+  at once. Migrations must be backward-compatible with the running version (add, backfill, then
+  remove in a later release), and the PR says when one is included. Check status with
+  `npm run migrate:status`.
 
 ## 8. Release procedure
 
@@ -145,7 +168,8 @@ For **each** provider:
 2. Vercel and Render auto-deploy from `main`.
 3. Watch Render logs for boot and `/health`, and Vercel for the build.
 4. Smoke test: home page, a book page, the preview reader, add to cart, and (on staging, for money
-   changes) a full test-card purchase.
+   changes) a full test-card purchase. After catalogue changes: edit a book in the admin and
+   confirm the store shows it within seconds (revalidation works).
 5. Rollback: Render "Rollback to previous deploy" / Vercel "Promote previous deployment". A
    migration that isn't backward-compatible must ship its `down` script tested.
 
