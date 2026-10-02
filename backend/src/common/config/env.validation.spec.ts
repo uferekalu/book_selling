@@ -128,6 +128,7 @@ describe('envValidationSchema', () => {
         check({
           STRIPE_SECRET_KEY: 'sk_test_abc',
           STRIPE_WEBHOOK_SECRET: 'whsec_abc',
+          STRIPE_COUNTRIES: 'US,GB',
           PAYSTACK_SECRET_KEY: 'sk_test_abc',
           FLUTTERWAVE_SECRET_KEY: 'FLWSECK_TEST-abc',
           FLUTTERWAVE_WEBHOOK_HASH: 'a-long-shared-secret-hash',
@@ -162,6 +163,20 @@ describe('envValidationSchema', () => {
           FLUTTERWAVE_WEBHOOK_HASH: 'a-long-shared-secret-hash',
         }),
       ).toMatch(/not a live key/);
+    });
+
+    it('needs an explicit list of countries before Stripe can be used (BS-22)', () => {
+      const stripe = {
+        STRIPE_SECRET_KEY: 'sk_test_abc',
+        STRIPE_WEBHOOK_SECRET: 'whsec_abc',
+      };
+      expect(check(stripe)).toMatch(/STRIPE_COUNTRIES is required/);
+      expect(
+        check({ ...stripe, STRIPE_COUNTRIES: 'US, GB,ie' }),
+      ).toBeUndefined();
+      expect(check({ ...stripe, STRIPE_COUNTRIES: 'USA,UK' })).toMatch(
+        /two-letter country codes/,
+      );
     });
 
     it('needs the webhook secret that goes with each provider key', () => {

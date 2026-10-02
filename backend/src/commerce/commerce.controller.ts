@@ -224,6 +224,7 @@ export class CheckoutController extends CartAware {
       actor: user,
       checkoutKey: key ?? '',
       currency: dto.currency as Currency,
+      country: dto.country,
       email: dto.email,
       name: dto.name,
       shippingAddress: dto.shippingAddress

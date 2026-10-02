@@ -38,7 +38,11 @@ import {
   type ProviderResult,
   type WebhookEnvelope,
 } from './adapters/payment-adapter.js';
-import { PROVIDER_LABEL, providersFor } from './provider-resolver.js';
+import {
+  parseCountryList,
+  PROVIDER_LABEL,
+  providersFor,
+} from './provider-resolver.js';
 import {
   Payment,
   SETTLED_STATUSES,
@@ -64,6 +68,8 @@ export class PaymentsService {
   private readonly frontendUrl: string;
   private readonly brand: string;
   private readonly ownerEmail: string | null;
+  /** Buyer countries where Stripe may be used (`STRIPE_COUNTRIES`, BS-22). */
+  private readonly stripeCountries: ReadonlySet<string>;
 
   constructor(
     @InjectConnection() private readonly connection: Connection,
@@ -92,6 +98,9 @@ export class PaymentsService {
     );
     this.brand = config.get<string>('BRAND_NAME') || 'Engineering Books';
     this.ownerEmail = config.get<string>('OWNER_ALERT_EMAIL') || null;
+    this.stripeCountries = parseCountryList(
+      config.get<string>('STRIPE_COUNTRIES'),
+    );
   }
 
   enabled(): Set<Provider> {
@@ -102,8 +111,12 @@ export class PaymentsService {
     );
   }
 
-  options(currency: Currency) {
-    const providers = providersFor(currency, this.enabled());
+  /** Providers for a currency and the buyer's country (Stripe only where it is allowed). */
+  options(currency: Currency, country: string | null = null) {
+    const providers = providersFor(currency, this.enabled(), {
+      country,
+      stripeCountries: this.stripeCountries,
+    });
     return {
       currency,
       providers: providers.map((id) => ({ id, label: PROVIDER_LABEL[id] })),
@@ -147,10 +160,14 @@ export class PaymentsService {
       );
     }
     if (
-      !providersFor(order.currency, this.enabled()).includes(input.provider)
+      !providersFor(order.currency, this.enabled(), {
+        // The country the buyer gave at checkout, never what the browser says now.
+        country: order.country ?? null,
+        stripeCountries: this.stripeCountries,
+      }).includes(input.provider)
     ) {
       throw new BadRequestException(
-        `${PROVIDER_LABEL[input.provider]} can't take ${order.currency} payments here`,
+        `${PROVIDER_LABEL[input.provider]} can't take this payment (${order.currency}${order.country ? `, ${order.country}` : ''})`,
       );
     }
     if (

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { countryFromLanguage, currencyForCountry, resolveCurrency } from "./currency-detect";
+import { countryFromLanguage, currencyForCountry, resolveCurrency, detectCountry } from "./currency-detect";
 
 describe("currency detection", () => {
   it.each([
@@ -25,5 +25,17 @@ describe("currency detection", () => {
     expect(resolveCurrency({ cookie: "JPY", country: "NG" })).toBe("NGN");
     expect(resolveCurrency({ acceptLanguage: "en-GB,en" })).toBe("GBP");
     expect(resolveCurrency({})).toBe("USD");
+  });
+});
+
+describe("detectCountry", () => {
+  it("uses the host's geo header first, else the browser language", () => {
+    expect(detectCountry({ country: "ng", acceptLanguage: "en-GB" })).toBe("NG");
+    expect(detectCountry({ country: null, acceptLanguage: "en-GB,en;q=0.9" })).toBe("GB");
+  });
+
+  it("knows nothing rather than guessing wrong", () => {
+    expect(detectCountry({ country: "XX", acceptLanguage: "en" })).toBeNull();
+    expect(detectCountry({})).toBeNull();
   });
 });

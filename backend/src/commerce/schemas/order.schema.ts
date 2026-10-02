@@ -111,6 +111,12 @@ export class Order {
     default: null,
   })
   coupon: { code: string; couponId: Types.ObjectId } | null;
+  /**
+   * The country the buyer says they are paying from (ISO code, BS-22). Decides which payment
+   * providers may be offered (Stripe only in allowed countries); null on orders from before.
+   */
+  @Prop({ type: String, uppercase: true, default: null }) country:
+    string | null;
   @Prop({ type: ShippingAddressSchema, default: null })
   shippingAddress: ShippingAddress | null;
   @Prop({ type: Types.ObjectId, default: null })

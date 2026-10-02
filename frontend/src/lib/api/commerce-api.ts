@@ -105,12 +105,16 @@ export interface OrderView {
   };
   paidAt: string | null;
   returnPath: string | null;
+  /** The country the buyer is paying from (null on orders from before BS-22). */
+  country: string | null;
   history: Array<{ status: OrderStatus; at: string }>;
 }
 
 export interface PlaceOrderInput {
   checkoutKey: string;
   currency: Currency;
+  /** Where the buyer is paying from (ISO code); decides the payment options. */
+  country: string;
   email?: string;
   name?: string;
   shippingAddress?: ShippingAddressInput;
@@ -222,8 +226,8 @@ export const commerceApi = api.injectEndpoints({
       query: (body) => ({ url: "/guest-orders/cancel", method: "POST", body }),
     }),
 
-    paymentOptions: builder.query<PaymentOptions, Currency>({
-      query: (currency) => ({ url: "/payments/options", params: { currency } }),
+    paymentOptions: builder.query<PaymentOptions, { currency: Currency; country: string | null }>({
+      query: ({ currency, country }) => ({ url: "/payments/options", params: { currency, ...(country ? { country } : {}) } }),
     }),
     initiatePayment: builder.mutation<{ redirectUrl: string; reference: string }, { orderNumber: string; provider: Provider; checkoutKey?: string }>({
       query: (body) => ({ url: "/payments/initiate", method: "POST", body }),

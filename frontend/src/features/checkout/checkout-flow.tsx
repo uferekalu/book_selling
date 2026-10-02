@@ -38,6 +38,15 @@ const detailsSchema = z.object({
   name: z.string().trim().min(1, "Enter your name").max(120),
 });
 
+const countrySchema = z.object({ buyerCountry: z.string().length(2, "Choose the country you’re paying from") });
+
+/** The country detected on the first visit (set by proxy.ts), as a starting point only. */
+function detectedCountry(): string {
+  if (typeof document === "undefined") return "";
+  const match = document.cookie.match(/(?:^|;\s*)bs_country=([A-Z]{2})(?:;|$)/);
+  return match?.[1] ?? "";
+}
+
 const addressSchema = z.object({
   fullName: z.string().trim().min(1, "Enter the recipient's name").max(120),
   phone: z.string().trim().min(6, "Enter a phone number for the courier").max(30),
@@ -73,6 +82,7 @@ export function CheckoutFlow({ returnPath, onNavigate }: { returnPath?: string; 
   const [step, setStep] = useState<Step>("details");
   const [details, setDetails] = useState({ email: "", name: "" });
   const [address, setAddress] = useState<AddressDraft>(EMPTY_ADDRESS);
+  const [buyerCountry, setBuyerCountry] = useState(detectedCountry);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [couponInput, setCouponInput] = useState("");
   const [couponCode, setCouponCode] = useState<string | null>(null);
@@ -120,11 +130,12 @@ export function CheckoutFlow({ returnPath, onNavigate }: { returnPath?: string; 
         currency: currency ?? "",
         lines: okLines.map((l) => ({ bookId: l.bookId, format: l.format, quantity: l.quantity })),
         country: needsShipping ? address.country || null : null,
+        buyerCountry: buyerCountry || null,
         couponCode,
         email: email || null,
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [currency, cartSignature, needsShipping, address.country, couponCode, email],
+    [currency, cartSignature, needsShipping, address.country, buyerCountry, couponCode, email],
   );
 
   if (placed) return <OrderPlaced order={placed} signedIn={signedIn} onNavigate={onNavigate} />;
@@ -155,10 +166,13 @@ export function CheckoutFlow({ returnPath, onNavigate }: { returnPath?: string; 
   const goNext = () => {
     setErrors({});
     if (step === "details") {
-      if (!signedIn) {
-        const result = detailsSchema.safeParse(details);
-        if (!result.success) return setErrors(fieldErrors(result));
-      }
+      const errors = {
+        ...(signedIn ? {} : fieldErrors(detailsSchema.safeParse(details))),
+        ...fieldErrors(countrySchema.safeParse({ buyerCountry })),
+      };
+      if (Object.keys(errors).length) return setErrors(errors);
+      // A print copy usually goes to the same country: a starting point for the address.
+      if (needsShipping && !address.country) setAddress((a) => ({ ...a, country: buyerCountry }));
       setStep(needsShipping ? "shipping" : "review");
     } else if (step === "shipping") {
       const result = addressSchema.safeParse(address);
@@ -181,6 +195,7 @@ export function CheckoutFlow({ returnPath, onNavigate }: { returnPath?: string; 
       const order = await place({
         checkoutKey,
         currency,
+        country: buyerCountry,
         acceptTerms: true,
         ...(signedIn ? {} : { email: details.email.trim(), name: details.name.trim() }),
         ...(shippingAddress ? { shippingAddress } : {}),
@@ -247,6 +262,24 @@ export function CheckoutFlow({ returnPath, onNavigate }: { returnPath?: string; 
               </p>
             </div>
           )}
+          <FormField
+            label="Country you’re paying from"
+            required
+            error={errors.buyerCountry}
+            hint="It decides which secure payment options you’re offered."
+            className="sm:max-w-sm"
+          >
+            <Select
+              autoComplete="country"
+              placeholder="Choose a country"
+              options={countryOptions()}
+              value={buyerCountry}
+              onChange={(e) => {
+                setBuyerCountry(e.target.value);
+                setErrors((all) => ({ ...all, buyerCountry: "" }));
+              }}
+            />
+          </FormField>
           <Button size="lg" onClick={goNext} className="self-stretch sm:self-end">
             Continue
           </Button>

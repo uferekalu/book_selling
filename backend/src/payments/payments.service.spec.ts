@@ -155,6 +155,7 @@ describe('Payments (settlement, webhooks, reconciliation, refunds)', () => {
               JWT_ACCESS_SECRET: 'x'.repeat(40),
               TWO_FACTOR_ENCRYPTION_KEY: Buffer.alloc(32, 1).toString('base64'),
               BCRYPT_COST: 4,
+              STRIPE_COUNTRIES: 'US, gb',
             }),
           ],
         }),
@@ -296,6 +297,7 @@ describe('Payments (settlement, webhooks, reconciliation, refunds)', () => {
       couponCode?: string;
       currency?: Currency;
       ebookOnly?: boolean;
+      country?: string;
       now?: Date;
     } = {},
   ) {
@@ -324,6 +326,7 @@ describe('Payments (settlement, webhooks, reconciliation, refunds)', () => {
       name: 'Ada Obi',
       ...(opts.ebookOnly ? {} : { shippingAddress: address }),
       ...(opts.couponCode ? { couponCode: opts.couponCode } : {}),
+      ...(opts.country ? { country: opts.country } : {}),
       now: opts.now,
     });
     return { order, bookId, checkoutKey, guestCart: ownerCart };
@@ -393,6 +396,45 @@ describe('Payments (settlement, webhooks, reconciliation, refunds)', () => {
       });
     });
 
+    it('offers and allows Stripe only to buyers in an allowed country, and never for naira', async () => {
+      const ids = (currency: 'USD' | 'NGN', country: string | null) =>
+        payments.options(currency, country).providers.map((p) => p.id);
+      expect(ids('USD', 'US')).toContain('stripe');
+      expect(ids('USD', 'GB')).toContain('stripe');
+      expect(ids('USD', 'NG')).not.toContain('stripe');
+      expect(ids('USD', null)).not.toContain('stripe');
+      expect(ids('NGN', 'US')).toEqual(['paystack', 'flutterwave']);
+
+      // The order's own country decides, whatever the browser asks for.
+      const nigerian = await placeOrder({
+        currency: 'USD',
+        ebookOnly: true,
+        country: 'NG',
+      });
+      await expect(
+        payments.initiate({
+          orderNumber: nigerian.order.orderNumber,
+          provider: 'stripe',
+          actor: null,
+          checkoutKey: nigerian.checkoutKey,
+        }),
+      ).rejects.toThrow(/Stripe can't take this payment \(USD, NG\)/);
+      const american = await placeOrder({
+        currency: 'USD',
+        ebookOnly: true,
+        country: 'us',
+      });
+      expect(american.order.country).toBe('US');
+      await expect(
+        payments.initiate({
+          orderNumber: american.order.orderNumber,
+          provider: 'stripe',
+          actor: null,
+          checkoutKey: american.checkoutKey,
+        }),
+      ).resolves.toMatchObject({ redirectUrl: expect.any(String) });
+    });
+
     it('refuses an expired order, a provider that can’t take the currency, and the wrong guest key', async () => {
       const { order, checkoutKey } = await placeOrder();
       await expect(
@@ -413,7 +455,7 @@ describe('Payments (settlement, webhooks, reconciliation, refunds)', () => {
           actor: null,
           checkoutKey: usd.checkoutKey,
         }),
-      ).rejects.toThrow(/can't take USD|not available/);
+      ).rejects.toThrow(/can't take this payment|not available/);
       await expect(
         payments.initiate({
           orderNumber: order.orderNumber,
