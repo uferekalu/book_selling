@@ -82,6 +82,9 @@ export const envValidationSchema = Joi.object({
   R2_FOLDER: optionalString().default('book-selling/development'),
   // Only for an S3-compatible store other than R2 (e.g. MinIO locally); R2 derives it from the account id.
   R2_ENDPOINT: optionalString().uri({ scheme: ['http', 'https'] }),
+  // Optional cap on everything this environment stores in R2, e.g. 2048 on a developer's own
+  // account so testing never leaves the free 10GB. Unset (no cap) in production.
+  R2_STORAGE_LIMIT_MB: Joi.number().integer().min(1).empty(''),
   // Building a preview holds the whole PDF in memory several times over: keep the server's RAM
   // at least 4× this (DEPLOYMENT §4a).
   MANUSCRIPT_MAX_MB: Joi.number().integer().min(1).max(2000).default(200),

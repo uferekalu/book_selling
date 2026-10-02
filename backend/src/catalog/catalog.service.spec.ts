@@ -161,6 +161,7 @@ describe('Catalog (books, authors, categories, storefront queries)', () => {
     media.attached = [];
     files.objects.clear();
     files.multipart.clear();
+    files.storageLimitBytes = null;
     files.deleted = [];
     files.aborted = [];
   });
@@ -405,6 +406,36 @@ describe('Catalog (books, authors, categories, storefront queries)', () => {
         ).rejects.toThrow(/could not be read as a PDF/);
         expect(files.objects.has(brokenKey)).toBe(false);
         expect((await bookModel.findById(id).lean())!.manuscript).toBeNull();
+      });
+
+      it('with a storage limit, counts stored files and uploads in progress, and refuses what would exceed it', async () => {
+        const id = (await books.create('Sand Moulding', admin))._id.toString();
+        const { key } = await attachPdf(id); // a stored file
+        const stored = files.objects.get(key)!.length;
+        await manuscripts.start(id, 100_000, admin); // an upload still in progress
+        files.storageLimitBytes = stored + 100_000 + 50_000;
+
+        await manuscripts.start(id, 50_000, admin); // exactly fills the limit
+        await expect(manuscripts.start(id, 1, admin)).rejects.toMatchObject({
+          status: 409,
+          response: {
+            code: 'storage_limit',
+            message: expect.stringMatching(/Not enough file storage left/),
+          },
+        });
+        // Deleting files frees the space again.
+        await books.remove(id, admin);
+        await uploadModel.deleteMany({});
+        const other = (await books.create('Die Casting', admin))._id.toString();
+        await expect(manuscripts.start(other, 1, admin)).resolves.toBeTruthy();
+      });
+
+      it('has no storage limit unless one is configured', async () => {
+        const id = (await books.create('Sand Moulding', admin))._id.toString();
+        files.objects.set('x', new Uint8Array(500_000));
+        await expect(
+          manuscripts.start(id, 900_000, admin),
+        ).resolves.toBeTruthy();
       });
 
       it('refuses a file over the limit before anything is uploaded', async () => {

@@ -145,6 +145,9 @@ Tests don't need either: they use `mongodb-memory-server`.
 5. Render env: `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET` (required
    in production) and `R2_FOLDER` (`book-selling/production`). Locally the same five go in
    `backend/.env` with the development bucket; without them, book PDF uploads answer 503.
+   When developing on **your own** Cloudflare account, also set `R2_STORAGE_LIMIT_MB=2048`: book
+   PDF uploads that would take the folder past 2GB are refused with a clear message, so testing
+   never leaves the free 10GB. Production leaves it unset (BS-21).
 6. Incomplete uploads: our cleanup job aborts them after a day, and R2 also aborts any multipart
    upload left open for 7 days by default.
 7. Smoke test on staging: upload a cover (crop it), a sample page and a 50MB+ PDF from a phone;
