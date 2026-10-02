@@ -23,6 +23,7 @@ export async function manuscriptPdf(pages: number): Promise<Uint8Array> {
  */
 export class FakeBookFiles extends BookFilesService {
   override readonly configured = true;
+  override storageLimitBytes: number | null = null;
   readonly objects = new Map<string, Uint8Array>();
   readonly multipart = new Map<
     string,
@@ -104,6 +105,12 @@ export class FakeBookFiles extends BookFilesService {
     this.aborted.push(uploadId);
     this.multipart.delete(uploadId);
     return Promise.resolve();
+  }
+
+  override storedBytes(): Promise<number> {
+    let total = 0;
+    for (const bytes of this.objects.values()) total += bytes.length;
+    return Promise.resolve(total);
   }
 
   override size(key: string): Promise<number | null> {

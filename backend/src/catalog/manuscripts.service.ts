@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto';
 import {
   BadRequestException,
+  HttpException,
+  HttpStatus,
   Injectable,
   NotFoundException,
   PayloadTooLargeException,
@@ -58,6 +60,7 @@ export class ManuscriptsService {
         `That file is ${toMb(bytes)} MB; the limit is ${toMb(maxBytes)} MB.`,
       );
     }
+    await this.assertWithinStorageLimit(bytes);
     const started = await this.files.startManuscriptUpload(bookId, bytes);
     await this.uploads.create({
       bookId: toObjectId(bookId, 'Book'),
@@ -204,6 +207,36 @@ export class ManuscriptsService {
   async discard(key: string): Promise<void> {
     await this.files.delete(key);
     await this.uploads.deleteOne({ key }).exec();
+  }
+
+  /**
+   * With `R2_STORAGE_LIMIT_MB` set (e.g. on a developer's own Cloudflare account), refuses an
+   * upload that would take this environment's storage over the limit. Counts the finished files
+   * in R2 plus uploads still in progress.
+   */
+  private async assertWithinStorageLimit(bytes: number): Promise<void> {
+    const limit = this.files.storageLimitBytes;
+    if (limit === null) return;
+    const [stored, inProgress] = await Promise.all([
+      this.files.storedBytes(),
+      this.uploads
+        .aggregate<{ bytes: number }>([
+          { $match: { status: 'uploading' } },
+          { $group: { _id: null, bytes: { $sum: '$bytes' } } },
+        ])
+        .exec(),
+    ]);
+    const used = stored + (inProgress[0]?.bytes ?? 0);
+    if (used + bytes > limit) {
+      throw new HttpException(
+        {
+          message: `Not enough file storage left: ${toMb(used)} MB of ${toMb(limit)} MB is used and this file is ${toMb(bytes)} MB. Delete unused draft books, or raise R2_STORAGE_LIMIT_MB.`,
+          code: 'storage_limit',
+        },
+        // 409, not 507: a 5xx would hide this message from the editor (error filter).
+        HttpStatus.CONFLICT,
+      );
+    }
   }
 
   private async find(

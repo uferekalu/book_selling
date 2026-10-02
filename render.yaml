@@ -75,6 +75,8 @@ services:
         sync: false
       - key: R2_FOLDER
         value: book-selling/production
+      # R2_STORAGE_LIMIT_MB is deliberately NOT set in production (no cap on the store's books).
+      # It exists for developers testing on their own Cloudflare account (backend/.env.example).
       # Largest book PDF (MB). A preview build needs about 4× this in RAM: 200 suits the 2 GB plan
       - key: MANUSCRIPT_MAX_MB
         value: "200"

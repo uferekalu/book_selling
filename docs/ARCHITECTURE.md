@@ -934,7 +934,10 @@ here, the first 10GB are free and downloads cost nothing (BS-20).
 `uploadInParts` in `lib/upload.ts`):
 1. `POST /admin/catalog/books/:id/manuscript-uploads { bytes }` (staff with 2FA): the API checks
    the book exists and the size is within `MANUSCRIPT_MAX_MB` (default 200, refused with 413
-   before anything is sent), opens an R2 multipart upload under a fresh random key in this book's
+   before anything is sent). With `R2_STORAGE_LIMIT_MB` set (developers' own accounts; unset in
+   production) it also refuses, with 409 `storage_limit`, an upload that would take this
+   environment's storage over the cap: the finished files are summed from R2 itself (so files the
+   database forgot still count) plus the declared size of uploads in progress (BS-21). It then opens an R2 multipart upload under a fresh random key in this book's
    folder, and records it in `manuscript_uploads` (key, upload id, declared size, part count).
 2. The browser asks for signed part URLs in batches (`…/manuscript-uploads/parts`, up to 50 at a
    time, each valid for an hour; the upload must belong to this book) and PUTs the file **straight

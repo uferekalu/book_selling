@@ -1,6 +1,6 @@
 # Roadmap
 
-**Next planned ticket: BS-9** · **Next reactive ticket: BS-21**
+**Next planned ticket: BS-9** · **Next reactive ticket: BS-22**
 
 Each ticket is one branch (`feature/BS-<n>-<suffix>`) and one squash-merged PR. The order is
 deliberate: each ticket builds only on merged work. When a ticket finishes, its row is rewritten
@@ -30,6 +30,7 @@ so planned numbers never shift; they get a new row at the end of the table.
 | BS-18 | `engagement-marketing` | Newsletter with **double opt-in** and one-click unsubscribe; **back-in-stock**, **price-drop** and **new-edition** alerts; **abandoned-cart** reminder (consent-aware, once); public **Q&A** on book pages answered by the author; referral codes; privacy-friendly analytics with a consent banner; UTM tracking | ⏳ Planned |
 | BS-19 | `instant-auth-header` (hotfix) | See detail below | ✅ Done |
 | BS-20 | `r2-book-files` | See detail below | ✅ Done |
+| BS-21 | `r2-storage-limit` | See detail below | ✅ Done |
 
 **Launch line.** BS-1 to BS-14 are the launch. The store goes live after BS-14 with the complete
 buying, reading, email, messaging and admin experience. BS-15 to BS-18 are growth features shipped
@@ -277,6 +278,22 @@ checklist is reviewed whenever a ticket is planned, so nothing important is forg
   7. Script robustness: the responsive check now rejects Git Bash–mangled paths and sanitises `?`
      in screenshot names.
 
+## BS-21: Optional R2 storage cap for development (✅ Done, 2026-10-02)
+
+- **Why**: development uses the developer's own Cloudflare account and card until launch; the owner
+  asked that test uploads never pass the free 10GB.
+- **What**: optional `R2_STORAGE_LIMIT_MB` (Joi, `.env.example` default 2048, documented as
+  deliberately unset in `render.yaml`). Starting a book PDF upload that would exceed it is refused
+  with 409 `storage_limit` and a message giving used/limit/file size. Usage = finished files
+  listed from R2 under this environment's folder (`BookFilesService.storedBytes`, paginated) +
+  declared size of uploads still in progress. 409 rather than 507 because the error filter hides
+  5xx messages.
+- **Verified**: unit tests (limit counted across stored files and in-progress uploads, freed by
+  deleting; no limit when unset; listing pagination); live: the BS-20 checks passed against the
+  owner's real R2 bucket (20/20: multipart upload, ListParts, CORS preflight and exposed headers,
+  ranged signed read, private bucket, tampered/other-file/expired links refused, incomplete upload
+  refused, abort, cleanup), and the usage listing works with the bucket-scoped token.
+
 ## BS-20: Book PDFs move to Cloudflare R2 (✅ Done, 2026-10-02)
 
 - **Why**: while costing the services for the lecturer, Cloudinary's per-file limits turned out to
@@ -310,8 +327,8 @@ checklist is reviewed whenever a ticket is planned, so nothing important is forg
   deleted old files, cleanup), the uploader's retry/re-sign/cancel paths, and e2e route checks.
   Also run against a local S3-compatible server (s3rver): browser-style bare PUTs of signed parts,
   completion, content match and a signed ranged read (206) all worked. s3rver lacks ListParts and
-  abort, and doesn't check signatures, so those are confirmed against real R2 once the owner's
-  bucket exists (DEPLOYMENT §4b smoke test).
+  abort, and doesn't check signatures; all three were then confirmed against the owner's real R2
+  bucket (BS-21 record).
 - **Deviation**: none from the plan; Cloudinary's PDF page rendering (thumbnails, teasers) was
   replaced by pdf.js in the browser and on the server.
 

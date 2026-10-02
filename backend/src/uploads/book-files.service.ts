@@ -12,6 +12,7 @@ import {
   DeleteObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
+  ListObjectsV2Command,
   ListPartsCommand,
   S3Client,
   UploadPartCommand,
@@ -51,6 +52,8 @@ export class BookFilesService {
   private readonly logger = new Logger(BookFilesService.name);
   readonly configured: boolean;
   readonly maxManuscriptBytes: number;
+  /** Optional cap on everything this environment stores (`R2_STORAGE_LIMIT_MB`); null = none. */
+  readonly storageLimitBytes: number | null;
   private readonly root: string;
   private readonly bucket: string;
   private readonly client: S3Client | null;
@@ -68,6 +71,8 @@ export class BookFilesService {
     ).replace(/\/+$/, '');
     this.maxManuscriptBytes =
       (config.get<number>('MANUSCRIPT_MAX_MB') ?? 200) * 1024 * 1024;
+    const limitMb = config.get<number>('R2_STORAGE_LIMIT_MB');
+    this.storageLimitBytes = limitMb ? limitMb * 1024 * 1024 : null;
     this.configured = Boolean(
       endpoint && accessKeyId && secretAccessKey && this.bucket,
     );
@@ -252,6 +257,29 @@ export class BookFilesService {
         );
       }
     }
+  }
+
+  /**
+   * Total size of the finished files in this environment's folder, read from R2 itself (so files
+   * the database no longer knows about still count). One list request per 1,000 files.
+   */
+  async storedBytes(): Promise<number> {
+    const client = this.require();
+    let total = 0;
+    let token: string | undefined;
+    do {
+      const page = await client.send(
+        new ListObjectsV2Command({
+          Bucket: this.bucket,
+          Prefix: `${this.root}/`,
+          ContinuationToken: token,
+        }),
+      );
+      for (const object of page.Contents ?? [])
+        total += Number(object.Size ?? 0);
+      token = page.IsTruncated ? page.NextContinuationToken : undefined;
+    } while (token);
+    return total;
   }
 
   /** Size of a stored file, or null when it doesn't exist. */

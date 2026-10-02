@@ -1,6 +1,7 @@
 import { ConfigService } from '@nestjs/config';
 import {
   CompleteMultipartUploadCommand,
+  ListObjectsV2Command,
   ListPartsCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
@@ -156,6 +157,31 @@ describe('BookFilesService (Cloudflare R2)', () => {
     await expect(files.size('forbidden')).rejects.toThrow('Forbidden');
     send.mockResolvedValueOnce({ ContentLength: 1234 } as never);
     expect(await files.size('present')).toBe(1234);
+  });
+
+  it("adds up everything stored in this environment's folder, across pages", async () => {
+    const files = new BookFilesService(config({ R2_STORAGE_LIMIT_MB: 2048 }));
+    expect(files.storageLimitBytes).toBe(2048 * 1024 * 1024);
+    expect(new BookFilesService(config()).storageLimitBytes).toBeNull();
+    const prefixes: unknown[] = [];
+    vi.spyOn(S3Client.prototype, 'send').mockImplementation(
+      (command: unknown) => {
+        if (!(command instanceof ListObjectsV2Command))
+          throw new Error('unexpected');
+        prefixes.push(command.input.Prefix);
+        return Promise.resolve(
+          command.input.ContinuationToken
+            ? { Contents: [{ Size: 5 }], IsTruncated: false }
+            : {
+                Contents: [{ Size: 100 }, { Size: 20 }],
+                IsTruncated: true,
+                NextContinuationToken: 'next',
+              },
+        );
+      },
+    );
+    expect(await files.storedBytes()).toBe(125);
+    expect(prefixes).toEqual(['book-selling/test/', 'book-selling/test/']);
   });
 
   it('deletes strictly for the cleanup job, best-effort otherwise', async () => {
