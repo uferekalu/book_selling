@@ -49,6 +49,11 @@ export interface PlaceOrderInput {
   /** The browser's random idempotency key (also the guest's proof of access). */
   checkoutKey: string;
   currency: Currency;
+  /**
+   * The buyer's country (ISO code). Required from the checkout form (PlaceOrderDto); unknown here
+   * means null, and an unknown country is never offered Stripe.
+   */
+  country?: string;
   email?: string;
   name?: string;
   shippingAddress?: ShippingAddress;
@@ -221,6 +226,7 @@ export class OrdersService {
               },
               expiresAt: new Date(now.getTime() + PAYMENT_WINDOW_MS),
               checkoutKeyHash: keyHash,
+              country: input.country?.toUpperCase() ?? null,
               guestCartId: input.owner.guestId ?? null,
               returnPath: safeReturnPath(input.returnPath),
               statusHistory: [

@@ -1,6 +1,6 @@
 # Roadmap
 
-**Next planned ticket: BS-9** · **Next reactive ticket: BS-22**
+**Next planned ticket: BS-9** · **Next reactive ticket: BS-23**
 
 Each ticket is one branch (`feature/BS-<n>-<suffix>`) and one squash-merged PR. The order is
 deliberate: each ticket builds only on merged work. When a ticket finishes, its row is rewritten
@@ -31,6 +31,7 @@ so planned numbers never shift; they get a new row at the end of the table.
 | BS-19 | `instant-auth-header` (hotfix) | See detail below | ✅ Done |
 | BS-20 | `r2-book-files` | See detail below | ✅ Done |
 | BS-21 | `r2-storage-limit` | See detail below | ✅ Done |
+| BS-22 | `stripe-country-allowlist` | See detail below | ✅ Done |
 
 **Launch line.** BS-1 to BS-14 are the launch. The store goes live after BS-14 with the complete
 buying, reading, email, messaging and admin experience. BS-15 to BS-18 are growth features shipped
@@ -277,6 +278,30 @@ checklist is reviewed whenever a ticket is planned, so nothing important is forg
      empty-state padding tightened on phones.
   7. Script robustness: the responsive check now rejects Git Bash–mangled paths and sanitises `?`
      in screenshot names.
+
+## BS-22: Stripe only where the business is compliant (✅ Done, 2026-10-02)
+
+- **Why**: the owner: "Stripe should be used only in locations where all compliances are met."
+  Stripe doesn't onboard Nigeria-only businesses, so the store may only use it where its Stripe
+  account is allowed to trade. Chosen: an explicit allow-list of buyer countries (US, UK and the
+  euro area for now).
+- **Backend**: `STRIPE_COUNTRIES` (ISO codes; Joi-validated, and **required** whenever Stripe keys
+  are set, so Stripe can't be switched on everywhere by accident). `providersFor` offers Stripe
+  only when the buyer's country is on the list; an unknown country never gets it; Stripe was
+  removed from NGN routing. Orders store the buyer's country (`order.country`, required by
+  `PlaceOrderDto`); `/payments/options` takes it, and `initiate` re-checks the **order's**
+  country, so asking for Stripe directly is refused.
+- **Frontend**: checkout's Details step asks "Country you're paying from", prefilled from a
+  `bs_country` cookie that the proxy sets from the host's geo header (else the browser language);
+  it also prefills the shipping country. Pay-now asks for the options of the order's country.
+- **Also found**: the owner's checkout said "Online payment in NGN isn't available" because no
+  provider keys were set in `backend/.env` (providers are off without keys, by design). The
+  payment variables were added to their `.env` in test mode; they filled in test keys for all three
+  providers, and the file was checked against the validation (values never read out).
+- **Verified**: resolver unit tests (NGN never Stripe; allowed/unknown/excluded countries; keys
+  off), env tests (Stripe keys without a list refuse to boot; bad codes refused), a payments test
+  that a Nigerian buyer paying USD can't start a Stripe payment while an American one can, e2e
+  (an order without a country is refused), and frontend country-detection tests.
 
 ## BS-21: Optional R2 storage cap for development (✅ Done, 2026-10-02)
 

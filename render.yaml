@@ -101,3 +101,6 @@ services:
         sync: false
       - key: STRIPE_WEBHOOK_SECRET
         sync: false
+      # Required with the Stripe keys: buyer countries where the business may use Stripe (BS-22)
+      - key: STRIPE_COUNTRIES
+        sync: false

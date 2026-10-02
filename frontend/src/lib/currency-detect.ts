@@ -1,6 +1,8 @@
 import { isCurrency, type Currency } from "@/lib/money";
 
 export const CURRENCY_COOKIE = "bs_currency";
+/** The visitor's country as detected on their first visit: only a default for the checkout form. */
+export const COUNTRY_COOKIE = "bs_country";
 
 /** Euro-area countries (ISO 3166-1 alpha-2). */
 const EURO = new Set(["AT", "BE", "HR", "CY", "EE", "FI", "FR", "DE", "GR", "IE", "IT", "LV", "LT", "LU", "MT", "NL", "PT", "SK", "SI", "ES"]);
@@ -18,6 +20,13 @@ export function currencyForCountry(country: string | null | undefined): Currency
 export function countryFromLanguage(acceptLanguage: string | null | undefined): string | null {
   const match = acceptLanguage?.match(/^[a-z]{2,3}-([A-Z]{2})\b/i);
   return match ? match[1].toUpperCase() : null;
+}
+
+/** The best guess of a visitor's country: the host's geo header, else their browser language. */
+export function detectCountry(input: { country?: string | null; acceptLanguage?: string | null }): string | null {
+  const geo = input.country?.trim().toUpperCase();
+  if (geo && /^[A-Z]{2}$/.test(geo) && geo !== "XX") return geo;
+  return countryFromLanguage(input.acceptLanguage);
 }
 
 /**

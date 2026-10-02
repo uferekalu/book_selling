@@ -59,6 +59,7 @@ describe('Payments over HTTP (e2e)', () => {
       .set('Idempotency-Key', `e2e-key-${Date.now()}-0123456789`)
       .send({
         currency: 'NGN',
+        country: 'NG',
         email: `guest${Date.now()}@example.com`,
         name: 'Chidi Eze',
         acceptTerms: true,

@@ -122,6 +122,14 @@ export class QuoteDto {
 
 export class PlaceOrderDto {
   @ApiProperty({ enum: CURRENCIES }) @IsIn(CURRENCIES) currency: Currency;
+  @ApiProperty({
+    example: 'NG',
+    description:
+      'The country the buyer is paying from (decides the payment options)',
+  })
+  @Transform(upper)
+  @IsISO31661Alpha2()
+  country: string;
   @ApiPropertyOptional({ description: 'Required for guests' })
   @IsOptional()
   @Transform(trim)

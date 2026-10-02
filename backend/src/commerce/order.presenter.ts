@@ -58,6 +58,7 @@ export function presentOrder(order: OrderDocument) {
     },
     paidAt: order.payment?.paidAt?.toISOString() ?? null,
     returnPath: order.returnPath,
+    country: order.country ?? null,
     history: order.statusHistory.map((h) => ({
       status: h.status,
       at: h.at.toISOString(),

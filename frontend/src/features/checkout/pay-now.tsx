@@ -19,7 +19,8 @@ const DESCRIPTION: Record<Provider, string> = {
  * currency is preselected; the amount is the order's total, fixed on the server.
  */
 export function PayNow({ order, guest }: { order: OrderView; guest: boolean }) {
-  const { data: options, isLoading, error } = usePaymentOptionsQuery(order.currency);
+  // The order's own country decides (the server checks it again when payment starts).
+  const { data: options, isLoading, error } = usePaymentOptionsQuery({ currency: order.currency, country: order.country });
   const [chosen, setChosen] = useState<Provider | null>(null);
   const [start, startState] = useInitiatePaymentMutation();
   const [leaving, setLeaving] = useState(false);

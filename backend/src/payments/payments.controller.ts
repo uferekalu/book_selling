@@ -25,6 +25,7 @@ import { Transform } from 'class-transformer';
 import {
   IsIn,
   IsInt,
+  IsISO31661Alpha2,
   IsNotEmpty,
   IsOptional,
   IsString,
@@ -60,6 +61,17 @@ const REFERENCE = /^BSP-[a-f0-9]{32}$/;
 
 class OptionsQuery {
   @ApiProperty({ enum: CURRENCIES }) @IsIn(CURRENCIES) currency: Currency;
+  @ApiPropertyOptional({
+    example: 'NG',
+    description:
+      "The buyer's country from checkout (Stripe is offered only in allowed countries)",
+  })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim().toUpperCase() : value,
+  )
+  @IsISO31661Alpha2()
+  country?: string;
 }
 
 class InitiateDto {
@@ -111,7 +123,7 @@ export class PaymentsController {
   @Public()
   @Get('options')
   options(@Query() query: OptionsQuery) {
-    return this.payments.options(query.currency);
+    return this.payments.options(query.currency, query.country ?? null);
   }
 
   /** Creates a payment attempt for the exact order total and returns the provider's page. */

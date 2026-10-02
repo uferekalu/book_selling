@@ -11,6 +11,8 @@ export interface CheckoutFingerprint {
   currency: string;
   lines: Array<{ bookId: string; format: string; quantity: number }>;
   country: string | null;
+  /** The buyer's country (BS-22): a different country is a different order. */
+  buyerCountry?: string | null;
   couponCode: string | null;
   email: string | null;
 }

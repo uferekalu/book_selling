@@ -125,6 +125,15 @@ export const envValidationSchema = Joi.object({
   FLUTTERWAVE_SECRET_KEY: optionalString().optional(),
   // The "secret hash" set in the Flutterwave dashboard, sent back in the verif-hash header.
   FLUTTERWAVE_WEBHOOK_HASH: optionalString().min(16).optional(),
+  // Where the business may lawfully take payments through Stripe: buyer countries (ISO codes,
+  // comma-separated, e.g. "US,GB,IE,DE"). Stripe is offered nowhere else, and never for NGN.
+  STRIPE_COUNTRIES: optionalString()
+    .pattern(/^\s*[A-Za-z]{2}(\s*,\s*[A-Za-z]{2})*\s*$/)
+    .messages({
+      'string.pattern.base':
+        'STRIPE_COUNTRIES must be two-letter country codes separated by commas, e.g. US,GB,IE',
+    })
+    .optional(),
 }).custom((env: Record<string, unknown>, helpers) => {
   const problem = paymentKeysProblem(env);
   return problem ? helpers.message({ custom: problem }) : env;
@@ -175,6 +184,10 @@ export function paymentKeysProblem(
   ];
   for (const [key, partner] of pairs) {
     if (str(key) && !str(partner)) return `${partner} is required with ${key}`;
+  }
+  // Stripe only where the business is compliant: an explicit list, never "everywhere" by default.
+  if (str('STRIPE_SECRET_KEY') && !str('STRIPE_COUNTRIES')) {
+    return 'STRIPE_COUNTRIES is required with STRIPE_SECRET_KEY: list the buyer countries where Stripe may be used (e.g. US,GB,IE)';
   }
   if (
     env.NODE_ENV === 'production' &&

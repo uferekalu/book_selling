@@ -187,13 +187,15 @@ For **each** provider:
       the mode, so live keys can't end up on staging or a laptop.
 - [ ] To switch a provider off (for example Stripe until there is a supported company), leave its
       keys empty: it is simply not offered.
+- [ ] Stripe also needs `STRIPE_COUNTRIES`: only the buyer countries where the business's Stripe
+      account may lawfully take payments (the API refuses to start without it). Stripe is never
+      offered for NGN.
 - [ ] Webhook URL set in the **live** dashboard:
       `https://api.<domain>/payments/webhooks/stripe` · `/paystack` · `/flutterwave`
 - [ ] Webhook secret set (`STRIPE_WEBHOOK_SECRET`; Paystack signs with the secret key;
       `FLUTTERWAVE_WEBHOOK_HASH` must match the "secret hash" in the Flutterwave dashboard).
 - [ ] Currencies enabled on the account: Paystack NGN; Flutterwave NGN, USD, GBP and EUR as the
-      account allows; Stripe USD, GBP, EUR and NGN if the account supports it (otherwise disable Stripe
-      for NGN in settings).
+      account allows; Stripe USD, GBP and EUR (never NGN).
 - [ ] Events to send: **Stripe** `checkout.session.completed`,
       `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`,
       `checkout.session.expired`, `charge.refunded`, `charge.dispute.created`; **Paystack**

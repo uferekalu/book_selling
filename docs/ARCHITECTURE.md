@@ -871,11 +871,17 @@ adapter registry.
 
 | Currency | Default | Alternatives |
 |---|---|---|
-| NGN | Paystack | Flutterwave, Stripe |
-| USD, GBP, EUR | Stripe | Flutterwave |
+| NGN | Paystack | Flutterwave (**never Stripe**) |
+| USD, GBP, EUR | Stripe (allowed countries only) | Flutterwave (USD also Paystack) |
 
-This is a config table in `payments/provider-resolver.ts`, filtered by the per-provider enable
-switches in `settings`. The buyer sees the default preselected and can switch.
+This is a config table in `payments/provider-resolver.ts`. A provider is offered only when its keys
+are set. **Stripe is offered only where the business is compliant** (BS-22): the buyer's country
+must be on `STRIPE_COUNTRIES` (the API refuses to start with Stripe keys and no list), an unknown
+country never gets Stripe, and Stripe never takes naira. Checkout asks every buyer for the country
+they are paying from (prefilled from the `bs_country` cookie the storefront sets from the host's
+geo header, else the browser language) and stores it on the order (`order.country`). The options
+endpoint takes that country; `initiate` checks the **order's** country again, so a buyer can't
+reach Stripe by asking for it. The buyer sees the default preselected and can switch.
 
 ### 9.3 Provider specifics
 

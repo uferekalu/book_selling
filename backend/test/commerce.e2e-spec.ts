@@ -100,12 +100,21 @@ describe('Cart and checkout (e2e)', () => {
     const cookie = cartCookie(added)!.split(';')[0];
     const body = {
       currency: 'USD',
+      country: 'US',
       email: 'guest@example.com',
       name: 'Chidi Eze',
       acceptTerms: true,
     };
 
     await http().post('/orders').set('Cookie', cookie).send(body).expect(400);
+    // The buyer's country is required (it decides the payment options, BS-22).
+    const { country: _country, ...withoutCountry } = body;
+    await http()
+      .post('/orders')
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', 'no-country-checkout-key-0123456789')
+      .send(withoutCountry)
+      .expect(400);
     await http()
       .post('/orders')
       .set('Cookie', cookie)
@@ -176,7 +185,7 @@ describe('Cart and checkout (e2e)', () => {
       .post('/orders')
       .set(auth)
       .set('Idempotency-Key', 'ada-checkout-key-0123456789')
-      .send({ currency: 'USD', acceptTerms: true })
+      .send({ currency: 'USD', country: 'GB', acceptTerms: true })
       .expect(201);
     const mine = await http().get('/orders').set(auth).expect(200);
     expect(
