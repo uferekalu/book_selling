@@ -83,10 +83,17 @@ filters, decorators, `money/`, `utils/`). The module map and ticket per module a
 - **Files never pass through the API.** `CloudinaryService.signUpload(kind, ownerId)` signs a
   direct browser upload into that owner's folder, tagged `pending`. The attach endpoint then calls
   `verify()` (Admin API lookup: folder, format, size, dimensions, pages) **before** trusting the
-  `publicId`, saves, and calls `markAttached()`. `UploadCleanupJob` deletes `pending` assets
-  older than 24h, but only after checking no book or author references them.
-- The manuscript is `authenticated`: never return its URL, public id or a delivery URL from any
-  endpoint. Only BS-6/BS-9 server code reads it, through `privateDownloadUrl`.
+  `publicId`, saves, and calls `markAttached()`. Cloudinary holds **images only**.
+- **Book PDFs live in Cloudflare R2** (BS-20). `BookFilesService` is the only code that talks to
+  R2; `ManuscriptsService` runs the multipart upload (start → sign parts → complete → attach),
+  checks every step belongs to the book (`isManuscriptKey` + the `manuscript_uploads` record),
+  and on attach downloads and reads the file itself (`loadPdf`, SHA-256). Never return a
+  manuscript key or link to visitors or buyers; staff get `manuscript-link` (30 minutes).
+- `UploadCleanupJob` deletes abandoned uploads after 24h in both stores, but only after checking
+  no book or author references them.
+- Locked-page teasers are rendered on the server (`preview/page-teaser.ts`, pdf.js +
+  `@napi-rs/canvas`) as data URIs. pdf.js **detaches** the buffer it is given: pass it bytes you
+  no longer need.
 - Every catalogue write goes through the books/authors/categories services, which audit-log it and
   call `StorefrontRevalidator.notify()` so the storefront cache refreshes. Don't write the models
   directly from controllers.
@@ -147,8 +154,10 @@ filters, decorators, `money/`, `utils/`). The module map and ticket per module a
   against a 6h+20%-jitter backoff was flaky in BS-3.
 - The first run on a new machine downloads a ~550MB mongod binary (about 6 minutes). A timeout on
   that first run is not a bug.
-- Never mock Mongoose for service logic. Assert on real stored state. Cloudinary is the exception:
-  catalogue specs override `CloudinaryService` with a fake (see `catalog.service.spec.ts`).
+- Never mock Mongoose for service logic. Assert on real stored state. File stores are the
+  exception: catalogue specs override `CloudinaryService` with a fake, and `BookFilesService` with
+  `test/fake-book-files.ts` (in-memory R2 using the real key and part rules; `files.upload()` does
+  what the editor's browser does).
 - Locally on Windows, a full `npm run test:e2e` occasionally ends with "Worker exited
   unexpectedly" from vitest's pool while every test passed. It has never happened in CI; rerun
   before investigating.

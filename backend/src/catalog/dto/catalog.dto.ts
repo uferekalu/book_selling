@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import {
   ArrayMaxSize,
+  ArrayMinSize,
   IsArray,
   IsBoolean,
   IsDateString,
@@ -65,7 +66,37 @@ export class AttachImageDto {
 }
 
 export class AttachManuscriptDto {
-  @ApiProperty() @IsString() @IsNotEmpty() @MaxLength(300) publicId: string;
+  @ApiProperty({ description: 'The key returned when the upload completed' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(300)
+  key: string;
+}
+
+export class StartManuscriptUploadDto {
+  @ApiProperty({ description: 'Exact size of the PDF in bytes' })
+  @IsInt()
+  @Min(1)
+  @Max(2000 * 1024 * 1024)
+  bytes: number;
+}
+
+export class ManuscriptUploadRefDto {
+  @ApiProperty() @IsString() @IsNotEmpty() @MaxLength(300) key: string;
+  @ApiProperty() @IsString() @IsNotEmpty() @MaxLength(1024) uploadId: string;
+}
+
+export class SignManuscriptPartsDto extends ManuscriptUploadRefDto {
+  @ApiProperty({
+    type: [Number],
+    description: 'Up to 50 part numbers (1-based)',
+  })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(50)
+  @IsInt({ each: true })
+  @Min(1, { each: true })
+  partNumbers: number[];
 }
 
 // ---------------------------------------------------------------- authors & categories

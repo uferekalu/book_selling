@@ -143,7 +143,19 @@ export interface CategoryInput {
   sortOrder?: number;
 }
 
-export type UploadKind = "cover" | "gallery" | "author-photo" | "manuscript";
+/** Public images (Cloudinary). Book PDFs go to private storage in parts (lib/upload.ts). */
+export type UploadKind = "cover" | "gallery" | "author-photo";
+
+export interface ManuscriptUploadRef {
+  key: string;
+  uploadId: string;
+}
+
+export interface StartedManuscriptUpload extends ManuscriptUploadRef {
+  partBytes: number;
+  partCount: number;
+  maxBytes: number;
+}
 
 const bookTags = (id: string) => [{ type: "AdminBook" as const, id }, "AdminBooks" as const];
 
@@ -181,7 +193,23 @@ export const catalogAdminApi = api.injectEndpoints({
       query: ({ id, publicId }) => ({ url: `/admin/catalog/books/${id}/gallery/${encodeURIComponent(publicId)}`, method: "DELETE" }),
       invalidatesTags: (_r, _e, { id }) => bookTags(id),
     }),
-    attachManuscript: builder.mutation<AdminBook, { id: string; publicId: string }>({
+    startManuscriptUpload: builder.mutation<StartedManuscriptUpload, { id: string; bytes: number }>({
+      query: ({ id, bytes }) => ({ url: `/admin/catalog/books/${id}/manuscript-uploads`, method: "POST", body: { bytes } }),
+    }),
+    signManuscriptParts: builder.mutation<
+      { parts: Array<{ partNumber: number; url: string }> },
+      ManuscriptUploadRef & { id: string; partNumbers: number[] }
+    >({
+      query: ({ id, ...body }) => ({ url: `/admin/catalog/books/${id}/manuscript-uploads/parts`, method: "POST", body }),
+    }),
+    completeManuscriptUpload: builder.mutation<{ key: string }, ManuscriptUploadRef & { id: string }>({
+      query: ({ id, ...body }) => ({ url: `/admin/catalog/books/${id}/manuscript-uploads/complete`, method: "POST", body }),
+    }),
+    abortManuscriptUpload: builder.mutation<void, ManuscriptUploadRef & { id: string }>({
+      query: ({ id, ...body }) => ({ url: `/admin/catalog/books/${id}/manuscript-uploads/abort`, method: "POST", body }),
+    }),
+    /** The server reads the finished upload, checks it and makes it the book's file. */
+    attachManuscript: builder.mutation<AdminBook, { id: string; key: string }>({
       query: ({ id, ...body }) => ({ url: `/admin/catalog/books/${id}/manuscript`, method: "POST", body }),
       invalidatesTags: (_r, _e, { id }) => bookTags(id),
     }),
@@ -201,8 +229,10 @@ export const catalogAdminApi = api.injectEndpoints({
       query: (id) => ({ url: `/admin/catalog/books/${id}/preview/rebuild`, method: "POST" }),
       invalidatesTags: (_r, _e, id) => bookTags(id),
     }),
-    manuscriptPages: builder.query<Array<{ page: number; url: string }>, { id: string; from: number; to: number }>({
-      query: ({ id, from, to }) => ({ url: `/admin/catalog/books/${id}/manuscript-pages`, params: { from, to } }),
+    /** A 30-minute private link to the book file, for page thumbnails in the preview picker. */
+    manuscriptLink: builder.query<{ url: string; expiresAt: string }, { id: string; uploadedAt: string }>({
+      query: ({ id }) => `/admin/catalog/books/${id}/manuscript-link`,
+      keepUnusedDataFor: 0,
     }),
     markdownPreview: builder.mutation<{ html: string }, string>({
       query: (markdown) => ({ url: "/admin/catalog/markdown-preview", method: "POST", body: { markdown } }),
@@ -261,13 +291,17 @@ export const {
   useAttachCoverMutation,
   useAddGalleryImageMutation,
   useRemoveGalleryImageMutation,
+  useStartManuscriptUploadMutation,
+  useSignManuscriptPartsMutation,
+  useCompleteManuscriptUploadMutation,
+  useAbortManuscriptUploadMutation,
   useAttachManuscriptMutation,
   useBookStatusMutation,
   useDeleteBookMutation,
   useMarkdownPreviewMutation,
   useSetPreviewMutation,
   useRebuildPreviewMutation,
-  useManuscriptPagesQuery,
+  useManuscriptLinkQuery,
   useAdminAuthorsQuery,
   useCreateAuthorMutation,
   useUpdateAuthorMutation,

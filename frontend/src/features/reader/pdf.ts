@@ -22,14 +22,22 @@ export function loadPdfJs(): Promise<PdfJs> {
   return loading;
 }
 
-/** Opens a PDF; aborting the signal destroys the loading task and the document with it. */
-export async function openPdf(url: string, signal: AbortSignal): Promise<{ pdfjs: PdfJs; doc: PDFDocumentProxy }> {
+/**
+ * Opens a PDF; aborting the signal destroys the loading task and the document with it. `lazy` reads
+ * only the byte ranges of the pages drawn (a large file seen a few pages at a time).
+ */
+export async function openPdf(
+  url: string,
+  signal: AbortSignal,
+  { lazy = false }: { lazy?: boolean } = {},
+): Promise<{ pdfjs: PdfJs; doc: PDFDocumentProxy }> {
   const pdfjs = await loadPdfJs();
   const task = pdfjs.getDocument({
     url,
-    // Same-origin through the /api proxy; no cookies are needed for a public preview.
+    // No cookies: the preview is public, and staff links to the book file are signed.
     withCredentials: false,
     enableXfa: false,
+    ...(lazy ? { disableAutoFetch: true, disableStream: true } : {}),
   });
   signal.addEventListener("abort", () => void task.destroy(), { once: true });
   const doc = await task.promise;

@@ -265,4 +265,45 @@ describe('Catalog (e2e)', () => {
       .send({ kind: 'cover', ownerId: book.body.id })
       .expect(403);
   });
+
+  it('book PDF uploads: staff only, validated, and 503 while R2 is not configured', async () => {
+    const auth = { Authorization: `Bearer ${staffToken}` };
+    const book = await http()
+      .post('/admin/catalog/books')
+      .set(auth)
+      .send({ title: 'Foundry Melting Practice' })
+      .expect(201);
+    const base = `/admin/catalog/books/${book.body.id}`;
+    await http()
+      .post(`${base}/manuscript-uploads`)
+      .set('Authorization', `Bearer ${customerToken}`)
+      .send({ bytes: 1000 })
+      .expect(403);
+    await http()
+      .post(`${base}/manuscript-uploads`)
+      .set(auth)
+      .send({ bytes: 0 })
+      .expect(400);
+    await http()
+      .post(`${base}/manuscript-uploads/parts`)
+      .set(auth)
+      .send({
+        key: 'k',
+        uploadId: 'u',
+        partNumbers: Array.from({ length: 51 }, (_, i) => i + 1),
+      })
+      .expect(400);
+    await http()
+      .post(`${base}/manuscript-uploads`)
+      .set(auth)
+      .send({ bytes: 1000 })
+      .expect(503);
+    // No file yet: nothing to link to, and the old Cloudinary-style body is refused.
+    await http().get(`${base}/manuscript-link`).set(auth).expect(404);
+    await http()
+      .post(`${base}/manuscript`)
+      .set(auth)
+      .send({ publicId: 'books/x/manuscript/file' })
+      .expect(400);
+  });
 });

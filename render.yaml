@@ -61,11 +61,23 @@ services:
       # One folder per environment, so staging never touches production assets
       - key: CLOUDINARY_FOLDER
         value: book-selling/production
-      # Match the Cloudinary plan’s maximum upload size (MB)
-      - key: MANUSCRIPT_MAX_MB
-        sync: false
+      # Must not exceed the Cloudinary plan’s maximum image size (10 MB on the free plan)
       - key: IMAGE_MAX_MB
-        value: "15"
+        value: "10"
+      # Book PDFs: Cloudflare R2, private (docs/ARCHITECTURE.md §10.0); the four secrets are required
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_BUCKET
+        sync: false
+      - key: R2_FOLDER
+        value: book-selling/production
+      # Largest book PDF (MB). A preview build needs about 4× this in RAM: 200 suits the 2 GB plan
+      - key: MANUSCRIPT_MAX_MB
+        value: "200"
       # Largest share of a book the free preview may show (PRODUCT_RULES §4)
       - key: PREVIEW_MAX_PERCENT
         value: "15"

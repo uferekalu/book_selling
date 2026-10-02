@@ -16,18 +16,17 @@ import {
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { CurrentUser, Roles } from '../auth/decorators/auth.decorators.js';
 import type { AccessTokenPayload } from '../auth/interfaces/auth.types.js';
 import { markdownToSafeHtml } from '../common/text/rich-text.js';
-import {
-  ManuscriptPagesQuery,
-  SetPreviewDto,
-} from '../preview/preview.controller.js';
+import { SetPreviewDto } from '../preview/preview.controller.js';
 import { PreviewService, previewLimits } from '../preview/preview.service.js';
 import { CloudinaryService } from '../uploads/cloudinary.service.js';
 import { AuthorsService } from './authors.service.js';
 import { BooksService } from './books.service.js';
 import { CatalogPresenter } from './catalog.presenter.js';
+import { ManuscriptsService } from './manuscripts.service.js';
 import { publishProblems } from './catalog-rules.js';
 import { CategoriesService } from './categories.service.js';
 import {
@@ -35,6 +34,9 @@ import {
   AttachImageDto,
   AttachManuscriptDto,
   AuthorDto,
+  ManuscriptUploadRefDto,
+  SignManuscriptPartsDto,
+  StartManuscriptUploadDto,
   CategoryDto,
   CreateBookDto,
   MarkdownPreviewDto,
@@ -58,6 +60,7 @@ export class AdminCatalogController {
     private readonly authors: AuthorsService,
     private readonly categories: CategoriesService,
     private readonly previews: PreviewService,
+    private readonly manuscripts: ManuscriptsService,
     media: CloudinaryService,
   ) {
     this.present = new CatalogPresenter(media);
@@ -152,6 +155,52 @@ export class AdminCatalogController {
     );
   }
 
+  // ---- book file (ARCHITECTURE §10.0): browser → R2 in parts, then attach --------
+
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @Post('books/:id/manuscript-uploads')
+  startManuscriptUpload(
+    @Param('id') id: string,
+    @Body() dto: StartManuscriptUploadDto,
+    @CurrentUser() me: AccessTokenPayload,
+  ) {
+    return this.manuscripts.start(id, dto.bytes, me);
+  }
+
+  @Throttle({ default: { limit: 600, ttl: 60_000 } })
+  @Post('books/:id/manuscript-uploads/parts')
+  @HttpCode(HttpStatus.OK)
+  signManuscriptParts(
+    @Param('id') id: string,
+    @Body() dto: SignManuscriptPartsDto,
+  ) {
+    return this.manuscripts.signParts(
+      id,
+      dto.key,
+      dto.uploadId,
+      dto.partNumbers,
+    );
+  }
+
+  @Post('books/:id/manuscript-uploads/complete')
+  @HttpCode(HttpStatus.OK)
+  completeManuscriptUpload(
+    @Param('id') id: string,
+    @Body() dto: ManuscriptUploadRefDto,
+  ) {
+    return this.manuscripts.complete(id, dto.key, dto.uploadId);
+  }
+
+  @Post('books/:id/manuscript-uploads/abort')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async abortManuscriptUpload(
+    @Param('id') id: string,
+    @Body() dto: ManuscriptUploadRefDto,
+  ) {
+    await this.manuscripts.abort(id, dto.key, dto.uploadId);
+  }
+
+  /** Checks the finished upload on the server, then makes it the book's file. */
   @Post('books/:id/manuscript')
   async attachManuscript(
     @Param('id') id: string,
@@ -163,13 +212,11 @@ export class AdminCatalogController {
 
   // ---- preview (ARCHITECTURE §10.1) ----------------------------------------
 
-  /** Signed thumbnails of manuscript pages, for choosing the preview sections. */
-  @Get('books/:id/manuscript-pages')
-  manuscriptPages(
-    @Param('id') id: string,
-    @Query() query: ManuscriptPagesQuery,
-  ) {
-    return this.previews.manuscriptPages(id, query.from, query.to);
+  /** A 30-minute link to the book file, for the page picker that finds the preview pages. */
+  @Get('books/:id/manuscript-link')
+  @Header('Cache-Control', 'no-store')
+  manuscriptLink(@Param('id') id: string) {
+    return this.manuscripts.readLink(id);
   }
 
   /** Saves the sections and queues the build; poll the book for `preview.status`. */

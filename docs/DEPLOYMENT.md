@@ -1,7 +1,7 @@
 # Deployment Rules
 
 Hosting: **Vercel** (frontend), **Render** (API), **MongoDB Atlas** (database), **Resend** (email),
-**Cloudinary** (images and private manuscripts), and payment providers **Paystack**, **Flutterwave**
+**Cloudinary** (images), **Cloudflare R2** (private book PDFs), and payment providers **Paystack**, **Flutterwave**
 and **Stripe**. The production go-live is ticket BS-14. Until then, this document is the plan and the
 checklist.
 
@@ -102,26 +102,56 @@ Tests don't need either: they use `mongodb-memory-server`.
   page opens. Admins are added by the owner from the admin area; the owner role is never granted
   through the API.
 
-## 4a. Cloudinary (book files and images)
+## 4a. Cloudinary (images)
 
-1. One Cloudinary account; **upgrade the plan** so its maximum upload size covers the largest book
-   PDF, then set `MANUSCRIPT_MAX_MB` on Render to that size (default 100). The admin upload screen
-   refuses larger files up front with a clear message.
+1. One Cloudinary account; the **free plan** is enough (25 credits a month, images up to 10MB). Book
+   PDFs are not stored here (§4b).
 2. Render env: `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` (required in
    production; the API will not boot without them) and `CLOUDINARY_FOLDER`: a different folder per
    environment (`book-selling/production`, `book-selling/staging`, locally
    `book-selling/development`). The abandoned-upload cleanup only ever touches its own folder.
+   `IMAGE_MAX_MB` must not exceed the plan's image limit (10 on the free plan).
 3. Cloudinary console → Settings → Security: keep **"Strict transformations"** off (the storefront
-   requests sizes on the fly) and leave PDF delivery restricted; manuscripts are `authenticated`
-   and never reachable without a signed URL from our API.
-4. Turn on Cloudinary **Backups** for the account, and keep the original manuscripts elsewhere too.
-5. **Preview building needs memory**: the API loads the whole book PDF to copy the free pages
-   (BS-6). Give the Render instance at least about 4× the largest manuscript in RAM: Starter (512MB)
-   suits books up to roughly 100MB; use Standard (2GB) for larger ones. A build that runs out of
-   memory restarts the instance and is retried automatically.
-6. Smoke test on staging: upload a cover (crop it), a sample page and a PDF from a phone; choose
-   the free preview pages and wait for "Ready"; open the reader on a phone and check that it ends
-   in the "Continue reading" card, and that the book PDF's URL never appears in the browser.
+   requests sizes on the fly).
+4. **Memory for book PDFs**: attaching a book PDF and building its preview load the whole file
+   (BS-6, BS-20). Give the Render instance about 4× the largest book in RAM: Standard (2GB) suits
+   the default `MANUSCRIPT_MAX_MB=200`; Starter (512MB) only books up to about 100MB (set
+   `MANUSCRIPT_MAX_MB=100`). A build that runs out of memory restarts the instance and is retried.
+
+## 4b. Cloudflare R2 (private book PDFs)
+
+1. Cloudflare dashboard → **R2 Object Storage** → enable it (a card is needed; the first 10GB of
+   storage and all downloads are free, then $0.015 per GB-month).
+2. **Create a bucket** per environment, e.g. `book-selling-production` and
+   `book-selling-development` (location: automatic). Leave **public access off**: nothing in it
+   is ever public.
+3. Bucket → Settings → **CORS policy**. The editor's browser uploads pieces straight to R2 and the
+   page picker reads ranges of the file, so allow the storefront origin(s):
+   ```json
+   [
+     {
+       "AllowedOrigins": ["https://<domain>", "http://localhost:3000"],
+       "AllowedMethods": ["GET", "PUT", "HEAD"],
+       "AllowedHeaders": ["Content-Type", "Range"],
+       "ExposeHeaders": ["ETag", "Accept-Ranges", "Content-Range", "Content-Length"],
+       "MaxAgeSeconds": 3600
+     }
+   ]
+   ```
+   (Leave `localhost` out of the production bucket's list.)
+4. R2 → **Manage API tokens** → Create API token: permission **Object Read & Write**, applied to
+   **that bucket only**. Copy the Access Key ID and Secret Access Key (shown once) and the Account
+   ID (R2 overview page).
+5. Render env: `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET` (required
+   in production) and `R2_FOLDER` (`book-selling/production`). Locally the same five go in
+   `backend/.env` with the development bucket; without them, book PDF uploads answer 503.
+6. Incomplete uploads: our cleanup job aborts them after a day, and R2 also aborts any multipart
+   upload left open for 7 days by default.
+7. Smoke test on staging: upload a cover (crop it), a sample page and a 50MB+ PDF from a phone;
+   switch the network off mid-upload and on again (the upload continues); choose the free preview
+   pages from the thumbnails and wait for "Ready"; open the reader on a phone and check that it
+   ends in the "Continue reading" card with two blurred page hints, and that no R2 link appears in
+   the visitor's browser.
 
 ## 5. Email (Resend)
 

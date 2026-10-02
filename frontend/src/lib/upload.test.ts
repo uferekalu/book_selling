@@ -1,5 +1,18 @@
 import { describe, expect, it, vi } from "vitest";
-import { chunkRanges, formatBytes, precheck, TICKET_LIFETIME_MS, uploadFile, UploadError, type Sender, type UploadTicket } from "./upload";
+import {
+  chunkRanges,
+  formatBytes,
+  PART_URL_LIFETIME_MS,
+  precheck,
+  TICKET_LIFETIME_MS,
+  uploadFile,
+  UploadError,
+  uploadInParts,
+  type PartSender,
+  type PartsUploadApi,
+  type Sender,
+  type UploadTicket,
+} from "./upload";
 
 const MB = 1024 * 1024;
 
@@ -123,5 +136,133 @@ describe("uploadFile", () => {
   it("refuses a success response without a public_id", async () => {
     const send = vi.fn<Sender>().mockResolvedValue({ status: 200, body: {} });
     await expect(uploadFile({ file: file(100), getTicket: async () => ticket(), send })).rejects.toThrow(/did not confirm/);
+  });
+});
+
+describe("uploadInParts (book PDFs to private storage)", () => {
+  const started = { key: "root/books/b/manuscript/k.pdf", uploadId: "up-1", partBytes: 8, partCount: 3 };
+
+  function fakeApi() {
+    let signing = 0;
+    return {
+      start: vi.fn<PartsUploadApi["start"]>().mockResolvedValue(started),
+      sign: vi.fn<PartsUploadApi["sign"]>().mockImplementation(async (numbers) => {
+        signing += 1;
+        return numbers.map((partNumber) => ({ partNumber, url: `https://r2.test/part-${partNumber}?sig=${signing}` }));
+      }),
+      complete: vi.fn<PartsUploadApi["complete"]>().mockResolvedValue({ key: started.key }),
+      abort: vi.fn<PartsUploadApi["abort"]>().mockResolvedValue(undefined),
+    };
+  }
+
+  const ok: PartSender = async (_url, body, onProgress) => {
+    onProgress(body.size);
+    return { status: 200 };
+  };
+
+  it("sends every 8-byte piece once, signs them in one shared request, completes and reports progress", async () => {
+    const api = fakeApi();
+    const sent: Array<[string, number]> = [];
+    const progress: number[] = [];
+    const key = await uploadInParts({
+      file: file(20),
+      api,
+      put: async (url, body, onProgress, signal) => {
+        sent.push([url.split("?")[0], body.size]);
+        return ok(url, body, onProgress, signal);
+      },
+      onProgress: (fraction) => progress.push(fraction),
+    });
+    expect(key).toBe(started.key);
+    expect(api.start).toHaveBeenCalledWith(20);
+    // Three pieces start at once, but share one signing request.
+    expect(api.sign).toHaveBeenCalledTimes(1);
+    expect(sent.sort()).toEqual([
+      ["https://r2.test/part-1", 8],
+      ["https://r2.test/part-2", 8],
+      ["https://r2.test/part-3", 4],
+    ]);
+    expect(api.complete).toHaveBeenCalledTimes(1);
+    expect(api.abort).not.toHaveBeenCalled();
+    expect(progress.at(-1)).toBe(1);
+  });
+
+  it("retries a dropped piece on its own", async () => {
+    const api = fakeApi();
+    const attempts = new Map<string, number>();
+    const key = await uploadInParts({
+      file: file(20),
+      api,
+      retryDelayMs: 0,
+      put: async (url, body, onProgress, signal) => {
+        const part = url.split("?")[0];
+        attempts.set(part, (attempts.get(part) ?? 0) + 1);
+        if (part.endsWith("part-2") && attempts.get(part) === 1) throw new UploadError("dropped", "network");
+        return ok(url, body, onProgress, signal);
+      },
+    });
+    expect(key).toBe(started.key);
+    expect(attempts.get("https://r2.test/part-2")).toBe(2);
+    expect(attempts.get("https://r2.test/part-1")).toBe(1);
+  });
+
+  it("gets a fresh link after a 403 (expired signature) and once the link lifetime has passed", async () => {
+    const api = fakeApi();
+    const urls: string[] = [];
+    let clock = 0;
+    await uploadInParts({
+      file: file(20),
+      api,
+      concurrency: 1,
+      retryDelayMs: 0,
+      now: () => clock,
+      put: async (url, body, onProgress, signal) => {
+        urls.push(url);
+        if (url === "https://r2.test/part-1?sig=1") return { status: 403 };
+        // Pretend the editor's laptop slept for an hour after piece 2.
+        if (url.includes("part-2")) clock += PART_URL_LIFETIME_MS + 1;
+        return ok(url, body, onProgress, signal);
+      },
+    });
+    // Piece 1 is re-signed alone; piece 2 still had a valid link; piece 3's had expired.
+    expect(urls).toEqual([
+      "https://r2.test/part-1?sig=1",
+      "https://r2.test/part-1?sig=2",
+      "https://r2.test/part-2?sig=1",
+      "https://r2.test/part-3?sig=3",
+    ]);
+  });
+
+  it("stops and cancels the upload on the server when storage refuses a piece", async () => {
+    const api = fakeApi();
+    await expect(uploadInParts({ file: file(20), api, retryDelayMs: 0, put: async () => ({ status: 400 }) })).rejects.toMatchObject({
+      kind: "rejected",
+    });
+    expect(api.complete).not.toHaveBeenCalled();
+    expect(api.abort).toHaveBeenCalledTimes(1);
+  });
+
+  it("cancels cleanly when the editor cancels", async () => {
+    const api = fakeApi();
+    const controller = new AbortController();
+    const upload = uploadInParts({
+      file: file(20),
+      api,
+      signal: controller.signal,
+      put: (_url, _body, _progress, signal) =>
+        new Promise((_resolve, reject) => {
+          signal.addEventListener("abort", () => reject(new UploadError("Upload cancelled.", "aborted")));
+          controller.abort();
+        }),
+    });
+    await expect(upload).rejects.toMatchObject({ kind: "aborted" });
+    expect(api.abort).toHaveBeenCalledTimes(1);
+    expect(api.complete).not.toHaveBeenCalled();
+  });
+
+  it("refuses a file that isn't a PDF before contacting the server", async () => {
+    const api = fakeApi();
+    await expect(uploadInParts({ file: file(20, "book.docx"), api })).rejects.toMatchObject({ kind: "wrong_format" });
+    expect(api.start).not.toHaveBeenCalled();
   });
 });

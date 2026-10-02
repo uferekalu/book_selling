@@ -95,8 +95,10 @@ Full design: `../docs/ARCHITECTURE.md` §6 (design system) and §7 (frontend arc
   Cloudinary size URLs by hand.
 - **Price inputs** use the kit's `MoneyInput` (major units in, integer minor units out, parsed as a
   string by `parseMajorToMinor`). Never `Number(text) * 100`.
-- Uploads: `useUpload(kind, ownerId)` (admin) → `lib/upload.ts` (signed, chunked, retried,
-  cancellable). Don't call Cloudinary any other way.
+- Uploads: images use `useUpload(kind, ownerId)` → `uploadFile` (Cloudinary: signed, chunked,
+  retried, cancellable); book PDFs use `useManuscriptUpload(bookId)` → `uploadInParts` (private R2:
+  8MB pieces, 3 in parallel, per-piece retry, fresh links on 403). Don't call either store any
+  other way.
 - Admin editor sections save independently and report unsaved state with `useReportDirty`. Sync
   from server data during render keyed on `updatedAt`, not in an effect (React's
   `set-state-in-effect` lint fails otherwise).

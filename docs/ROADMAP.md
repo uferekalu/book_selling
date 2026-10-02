@@ -1,6 +1,6 @@
 # Roadmap
 
-**Next planned ticket: BS-9** · **Next reactive ticket: BS-20**
+**Next planned ticket: BS-9** · **Next reactive ticket: BS-21**
 
 Each ticket is one branch (`feature/BS-<n>-<suffix>`) and one squash-merged PR. The order is
 deliberate: each ticket builds only on merged work. When a ticket finishes, its row is rewritten
@@ -29,6 +29,7 @@ so planned numbers never shift; they get a new row at the end of the table.
 | BS-17 | `reader-pro` | Reader for owners: **bookmarks, highlights and notes** synced across devices, in-book search, reading stats, **offline reading** (installable PWA, owned ebooks cached encrypted with a licence check), errata and "updated edition" notices | ⏳ Planned |
 | BS-18 | `engagement-marketing` | Newsletter with **double opt-in** and one-click unsubscribe; **back-in-stock**, **price-drop** and **new-edition** alerts; **abandoned-cart** reminder (consent-aware, once); public **Q&A** on book pages answered by the author; referral codes; privacy-friendly analytics with a consent banner; UTM tracking | ⏳ Planned |
 | BS-19 | `instant-auth-header` (hotfix) | See detail below | ✅ Done |
+| BS-20 | `r2-book-files` | See detail below | ✅ Done |
 
 **Launch line.** BS-1 to BS-14 are the launch. The store goes live after BS-14 with the complete
 buying, reading, email, messaging and admin experience. BS-15 to BS-18 are growth features shipped
@@ -275,6 +276,44 @@ checklist is reviewed whenever a ticket is planned, so nothing important is forg
      empty-state padding tightened on phones.
   7. Script robustness: the responsive check now rejects Git Bash–mangled paths and sanitises `?`
      in screenshot names.
+
+## BS-20: Book PDFs move to Cloudflare R2 (✅ Done, 2026-10-02)
+
+- **Why**: while costing the services for the lecturer, Cloudinary's per-file limits turned out to
+  be 10MB (free), 20MB (Plus, $99/month) and 40MB (Advanced, $249/month). Foundry textbooks with
+  diagrams are often 30–200MB, so book PDFs could not be stored without an expensive plan or heavy
+  compression. Cloudflare R2: no practical per-file limit, first 10GB free, free downloads. The
+  owner chose R2. Cloudinary stays, on its free plan, for images only.
+- **Backend**: `BookFilesService` (S3 client for R2; checksum calculation set to "when required"
+  so browser PUTs work), `ManuscriptsService` and `manuscript_uploads` records; endpoints
+  `POST /admin/catalog/books/:id/manuscript-uploads` (+ `/parts`, `/complete`, `/abort`),
+  `POST …/manuscript { key }` and `GET …/manuscript-link`. Completion trusts only the parts R2
+  lists, at exact sizes. Attach downloads and reads the file (PDF header, pdf-lib, encrypted or
+  damaged refused and deleted, SHA-256 checksum, identical re-upload is a no-op). Replaced files
+  of a book ever on sale are kept in `previousManuscripts` for BS-9; a draft's are deleted.
+  Cleanup job covers both stores. Teasers are now rendered on our server (pdf.js +
+  `@napi-rs/canvas`) as ~1KB data URIs, so they no longer need Cloudinary and demo books get them
+  too. The Cloudinary service lost its manuscript, private-download, page-render and teaser code.
+  Env: `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET` (required in
+  production), `R2_FOLDER`, optional `R2_ENDPOINT`; `MANUSCRIPT_MAX_MB` default 100 → 200,
+  `IMAGE_MAX_MB` default 15 → 10 (the free Cloudinary plan's limit). Migration
+  `20261002000000-manuscript-key` renames `manuscript.publicId` → `key`.
+- **Frontend**: `uploadInParts` (8MB pieces, 3 in parallel, per-piece retry with backoff, fresh
+  link on 403 or after 50 minutes, parallel pieces share one signing request, server-side cancel on
+  failure) and `useManuscriptUpload`; the Book file section shows "Checking the PDF…" while the
+  server reads it. Preview page thumbnails are drawn in the editor's browser with pdf.js from a
+  30-minute signed link, reading only the pages shown, with "Reload pages" when it expires.
+- **Verified**: unit tests (R2 service with a stubbed client: key rules, part arithmetic, signed
+  URLs carry no checksum requirement or secret, ListParts pagination, strict/best-effort deletes;
+  teaser images contain no dark text pixels), catalogue and preview specs against an in-memory R2
+  fake (wrong-book keys, non-PDF and damaged files, oversize, incomplete parts, cancel, kept vs
+  deleted old files, cleanup), the uploader's retry/re-sign/cancel paths, and e2e route checks.
+  Also run against a local S3-compatible server (s3rver): browser-style bare PUTs of signed parts,
+  completion, content match and a signed ranged read (206) all worked. s3rver lacks ListParts and
+  abort, and doesn't check signatures, so those are confirmed against real R2 once the owner's
+  bucket exists (DEPLOYMENT §4b smoke test).
+- **Deviation**: none from the plan; Cloudinary's PDF page rendering (thumbnails, teasers) was
+  replaced by pdf.js in the browser and on the server.
 
 ## BS-19: Sign-in buttons appear instantly; local setup fixes (✅ Done, 2026-10-01, hotfix)
 

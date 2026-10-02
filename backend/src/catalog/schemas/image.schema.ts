@@ -25,15 +25,20 @@ export class StoredImage {
 }
 export const StoredImageSchema = SchemaFactory.createForClass(StoredImage);
 
-/** The private master PDF (authenticated Cloudinary asset). Its URL is never sent to a browser. */
+/**
+ * The private master PDF, a file in Cloudflare R2 (ARCHITECTURE §10.0). Visitors and buyers never
+ * get its key or a link to it; buyers get personal copies made from it (BS-9).
+ */
 @Schema({ _id: false })
 export class Manuscript {
-  @Prop({ type: String, required: true }) publicId: string;
-  @Prop({ type: Number, required: true }) version: number;
+  /** Object key in the private R2 bucket. */
+  @Prop({ type: String, required: true }) key: string;
   @Prop({ type: Number, required: true }) bytes: number;
   @Prop({ type: Number, required: true }) pages: number;
   /** Content hash: the preview regenerates only when the file really changes (BS-6). */
   @Prop({ type: String, required: true }) checksum: string;
   @Prop({ type: Date, required: true }) uploadedAt: Date;
+  /** Set when a newer file replaced it (only on `previousManuscripts`). */
+  @Prop({ type: Date, default: null }) replacedAt?: Date | null;
 }
 export const ManuscriptSchema = SchemaFactory.createForClass(Manuscript);

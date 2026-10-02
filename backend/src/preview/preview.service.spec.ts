@@ -4,6 +4,7 @@ import { Test, type TestingModule } from '@nestjs/testing';
 import type { MongoMemoryReplSet } from 'mongodb-memory-server';
 import type { Model } from 'mongoose';
 import { PDFDocument } from 'pdf-lib';
+import { FakeBookFiles, manuscriptPdf } from '../../test/fake-book-files.js';
 import { startMongo } from '../../test/mongo.js';
 import { AuditModule } from '../audit/audit.module.js';
 import type { AccessTokenPayload } from '../auth/interfaces/auth.types.js';
@@ -11,10 +12,8 @@ import { BooksService } from '../catalog/books.service.js';
 import { CatalogModule } from '../catalog/catalog.module.js';
 import { Book } from '../catalog/schemas/book.schema.js';
 import { StorefrontRevalidator } from '../catalog/storefront-revalidator.js';
-import {
-  CloudinaryService,
-  type UploadKind,
-} from '../uploads/cloudinary.service.js';
+import { ManuscriptsService } from '../catalog/manuscripts.service.js';
+import { BookFilesService } from '../uploads/book-files.service.js';
 import { PreviewEvent, PreviewEventsService } from './preview-events.js';
 import { PreviewStorage } from './preview-storage.js';
 import { MAX_BUILD_ATTEMPTS, PreviewService } from './preview.service.js';
@@ -28,68 +27,6 @@ const admin: AccessTokenPayload = {
   typ: 'access',
 };
 
-/** Page k is 400+k points wide, so a served page's width proves which page it is. */
-async function manuscriptPdf(pages: number): Promise<Uint8Array> {
-  const doc = await PDFDocument.create();
-  for (let k = 1; k <= pages; k += 1) doc.addPage([400 + k, 600]);
-  return doc.save();
-}
-
-class FakeCloudinary {
-  configured = true;
-  cloudName = 'demo';
-  pages = 40;
-  etag = 'etag-1';
-  file: Uint8Array | null = null;
-  downloadError: Error | null = null;
-  onDownload: (() => Promise<void>) | null = null;
-  downloads = 0;
-  teasers: number[] = [];
-  verify(kind: UploadKind, ownerId: string, publicId: string) {
-    return Promise.resolve({
-      publicId,
-      version: 3,
-      format: kind === 'manuscript' ? 'pdf' : 'jpg',
-      bytes: 5000,
-      width: 1600,
-      height: 2400,
-      pages: kind === 'manuscript' ? this.pages : 1,
-      etag: this.etag,
-      dominantColor: null,
-    });
-  }
-  async downloadManuscript() {
-    this.downloads += 1;
-    if (this.onDownload) await this.onDownload();
-    if (this.downloadError) throw this.downloadError;
-    return this.file ?? manuscriptPdf(this.pages);
-  }
-  createTeaser(_id: string, _v: number, page: number) {
-    this.teasers.push(page);
-    return Promise.resolve(
-      `https://res.cloudinary.com/demo/teaser-${page}.jpg`,
-    );
-  }
-  manuscriptPageUrl(_id: string, _v: number, page: number) {
-    return `https://signed.example/page-${page}`;
-  }
-  markAttached() {
-    return Promise.resolve();
-  }
-  destroy() {
-    return Promise.resolve();
-  }
-  destroyPreviewTeasers() {
-    return Promise.resolve();
-  }
-  blurDataUrl() {
-    return Promise.resolve(null);
-  }
-  imageUrl(publicId: string, version: number) {
-    return `https://res.cloudinary.com/demo/image/upload/v${version}/${publicId}`;
-  }
-}
-
 describe('Preview (build, serve, rebuild)', () => {
   let mongod: MongoMemoryReplSet;
   let moduleRef: TestingModule;
@@ -97,12 +34,13 @@ describe('Preview (build, serve, rebuild)', () => {
   let books: BooksService;
   let storage: PreviewStorage;
   let bookModel: Model<Book>;
-  let media: FakeCloudinary;
+  let files: FakeBookFiles;
+  let manuscripts: ManuscriptsService;
   const notified: string[][] = [];
 
   beforeAll(async () => {
     mongod = await startMongo();
-    media = new FakeCloudinary();
+    files = new FakeBookFiles();
     moduleRef = await Test.createTestingModule({
       imports: [
         ConfigModule.forRoot({
@@ -115,13 +53,14 @@ describe('Preview (build, serve, rebuild)', () => {
         CatalogModule,
       ],
     })
-      .overrideProvider(CloudinaryService)
-      .useValue(media)
+      .overrideProvider(BookFilesService)
+      .useValue(files)
       .overrideProvider(StorefrontRevalidator)
       .useValue({ notify: (tags: string[]) => notified.push(tags) })
       .compile();
     previews = moduleRef.get(PreviewService);
     books = moduleRef.get(BooksService);
+    manuscripts = moduleRef.get(ManuscriptsService);
     storage = moduleRef.get(PreviewStorage);
     bookModel = moduleRef.get(getModelToken(Book.name));
   }, 90_000);
@@ -133,14 +72,11 @@ describe('Preview (build, serve, rebuild)', () => {
 
   beforeEach(async () => {
     await bookModel.deleteMany({});
-    Object.assign(media, {
-      pages: 40,
-      etag: 'etag-1',
-      file: null,
+    files.objects.clear();
+    Object.assign(files, {
       downloadError: null,
       onDownload: null,
       downloads: 0,
-      teasers: [],
     });
     notified.length = 0;
   });
@@ -164,15 +100,21 @@ describe('Preview (build, serve, rebuild)', () => {
       },
       admin,
     );
-    await books.attachManuscript(
-      id,
-      { publicId: `books/${id}/manuscript/file` },
-      admin,
-    );
+    await attach(id, 40);
     if (published)
       await bookModel.updateOne({ _id: book._id }, { status: 'published' });
     return id;
   }
+
+  /** Uploads a PDF of `pages` pages the way the editor does, and attaches it. */
+  async function attach(id: string, pages: number) {
+    const pdf = await manuscriptPdf(pages);
+    const key = await files.upload(manuscripts, id, pdf, admin);
+    return books.attachManuscript(id, { key }, admin);
+  }
+
+  const manuscriptOf = async (id: string) =>
+    (await bookModel.findById(id).lean())!.manuscript!;
 
   const servedWidths = async (fileUrl: string) => {
     const file = await previews.openFile(fileUrl.split('/').pop()!);
@@ -227,10 +169,9 @@ describe('Preview (build, serve, rebuild)', () => {
       enabled: true,
       status: 'ready',
       pageMap: [1, 2, 3, 4, 5, 6],
-      sourceChecksum: 'etag-1',
+      sourceChecksum: book!.manuscript!.checksum,
       error: null,
     });
-    expect(media.teasers).toEqual([7, 8]);
     expect(notified.at(-1)).toContain('book:principles-of-foundry-technology');
 
     const pub = await previews.publicPreview(
@@ -244,11 +185,13 @@ describe('Preview (build, serve, rebuild)', () => {
         { label: 'Abstract', previewPage: 1 },
         { label: 'Introduction', previewPage: 3 },
       ],
-      teasers: [
-        'https://res.cloudinary.com/demo/teaser-7.jpg',
-        'https://res.cloudinary.com/demo/teaser-8.jpg',
-      ],
     });
+    // Two tiny blurred images of pages 7 and 8, embedded (nothing readable, nothing to fetch).
+    expect(pub.teasers).toHaveLength(2);
+    for (const teaser of pub.teasers) {
+      expect(teaser).toMatch(/^data:image\/jpeg;base64,/);
+      expect(teaser.length).toBeLessThan(4000);
+    }
     // Contents: chapters inside the preview link to their preview page; the rest are locked.
     expect(pub.outline).toEqual([
       { title: 'Introduction', level: 1, page: 1, previewPage: 1 },
@@ -258,7 +201,8 @@ describe('Preview (build, serve, rebuild)', () => {
     ]);
     // End to end: the served bytes contain exactly pages 1–6 of the manuscript.
     expect(await servedWidths(pub.fileUrl)).toEqual([1, 2, 3, 4, 5, 6]);
-    expect(JSON.stringify(pub)).not.toContain('manuscript/file');
+    expect(JSON.stringify(pub)).not.toContain(book!.manuscript!.key);
+    expect(JSON.stringify(pub)).not.toContain('/manuscript/');
   });
 
   it('maps printed contents pages through the front-matter offset', async () => {
@@ -316,8 +260,8 @@ describe('Preview (build, serve, rebuild)', () => {
       admin,
     );
     // While building, the editor changes the sections (a newer request).
-    media.onDownload = async () => {
-      media.onDownload = null;
+    files.onDownload = async () => {
+      files.onDownload = null;
       await previews.setSections(
         id,
         { sections: [{ label: 'Intro', fromPage: 1, toPage: 4 }] },
@@ -336,7 +280,11 @@ describe('Preview (build, serve, rebuild)', () => {
 
   it('fails clearly on an encrypted or unreadable PDF, without retrying', async () => {
     const id = await bookWithManuscript();
-    media.file = new TextEncoder().encode('%PDF-1.7 not really');
+    // The stored file went bad after it was checked (it can't be attached like this).
+    files.objects.set(
+      (await manuscriptOf(id)).key,
+      new TextEncoder().encode('%PDF-1.7 not really'),
+    );
     await previews.setSections(
       id,
       { sections: [{ label: 'Intro', fromPage: 1, toPage: 2 }] },
@@ -351,7 +299,8 @@ describe('Preview (build, serve, rebuild)', () => {
 
   it('retries a network failure, then gives up after the maximum attempts', async () => {
     const id = await bookWithManuscript();
-    media.downloadError = new Error('ECONNRESET');
+    files.downloads = 0; // attaching read the file once to check it
+    files.downloadError = new Error('ECONNRESET');
     await previews.setSections(
       id,
       { sections: [{ label: 'Intro', fromPage: 1, toPage: 2 }] },
@@ -360,7 +309,7 @@ describe('Preview (build, serve, rebuild)', () => {
     for (let i = 0; i < MAX_BUILD_ATTEMPTS; i += 1)
       await previews.processNext();
     const book = (await bookModel.findById(id).lean())!;
-    expect(media.downloads).toBe(MAX_BUILD_ATTEMPTS);
+    expect(files.downloads).toBe(MAX_BUILD_ATTEMPTS);
     expect(book.preview).toMatchObject({
       status: 'failed',
       attempts: MAX_BUILD_ATTEMPTS,
@@ -380,12 +329,8 @@ describe('Preview (build, serve, rebuild)', () => {
       .findById(id)
       .lean())!.preview.fileId!.toString();
 
-    media.etag = 'etag-2';
-    await books.attachManuscript(
-      id,
-      { publicId: `books/${id}/manuscript/v2` },
-      admin,
-    );
+    await attach(id, 41);
+    const replaced = await manuscriptOf(id);
     let book = (await bookModel.findById(id).lean())!;
     expect(book.preview).toMatchObject({ status: 'queued', enabled: true });
     await expect(previews.openFile(oldFile)).resolves.toBeTruthy();
@@ -394,7 +339,7 @@ describe('Preview (build, serve, rebuild)', () => {
     book = (await bookModel.findById(id).lean())!;
     expect(book.preview).toMatchObject({
       status: 'ready',
-      sourceChecksum: 'etag-2',
+      sourceChecksum: replaced.checksum,
     });
     await expect(previews.openFile(oldFile)).rejects.toThrow();
   });

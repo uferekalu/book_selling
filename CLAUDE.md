@@ -19,7 +19,8 @@ This file is the summary. Read the relevant doc before working in an unfamiliar 
 - **Frontend** (`frontend/`): Next.js 16 App Router, React 19, Tailwind v4 (CSS-first tokens),
   hand-built UI kit, Redux Toolkit + RTK Query, react-hook-form + Zod. Deployed to **Vercel**. See
   `frontend/CLAUDE.md`.
-- Two independent apps, no workspace tooling. Email: Resend. Files: Cloudinary.
+- Two independent apps, no workspace tooling. Email: Resend. Images: Cloudinary. Book PDFs:
+  Cloudflare R2 (private).
 - Reference project with the same author and stack: `C:\Users\Goodnews\food_ordering_platform`. Its
   auth, payments and UI kit patterns were ported here. Look there when a pattern is unclear.
 

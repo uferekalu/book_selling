@@ -13,6 +13,7 @@ import { markdownToSafeHtml } from '../common/text/rich-text.js';
 import { toObjectId } from '../common/utils/object-id.js';
 import { PreviewStorage } from '../preview/preview-storage.js';
 import { queuePreviewBuild } from '../preview/preview.service.js';
+import { BookFilesService } from '../uploads/book-files.service.js';
 import { CloudinaryService } from '../uploads/cloudinary.service.js';
 import { normaliseIsbn13, publishProblems } from './catalog-rules.js';
 import type {
@@ -22,6 +23,7 @@ import type {
   FormatDto,
   UpdateBookDto,
 } from './dto/catalog.dto.js';
+import { ManuscriptsService } from './manuscripts.service.js';
 import { Author } from './schemas/author.schema.js';
 import {
   Book,
@@ -50,6 +52,8 @@ export class BooksService {
     private readonly audit: AuditService,
     private readonly revalidator: StorefrontRevalidator,
     private readonly previewFiles: PreviewStorage,
+    private readonly manuscripts: ManuscriptsService,
+    private readonly files: BookFilesService,
   ) {}
 
   async list(query: AdminBookListQuery): Promise<{
@@ -285,9 +289,9 @@ export class BooksService {
       alt: dto.alt ?? '',
     };
     await book.save();
-    await this.media.markAttached('cover', asset.publicId);
+    await this.media.markAttached(asset.publicId);
     if (previous && previous !== asset.publicId)
-      await this.media.destroy('cover', previous);
+      await this.media.destroy(previous);
     await this.record(actor, 'book.cover_changed', book);
     return book;
   }
@@ -316,7 +320,7 @@ export class BooksService {
       alt: dto.alt ?? '',
     });
     await book.save();
-    await this.media.markAttached('gallery', asset.publicId);
+    await this.media.markAttached(asset.publicId);
     await this.record(actor, 'book.gallery_added', book);
     return book;
   }
@@ -332,14 +336,15 @@ export class BooksService {
     if (book.gallery.length === before)
       throw new NotFoundException('Image not found on this book');
     await book.save();
-    await this.media.destroy('gallery', publicId);
+    await this.media.destroy(publicId);
     await this.record(actor, 'book.gallery_removed', book);
     return book;
   }
 
   /**
-   * Attaches the private master PDF. A replaced manuscript is NOT deleted from Cloudinary here:
-   * buyers' libraries depend on it (BS-9 moves them to the new version first).
+   * Makes a finished upload the book's master PDF, after the server has read and checked it. The
+   * same file uploaded again changes nothing. A replaced file of a book that was ever on sale is
+   * kept (buyers' copies came from it; BS-9 moves them over); a never-sold book's is deleted.
    */
   async attachManuscript(
     id: string,
@@ -347,29 +352,45 @@ export class BooksService {
     actor: AccessTokenPayload,
   ): Promise<BookDocument> {
     const book = await this.get(id);
-    const asset = await this.media.verify('manuscript', id, dto.publicId);
-    const replaced = book.manuscript && book.manuscript.checksum !== asset.etag;
+    const file = await this.manuscripts.check(id, dto.key);
+    const previous = book.manuscript;
+    if (previous?.checksum === file.checksum) {
+      await this.manuscripts.discard(file.key);
+      return book;
+    }
+    const now = new Date();
     book.manuscript = {
-      publicId: asset.publicId,
-      version: asset.version,
-      bytes: asset.bytes,
-      pages: asset.pages,
-      checksum: asset.etag,
-      uploadedAt: new Date(),
+      key: file.key,
+      bytes: file.bytes,
+      pages: file.pages,
+      checksum: file.checksum,
+      uploadedAt: now,
+      replacedAt: null,
     };
-    if (!book.pageCount) book.pageCount = asset.pages;
-    // A different file: rebuild the preview from it. The current preview keeps being served
-    // until the new one is ready, so the store never shows a book without its preview.
-    if (replaced) {
-      queuePreviewBuild(book.preview, new Date());
+    if (!book.pageCount) book.pageCount = file.pages;
+    if (previous) {
+      if (book.listedAt) {
+        book.previousManuscripts.push({
+          key: previous.key,
+          bytes: previous.bytes,
+          pages: previous.pages,
+          checksum: previous.checksum,
+          uploadedAt: previous.uploadedAt,
+          replacedAt: now,
+        });
+      }
+      // Rebuild the preview from the new file. The current preview keeps being served until the
+      // new one is ready, so the store never shows a book without its preview.
+      queuePreviewBuild(book.preview, now);
       book.markModified('preview');
     }
     await book.save();
-    await this.media.markAttached('manuscript', asset.publicId);
+    await this.manuscripts.attached(file.key);
+    if (previous && !book.listedAt) await this.files.delete(previous.key);
     await this.record(actor, 'book.manuscript_changed', book, {
-      pages: asset.pages,
-      bytes: asset.bytes,
-      replaced: Boolean(replaced),
+      pages: file.pages,
+      bytes: file.bytes,
+      replaced: Boolean(previous),
     });
     return book;
   }
@@ -413,13 +434,13 @@ export class BooksService {
     }
     await book.deleteOne();
     for (const image of [book.cover, ...book.gallery]) {
-      if (image) await this.media.destroy('cover', image.publicId);
+      if (image) await this.media.destroy(image.publicId);
     }
-    if (book.manuscript)
-      await this.media.destroy('manuscript', book.manuscript.publicId);
+    for (const file of [book.manuscript, ...book.previousManuscripts]) {
+      if (file) await this.files.delete(file.key);
+    }
     if (book.preview?.fileId)
       await this.previewFiles.remove(book.preview.fileId);
-    await this.media.destroyPreviewTeasers(book._id.toString());
     await this.record(actor, 'book.deleted', book, { title: book.title });
   }
 
