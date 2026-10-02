@@ -33,8 +33,6 @@ import { PreviewService } from './preview.service.js';
 
 const trim = ({ value }: { value: unknown }) =>
   typeof value === 'string' ? value.trim() : value;
-const toInt = ({ value }: { value: unknown }) =>
-  value === undefined || value === '' ? undefined : Number(value);
 
 class PreviewSectionDto {
   @ApiProperty({ example: 'Introduction' })
@@ -65,11 +63,6 @@ export class SetPreviewDto {
   @Min(0)
   @Max(500)
   pageOffset?: number;
-}
-
-export class ManuscriptPagesQuery {
-  @ApiProperty() @Transform(toInt) @IsInt() @Min(1) @Max(5000) from: number;
-  @ApiProperty() @Transform(toInt) @IsInt() @Min(1) @Max(5000) to: number;
 }
 
 const perMinute = (limit: number) => ({ default: { limit, ttl: 60_000 } });

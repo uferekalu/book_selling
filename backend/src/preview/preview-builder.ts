@@ -95,17 +95,19 @@ export interface BuiltPreview {
   sourcePages: number;
 }
 
-export async function buildPreview(
-  manuscript: Uint8Array,
-  options: { title: string; sections: PreviewSection[]; maxPercent: number },
-): Promise<BuiltPreview> {
-  let source: PDFDocument;
-  let totalPages: number;
+/**
+ * Opens a manuscript, or explains in the editor's words why it can't be used. Used when the file
+ * is attached (so a bad PDF is refused at once) and again when the preview is built.
+ */
+export async function loadPdf(
+  bytes: Uint8Array,
+): Promise<{ doc: PDFDocument; pages: number }> {
   try {
-    source = await PDFDocument.load(manuscript, { updateMetadata: false });
+    const doc = await PDFDocument.load(bytes, { updateMetadata: false });
     // A damaged file can "load" and then fail here; it is the same problem for the editor.
-    totalPages = source.getPageCount();
-    if (totalPages < 1) throw new Error('no pages');
+    const pages = doc.getPageCount();
+    if (pages < 1) throw new Error('no pages');
+    return { doc, pages };
   } catch (error) {
     if (error instanceof EncryptedPDFError) {
       throw new PreviewBuildError(
@@ -116,6 +118,13 @@ export async function buildPreview(
       'This file could not be read as a PDF. Export it again and re-upload it.',
     );
   }
+}
+
+export async function buildPreview(
+  manuscript: Uint8Array,
+  options: { title: string; sections: PreviewSection[]; maxPercent: number },
+): Promise<BuiltPreview> {
+  const { doc: source, pages: totalPages } = await loadPdf(manuscript);
 
   const problems = sectionProblems(
     options.sections,

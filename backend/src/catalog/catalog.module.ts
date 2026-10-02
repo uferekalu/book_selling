@@ -9,9 +9,14 @@ import { BooksService } from './books.service.js';
 import { CatalogQueryService } from './catalog-query.service.js';
 import { CatalogController } from './catalog.controller.js';
 import { CategoriesService } from './categories.service.js';
+import { ManuscriptsService } from './manuscripts.service.js';
 import { Author, AuthorSchema } from './schemas/author.schema.js';
 import { Book, BookSchema } from './schemas/book.schema.js';
 import { Category, CategorySchema } from './schemas/category.schema.js';
+import {
+  ManuscriptUpload,
+  ManuscriptUploadSchema,
+} from './schemas/manuscript-upload.schema.js';
 import { StorefrontRevalidator } from './storefront-revalidator.js';
 import { UploadCleanupJob } from './upload-cleanup.job.js';
 import {
@@ -33,6 +38,7 @@ import { PreviewWorker } from '../preview/preview.worker.js';
       { name: Author.name, schema: AuthorSchema },
       { name: Category.name, schema: CategorySchema },
       { name: PreviewEvent.name, schema: PreviewEventSchema },
+      { name: ManuscriptUpload.name, schema: ManuscriptUploadSchema },
     ]),
   ],
   // UploadsController lives here: signing an upload checks that the book/author exists.
@@ -44,6 +50,7 @@ import { PreviewWorker } from '../preview/preview.worker.js';
   ],
   providers: [
     BooksService,
+    ManuscriptsService,
     AuthorsService,
     CategoriesService,
     CatalogQueryService,

@@ -48,7 +48,7 @@ response shapes. A contract change updates both sides in the same PR.
 | Payments | Stripe, Paystack, Flutterwave behind one adapter interface | §9 |
 | Email | Resend + React Email templates, transactional outbox | §11 |
 | Realtime | Socket.IO gateway (messaging, notifications, order status) | §12 |
-| Files | Cloudinary: public covers/images; **authenticated (private) raw assets for ebook files** | §10 |
+| Files | Cloudinary: public covers/images; **Cloudflare R2 (private) for book PDFs** | §10 |
 | Scheduling | `@nestjs/schedule` | Outbox worker, payment reconciliation, order expiry |
 | Backend tests | Vitest; e2e boots the real `AppModule` against `mongodb-memory-server` | |
 | Frontend | Next.js 16 App Router, React 19, TypeScript strict | RSC for catalogue/SEO pages, client components for cart/checkout |
@@ -73,7 +73,7 @@ infrastructure only (config, filters, decorators, money utilities), never domain
 | `auth` | login, register, refresh rotation, email verification, password reset, guest-account claim, admin 2FA | BS-4 |
 | `audit` | append-only audit log writes | BS-4 onward |
 | `catalog` | books, formats, authors, categories, search | BS-5 |
-| `uploads` | Cloudinary signed uploads (public images, private manuscripts) | BS-5 |
+| `uploads` | Cloudinary signed image uploads; R2 private book files (`BookFilesService`) | BS-5, BS-20 |
 | `preview` | preview PDF generation, preview endpoint, reading progress, preview analytics | BS-6 |
 | `cart` | carts for users and guests | BS-7 |
 | `shipping` | shipping zones and rates | BS-7 |
@@ -160,7 +160,7 @@ Foundry Technology, Metal Casting, Heat Treatment, Physical Metallurgy, Furnaces
 | cover | `{ publicId, version, width, height, crop, dominantColor, blurDataUrl }` | public Cloudinary image, 2:3 (§10.0) |
 | gallery | same shape [] | sample spreads |
 | abstract | string (sanitised rich text) | also rendered as HTML on the book page (SEO, instant read) |
-| manuscript | `{ assetId (private), pageCount, uploadedAt, checksum }` | **the private master PDF**: the source for the preview, online reading and ebook downloads. Required to publish, even for print-only books, so every book has a preview |
+| manuscript | `{ key (private R2 object), bytes, pages, checksum (SHA-256), uploadedAt }`; replaced files of a sold book are kept in `previousManuscripts` | **the private master PDF**: the source for the preview, online reading and ebook downloads. Required to publish, even for print-only books, so every book has a preview |
 | preview | `Preview` | see below |
 | status | `draft` \| `published` \| `archived` | only `published` is visible to customers |
 | formats | `BookFormat[]` | see below; at least one active format to publish |
@@ -186,7 +186,7 @@ Foundry Technology, Metal Casting, Heat Treatment, Physical Metallurgy, Furnaces
 | sections | `{ label, startPage, endPage }[]`, e.g. Abstract 1–2, Introduction 3–18. 1-based manuscript page numbers; contiguous or not |
 | maxPreviewPercent | settings-level cap (default 15% of `pageCount`). The admin UI refuses more, so the book can't be accidentally given away |
 | assetId, pageCount | the **generated** preview PDF (public-readable, watermarked "Preview"), containing only the section pages |
-| lockedTeasers | `{ url }[]`: 2 tiny, heavily blurred renders of the first pages *after* the preview (≤ 48px wide, upscaled with CSS blur; unreadable by construction) |
+| teasers | `string[]`: 2 tiny, blurred JPEG data URIs of the first pages *after* the preview (48px wide, rendered at 32px then blurred; unreadable by construction) |
 | outline | `{ title, page, level, inPreview }[]`: the full table of contents, so the reader shows locked chapters |
 | generatedAt, sourceChecksum | regenerated automatically whenever the manuscript or sections change |
 
@@ -900,41 +900,67 @@ passed to the buyer as a 400. Anything else is a generic message with full detai
 
 ### 10.0 Adding a book: upload, storage and presentation (built in BS-5)
 
-Everything a book needs is stored in **Cloudinary**. There are two kinds of file, handled very
-differently:
+Images live in **Cloudinary** (public, resized on the fly). Book files live in **Cloudflare R2**
+(private object storage, S3-compatible), because Cloudinary caps each file by plan (10MB free,
+20MB Plus, 40MB Advanced) and textbooks are often 30–200MB. R2 has no per-file cap that matters
+here, the first 10GB are free and downloads cost nothing (BS-20).
 
-| File | Who may see it | Cloudinary delivery type | Folder |
+| File | Who may see it | Where | Path |
 |---|---|---|---|
-| Cover, gallery spreads, author photo | everyone | `upload` (public, CDN-cached) | `books/<bookId>/images`, `authors/<id>` |
-| **Manuscript** (the full book PDF) | **nobody directly**; only our server, through short-lived signed URLs | `authenticated` | `books/<bookId>/manuscript` |
-| Generated preview PDF + blurred teasers | everyone (they only contain free pages) | `upload` | `books/<bookId>/preview` |
-| Per-buyer stamped ebook copies | only that buyer, through signed URLs | `authenticated` | `books/<bookId>/stamped` |
+| Cover, gallery spreads, author photo | everyone | Cloudinary `upload` (public, CDN-cached) | `<CLOUDINARY_FOLDER>/books/<bookId>/images`, `…/authors/<id>` |
+| **Manuscript** (the full book PDF) | **nobody directly**: our server, and staff through 30-minute signed links | R2, private bucket | `<R2_FOLDER>/books/<bookId>/manuscript/<random>.pdf` |
+| Generated preview PDF | everyone (it only contains free pages) | MongoDB GridFS, served by our API (§10.1) | |
+| Blurred locked-page teasers | everyone (unreadable 48px images) | inline data URIs on the book (§10.1) | |
+| Per-buyer stamped ebook copies (BS-9) | only that buyer, through signed links | R2, private bucket | |
 
-**How a file gets there: direct signed uploads.**
+**Images: direct signed uploads to Cloudinary.**
 1. The admin picks a file in the book editor.
 2. The browser asks our API for an upload signature: `POST /uploads/signature` with
-   `{ kind: 'cover' | 'gallery' | 'author-photo' | 'manuscript', ownerId }` (admin plus 2FA; the
-   book or author must exist).
-3. The API signs **only** that folder (`<CLOUDINARY_FOLDER>/books/<id>/images|manuscript` or
+   `{ kind: 'cover' | 'gallery' | 'author-photo', ownerId }` (admin plus 2FA; the book or author
+   must exist).
+3. The API signs **only** that folder (`<CLOUDINARY_FOLDER>/books/<id>/images` or
    `/authors/<id>`), delivery type, allowed formats, the `pending` tag and no-overwrite. Cloudinary
    accepts a signature for an hour; the browser fetches a fresh one if a long upload outlives
    50 minutes. The Cloudinary secret never leaves the server.
-4. The browser uploads **straight to Cloudinary** (`lib/upload.ts`) with a progress bar and a
-   cancel button. Files over 6MB go in 6MB chunks (`X-Unique-Upload-Id` + `Content-Range`); a
-   dropped connection or a 5xx retries that chunk up to 3 times with backoff, while a 4xx (bad
-   signature, format) stops at once with Cloudinary's message. Size and format are checked in the
-   browser first so obvious mistakes fail instantly.
-5. The file bytes never pass through our API: faster, no memory pressure on Render, no request
-   size limits.
-6. The browser sends the resulting `public_id` to the API, which **verifies the asset with
+4. The browser uploads **straight to Cloudinary** (`uploadFile` in `lib/upload.ts`) with a progress
+   bar and a cancel button. Files over 6MB go in 6MB chunks; a dropped connection or a 5xx retries
+   that chunk up to 3 times with backoff, while a 4xx stops at once with Cloudinary's message.
+5. The browser sends the resulting `public_id` to the API, which **verifies the asset with
    Cloudinary's Admin API** before attaching it: that it exists, sits in the expected folder, has
-   the expected type and format, and fits the size and dimension rules. A tampered request can't
-   attach someone else's asset or a public manuscript.
-7. Uploads never attached within 24 hours (the admin cancelled or closed the tab) are deleted by
-   `UploadCleanupJob` (hourly, job-locked). They are tagged `pending` on upload and the tag is
-   removed on attach. Before deleting, the job checks the database: an asset still referenced by a
-   book or author (its untagging failed) is kept and untagged instead. Only this environment's
-   `CLOUDINARY_FOLDER` is touched.
+   an allowed format, and fits the size (`IMAGE_MAX_MB`, default 10, the free plan's limit) and
+   dimension rules.
+
+**Book PDFs: direct multipart uploads to R2** (BS-20; `BookFilesService`, `ManuscriptsService`,
+`uploadInParts` in `lib/upload.ts`):
+1. `POST /admin/catalog/books/:id/manuscript-uploads { bytes }` (staff with 2FA): the API checks
+   the book exists and the size is within `MANUSCRIPT_MAX_MB` (default 200, refused with 413
+   before anything is sent), opens an R2 multipart upload under a fresh random key in this book's
+   folder, and records it in `manuscript_uploads` (key, upload id, declared size, part count).
+2. The browser asks for signed part URLs in batches (`…/manuscript-uploads/parts`, up to 50 at a
+   time, each valid for an hour; the upload must belong to this book) and PUTs the file **straight
+   to R2** in 8MB pieces, three in parallel. A dropped piece is retried on its own (4 attempts with
+   backoff); a 403 (link expired, e.g. a laptop that slept) gets a fresh link; parallel pieces share
+   one signing request. The SDK is set to `requestChecksumCalculation: 'WHEN_REQUIRED'` so the
+   signed URLs never demand checksum headers a browser can't send. The R2 secret never leaves the
+   server and the bytes never pass through our API.
+3. `…/manuscript-uploads/complete`: the API lists the parts **R2 actually holds** (never the
+   browser's word), checks every piece is there at the exact size the declared total implies, and
+   joins them. A gap is refused (`upload_incomplete`) with the upload left open for a retry.
+   Completing twice is harmless. Cancelling (`…/abort`) aborts the upload and deletes the record.
+4. `POST /admin/catalog/books/:id/manuscript { key }`: the API **downloads the finished file and
+   reads it itself**: the key must be one recorded for this book, the size within the limit, the
+   bytes must start like a PDF and open with pdf-lib (encrypted and damaged files are refused with
+   the editor's own wording). A refused file is deleted at once. The page count and a **SHA-256**
+   of the content are stored; the same content uploaded again changes nothing.
+5. Replacing the file: if the book was ever on sale (`listedAt`), the old file is kept in
+   `previousManuscripts` (buyers' copies came from it; BS-9 moves them over); a never-sold
+   draft's old file is deleted. Deleting a draft deletes all its files.
+
+**Abandoned uploads** (`UploadCleanupJob`, hourly, job-locked) are cleaned in both stores after 24
+hours: Cloudinary images still tagged `pending` (only this environment's `CLOUDINARY_FOLDER`), and
+`manuscript_uploads` records never attached (the multipart upload is aborted and anything that
+reached R2 deleted; R2 failures keep the record for the next run). Before deleting, the job checks
+the database: an image or file a book still references is kept, and its bookkeeping fixed.
 
 **Cover images** (presentation is what sells the book):
 - Rules: JPG/PNG/WebP, at least 1200×1800px, at most `IMAGE_MAX_MB` (15MB). The editor reads the
@@ -953,26 +979,19 @@ differently:
 - Open Graph and social-share images are generated from the cover (BS-13).
 
 **The manuscript PDF**:
-- Uploaded as an **authenticated** asset. It is never publicly addressable, never linked from any
-  page, and the API never returns its URL to a browser.
-- Server-side checks on attach (as built in BS-5): Cloudinary must have parsed the file as a PDF
-  (a renamed file fails), it must be in this book's manuscript folder, within `MANUSCRIPT_MAX_MB`,
-  and have at least one readable page; the page count and the `etag` (checksum) are stored, so the
-  preview regenerates only when the file actually changes.
-- **BS-6 adds**: rejecting password-protected or encrypted PDFs with a clear message (it is the
-  first step that extracts pages, with `pdf-lib`).
-- Cloudinary can render any PDF page as an image. BS-6 uses that for the **admin preview picker**:
-  page thumbnails served through signed, admin-only URLs.
+- Stored privately in R2. It is never publicly addressable, never linked from any public page, and
+  its key or a link to it is never sent to visitors or buyers. Staff get a 30-minute signed link
+  (`GET /admin/catalog/books/:id/manuscript-link`, 2FA) for the preview page picker; buyers get
+  personal copies from BS-9.
 - The manuscript is the single source for the preview (§10.1), online reading (§10.2) and
   downloads (§10.3). Upload once, and all three stay in sync.
-- **A manuscript with buyers is never deleted.** Archiving a book hides it from the store but
-  keeps every buyer's library working. Replacing a manuscript (a corrected printing) creates a new
-  version; existing buyers get the new version, plus an "updated edition" email (BS-9).
-- **File size vs. Cloudinary plan**: Cloudinary's maximum upload size depends on the account plan,
-  and textbooks with diagrams can be 20–200MB. Before BS-5, confirm the plan's limit covers the
-  largest manuscript (Cloudinary console → Settings). If it doesn't: optimise the PDF first
-  (usually 50–80% smaller with no visible loss), or upgrade the plan. The upload UI shows the
-  limit and refuses larger files up front with a helpful message.
+- **A manuscript with buyers is never deleted** (`previousManuscripts` above). Archiving a book
+  hides it from the store but keeps every buyer's library working. Replacing a manuscript (a
+  corrected printing) creates a new version; existing buyers get the new version, plus an "updated
+  edition" email (BS-9).
+- **Size and memory**: `MANUSCRIPT_MAX_MB` (default 200) is bounded by the API's memory, not by
+  storage: attaching and building a preview hold the whole PDF in memory several times over, so
+  the Render instance needs about 4× the largest book (DEPLOYMENT §4a).
 
 **The admin "Add a book" flow** (BS-5 + BS-6), as built: **one page with every section stacked**
 (not a wizard), each section saving on its own with an "Unsaved" badge, a "Discard changes"
@@ -1006,8 +1025,8 @@ section, page number at the end), which is how authors already have it. Sections
    preview, and a price in every currency for each format on sale. The API enforces the same
    checklist and returns it as `problems` if publishing is refused.
 
-**Backups**: turn on Cloudinary's backup option for the account, and the owner keeps the original
-manuscript files. Cloudinary is the delivery store, not the only copy of the author's work.
+**Backups**: the owner keeps the original manuscript files. R2 stores data redundantly, but it is
+the delivery store, not the only copy of the author's work.
 
 ### 10.1 Preview ("read the abstract and introduction before you buy")
 
@@ -1022,16 +1041,17 @@ blurring pages client-side is not protection (anyone can open dev tools). So the
 
 1. **Choosing the pages**: the editor's "Free preview" section takes named sections by PDF page
    range ("Abstract 2–2, Introduction 4–9"), the PDF page of printed page 1 (front matter offset),
-   shows "7 of 52 free pages used" live, and signed 240px thumbnails of the manuscript pages
-   (`GET /admin/catalog/books/:id/manuscript-pages`, staff with 2FA) with the free pages
-   highlighted. The cap is `PREVIEW_MAX_PERCENT` (default 15, owner-editable from BS-12), checked
+   shows "7 of 52 free pages used" live, and thumbnails of the manuscript pages with the free
+   pages highlighted. Since BS-20 the thumbnails are drawn **in the editor's browser** with pdf.js
+   from a 30-minute signed R2 link (`GET /admin/catalog/books/:id/manuscript-link`, staff with
+   2FA), reading only the byte ranges of the pages shown; an expired link offers "Reload pages". The cap is `PREVIEW_MAX_PERCENT` (default 15, owner-editable from BS-12), checked
    in the browser and authoritatively by the API (`sectionProblems`). `PUT
    /admin/catalog/books/:id/preview` saves and **queues** a build; `POST …/preview/rebuild` retries.
 2. **Building** (`PreviewWorker`, every 10s, job-locked; `PreviewService.processNext`): claims the
-   oldest queued book with a conditional update, downloads the manuscript server-side through a
-   10-minute private URL, and runs `buildPreview` (pdf-lib): a **new** PDF with only the chosen
+   oldest queued book with a conditional update, downloads the manuscript from R2 server-side,
+   and runs `buildPreview` (pdf-lib): a **new** PDF with only the chosen
    pages, a small "Preview · <title>" footer, no metadata, outline, attachments or scripts from the
-   master. Encrypted or unreadable PDFs and missing Cloudinary fail **permanently** with a clear
+   master. Encrypted or unreadable PDFs and missing R2 settings fail **permanently** with a clear
    message; network errors retry up to 3 times. Each queue bumps `preview.buildToken`, and a
    build only applies if the token still matches, so an older build can never overwrite a newer
    request. A build stuck in `building` for 15 minutes is re-claimed.
@@ -1041,9 +1061,11 @@ blurring pages client-side is not protection (anyone can open dev tools). So the
    changes on every rebuild, so it is cached for a year (`Cache-Control: public, immutable`). The
    previous file is deleted after the new one is applied. While a rebuild runs (for example after
    the manuscript is replaced), **the current preview keeps being served**.
-4. **Locked teasers**: two images of the pages after the preview, rendered by Cloudinary from the
-   private manuscript at 48px wide, heavily blurred, and stored as public images
-   (`books/<id>/preview/teaser-n`). Unreadable by design; skipped without Cloudinary.
+4. **Locked teasers**: two images of the pages after the preview, rendered **on our server** with
+   pdf.js and `@napi-rs/canvas` (`page-teaser.ts`): drawn 32px wide, blurred into a 48px JPEG of
+   about 1KB and stored on the book as data URIs, so there is nothing to fetch, host or clean up.
+   Unreadable by design (a test checks no dark text pixels survive). A teaser failure never fails
+   the build.
 5. **Contents**: derived on read from the book's table of contents plus the page offset, so a
    contents edit shows immediately without a rebuild. Each entry has `previewPage` (free) or
    `null` (locked). Reading the PDF's own outline is a later improvement.
@@ -1101,8 +1123,7 @@ just removes the paywall.
 
 ### 10.3 Ebook downloads
 
-- Manuscripts are uploaded by the admin as Cloudinary **authenticated raw assets**, which are never
-  publicly addressable.
+- Manuscripts are private objects in Cloudflare R2 (§10.0), never publicly addressable.
 - `GET /library/:bookId/download` (auth required, entitlement not revoked, rate-limited 10/hour per
   user) records a `download_event` and returns a **signed URL valid for 5 minutes**.
 - If the format has `stampWithBuyer` set, the PDF is stamped on each page footer ("Licensed to

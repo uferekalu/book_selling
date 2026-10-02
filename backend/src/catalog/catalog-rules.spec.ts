@@ -40,8 +40,7 @@ const ready = {
     'A practical guide to moulding, melting and casting sound metal parts for undergraduate engineers, with worked examples and problems.',
   descriptionMarkdown: 'Description.',
   manuscript: {
-    publicId: 'm',
-    version: 1,
+    key: 'm.pdf',
     bytes: 10,
     pages: 300,
     checksum: 'x',

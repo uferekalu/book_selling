@@ -6,13 +6,16 @@ import type { Model } from 'mongoose';
 import { startMongo } from '../../test/mongo.js';
 import { AuditLog, AuditModule } from '../audit/audit.module.js';
 import type { AccessTokenPayload } from '../auth/interfaces/auth.types.js';
+import { FakeBookFiles, manuscriptPdf } from '../../test/fake-book-files.js';
+import { BookFilesService } from '../uploads/book-files.service.js';
 import {
   CloudinaryService,
-  type PendingAsset,
   type UploadKind,
 } from '../uploads/cloudinary.service.js';
 import { AuthorsService } from './authors.service.js';
 import { BooksService } from './books.service.js';
+import { ManuscriptsService } from './manuscripts.service.js';
+import { ManuscriptUpload } from './schemas/manuscript-upload.schema.js';
 import { UploadCleanupJob } from './upload-cleanup.job.js';
 import { CatalogModule } from './catalog.module.js';
 import { CatalogQueryService } from './catalog-query.service.js';
@@ -38,44 +41,36 @@ class FakeCloudinary {
   cloudName = 'demo';
   destroyed: string[] = [];
   attached: string[] = [];
-  verify(kind: UploadKind, ownerId: string, publicId: string) {
-    const folder =
-      kind === 'manuscript'
-        ? `books/${ownerId}/manuscript`
-        : `books/${ownerId}/images`;
-    if (!publicId.startsWith(folder)) throw new Error('wrong folder');
+  verify(_kind: UploadKind, ownerId: string, publicId: string) {
+    if (!publicId.startsWith(`books/${ownerId}/images`))
+      throw new Error('wrong folder');
     return Promise.resolve({
       publicId,
       version: 7,
-      format: kind === 'manuscript' ? 'pdf' : 'jpg',
+      format: 'jpg',
       bytes: 1000,
       width: 1600,
       height: 2400,
-      pages: kind === 'manuscript' ? 312 : 1,
-      etag: publicId.endsWith('v2') ? 'etag-2' : 'etag-1',
       dominantColor: '#5a3a22',
     });
   }
-  markAttached(_kind: UploadKind, publicId: string) {
+  markAttached(publicId: string) {
     this.attached.push(publicId);
     return Promise.resolve();
   }
-  destroy(_kind: UploadKind, publicId: string) {
+  destroy(publicId: string) {
     this.destroyed.push(publicId);
     return Promise.resolve();
   }
   blurDataUrl() {
     return Promise.resolve(null);
   }
-  destroyPreviewTeasers() {
-    return Promise.resolve();
-  }
-  stale: PendingAsset[] = [];
+  stale: string[] = [];
   stalePendingAssets() {
     return Promise.resolve(this.stale);
   }
-  destroyAsset(asset: PendingAsset) {
-    this.destroyed.push(asset.publicId);
+  destroyStrict(publicId: string) {
+    this.destroyed.push(publicId);
     return Promise.resolve();
   }
   imageUrl(publicId: string, version: number) {
@@ -112,10 +107,16 @@ describe('Catalog (books, authors, categories, storefront queries)', () => {
   let bookModel: Model<Book>;
   let auditModel: Model<AuditLog>;
   let media: FakeCloudinary;
+  let files: FakeBookFiles;
+  let manuscripts: ManuscriptsService;
+  let uploadModel: Model<ManuscriptUpload>;
+  let bookPdf: Uint8Array;
 
   beforeAll(async () => {
     mongod = await startMongo();
     media = new FakeCloudinary();
+    files = new FakeBookFiles(1);
+    bookPdf = await manuscriptPdf(40);
     moduleRef = await Test.createTestingModule({
       imports: [
         ConfigModule.forRoot({
@@ -130,7 +131,11 @@ describe('Catalog (books, authors, categories, storefront queries)', () => {
     })
       .overrideProvider(CloudinaryService)
       .useValue(media)
+      .overrideProvider(BookFilesService)
+      .useValue(files)
       .compile();
+    manuscripts = moduleRef.get(ManuscriptsService);
+    uploadModel = moduleRef.get(getModelToken(ManuscriptUpload.name));
     books = moduleRef.get(BooksService);
     authors = moduleRef.get(AuthorsService);
     categories = moduleRef.get(CategoriesService);
@@ -154,7 +159,17 @@ describe('Catalog (books, authors, categories, storefront queries)', () => {
     );
     media.destroyed = [];
     media.attached = [];
+    files.objects.clear();
+    files.multipart.clear();
+    files.deleted = [];
+    files.aborted = [];
   });
+
+  /** Uploads `pdf` the way the editor's browser does and attaches it. */
+  async function attachPdf(id: string, pdf: Uint8Array = bookPdf) {
+    const key = await files.upload(manuscripts, id, pdf, admin);
+    return { key, book: await books.attachManuscript(id, { key }, admin) };
+  }
 
   /** A complete, publishable book. */
   async function readyBook(
@@ -191,11 +206,7 @@ describe('Catalog (books, authors, categories, storefront queries)', () => {
       },
       admin,
     );
-    await books.attachManuscript(
-      id,
-      { publicId: `books/${id}/manuscript/file` },
-      admin,
-    );
+    await attachPdf(id);
     await bookModel.updateOne({ _id: book._id }, { 'preview.enabled': true }); // BS-6 builds this
     return books.publish(id, admin);
   }
@@ -317,14 +328,140 @@ describe('Catalog (books, authors, categories, storefront queries)', () => {
           'preview.status': 'ready',
         },
       );
-      const replaced = await books.attachManuscript(
-        id,
-        { publicId: `books/${id}/manuscript/v2` },
-        admin,
-      );
+      const before = (await bookModel.findById(book._id).lean())!.manuscript!;
+      const { book: replaced } = await attachPdf(id, await manuscriptPdf(41));
       expect(replaced.preview.status).toBe('queued');
       expect(replaced.preview.enabled).toBe(true);
-      expect(replaced.manuscript?.pages).toBe(312);
+      expect(replaced.manuscript?.pages).toBe(41);
+      // It was on sale: buyers' copies came from the old file, so it is kept (BS-9).
+      expect(replaced.previousManuscripts.map((m) => m.key)).toEqual([
+        before.key,
+      ]);
+      expect(files.objects.has(before.key)).toBe(true);
+      expect(await uploadModel.countDocuments()).toBe(0);
+    });
+
+    describe('book file (R2) uploads', () => {
+      it('replacing a never-sold draft file deletes the old one; the same file again changes nothing', async () => {
+        const id = (await books.create('Sand Moulding', admin))._id.toString();
+        const first = await attachPdf(id);
+        expect(first.book.manuscript).toMatchObject({
+          key: first.key,
+          pages: 40,
+          bytes: bookPdf.length,
+        });
+        expect(first.book.manuscript!.checksum).toMatch(/^[a-f0-9]{64}$/);
+        expect(first.book.pageCount).toBe(40);
+
+        // Identical content: the new upload is discarded and the book is untouched.
+        const again = await attachPdf(id);
+        expect(again.book.manuscript!.key).toBe(first.key);
+        expect(files.objects.has(again.key)).toBe(false);
+
+        const second = await attachPdf(id, await manuscriptPdf(12));
+        expect(second.book.manuscript!.pages).toBe(12);
+        expect(second.book.previousManuscripts).toEqual([]);
+        expect(files.objects.has(first.key)).toBe(false);
+        expect(await uploadModel.countDocuments()).toBe(0);
+      });
+
+      it('refuses a key that was not uploaded for this book', async () => {
+        const a = (await books.create('Book A', admin))._id.toString();
+        const b = (await books.create('Book B', admin))._id.toString();
+        const key = await files.upload(manuscripts, a, bookPdf, admin);
+        await expect(books.attachManuscript(b, { key }, admin)).rejects.toThrow(
+          /not uploaded for this book/,
+        );
+        await expect(
+          books.attachManuscript(
+            a,
+            { key: `${files.manuscriptPrefix(a)}../../other.pdf` },
+            admin,
+          ),
+        ).rejects.toThrow(/not uploaded for this book/);
+        // Signing parts for another book's upload is refused too.
+        const started = await manuscripts.start(a, 100, admin);
+        await expect(
+          manuscripts.signParts(b, started.key, started.uploadId, [1]),
+        ).rejects.toThrow(/another book/);
+        await expect(
+          manuscripts.signParts(a, started.key, started.uploadId, [2]),
+        ).rejects.toThrow(/numbered 1 to 1/);
+      });
+
+      it('refuses a file that is not a readable PDF, and deletes it', async () => {
+        const id = (await books.create('Sand Moulding', admin))._id.toString();
+        const fake = new TextEncoder().encode('Hello, not a PDF at all');
+        const key = await files.upload(manuscripts, id, fake, admin);
+        await expect(
+          books.attachManuscript(id, { key }, admin),
+        ).rejects.toThrow(/Upload a PDF file/);
+        expect(files.objects.has(key)).toBe(false);
+
+        const broken = new TextEncoder().encode('%PDF-1.7 truncated');
+        const brokenKey = await files.upload(manuscripts, id, broken, admin);
+        await expect(
+          books.attachManuscript(id, { key: brokenKey }, admin),
+        ).rejects.toThrow(/could not be read as a PDF/);
+        expect(files.objects.has(brokenKey)).toBe(false);
+        expect((await bookModel.findById(id).lean())!.manuscript).toBeNull();
+      });
+
+      it('refuses a file over the limit before anything is uploaded', async () => {
+        const id = (await books.create('Sand Moulding', admin))._id.toString();
+        await expect(
+          manuscripts.start(id, 2 * 1024 * 1024, admin),
+        ).rejects.toThrow(/limit is 1 MB/);
+        expect(files.multipart.size).toBe(0);
+      });
+
+      it('completes only when every piece arrived whole, and completing twice is harmless', async () => {
+        const id = (await books.create('Sand Moulding', admin))._id.toString();
+        const started = await manuscripts.start(id, bookPdf.length, admin);
+        await expect(
+          manuscripts.complete(id, started.key, started.uploadId),
+        ).rejects.toThrow(/0 of 1 pieces arrived/);
+        files.putPart(started.uploadId, 1, bookPdf.subarray(0, 100));
+        await expect(
+          manuscripts.complete(id, started.key, started.uploadId),
+        ).rejects.toThrow(/piece 1 is incomplete/);
+        files.putPart(started.uploadId, 1, bookPdf);
+        await manuscripts.complete(id, started.key, started.uploadId);
+        await manuscripts.complete(id, started.key, started.uploadId);
+        const book = await books.attachManuscript(
+          id,
+          { key: started.key },
+          admin,
+        );
+        expect(book.manuscript!.pages).toBe(40);
+      });
+
+      it('cancelling an upload removes everything of it', async () => {
+        const id = (await books.create('Sand Moulding', admin))._id.toString();
+        const started = await manuscripts.start(id, 100, admin);
+        await manuscripts.abort(id, started.key, started.uploadId);
+        expect(files.aborted).toEqual([started.uploadId]);
+        expect(files.deleted).toEqual([started.key]);
+        expect(await uploadModel.countDocuments()).toBe(0);
+      });
+
+      it('gives staff a 30-minute link to the current file only', async () => {
+        const id = (await books.create('Sand Moulding', admin))._id.toString();
+        await expect(manuscripts.readLink(id)).rejects.toThrow(/no PDF yet/);
+        const { key } = await attachPdf(id);
+        const link = await manuscripts.readLink(id, Date.UTC(2026, 9, 2));
+        expect(link).toEqual({
+          url: `https://r2.test/${key}?X-Amz-Expires=1800`,
+          expiresAt: '2026-10-02T00:30:00.000Z',
+        });
+      });
+
+      it('deleting a draft deletes its file', async () => {
+        const id = (await books.create('Sand Moulding', admin))._id.toString();
+        const { key } = await attachPdf(id);
+        await books.remove(id, admin);
+        expect(files.objects.has(key)).toBe(false);
+      });
     });
 
     it('publishes only when the checklist passes, with every problem listed', async () => {
@@ -507,7 +644,7 @@ describe('Catalog (books, authors, categories, storefront queries)', () => {
   });
 
   describe('abandoned upload cleanup', () => {
-    it('deletes stale pending uploads but keeps (and re-confirms) anything attached', async () => {
+    it('deletes stale pending images but keeps (and re-confirms) attached ones', async () => {
       const id = (
         await books.create('Ferrous Foundry Practice', admin)
       )._id.toString();
@@ -515,24 +652,47 @@ describe('Catalog (books, authors, categories, storefront queries)', () => {
       await books.attachCover(id, { publicId: cover }, admin);
       media.attached = [];
       media.destroyed = [];
-      media.stale = [
-        { publicId: cover, deliveryType: 'upload' },
-        { publicId: `books/${id}/images/abandoned`, deliveryType: 'upload' },
-        {
-          publicId: `books/${id}/manuscript/abandoned`,
-          deliveryType: 'authenticated',
-        },
-      ];
+      media.stale = [cover, `books/${id}/images/abandoned`];
 
       const result = await moduleRef.get(UploadCleanupJob).run();
 
       expect(result.kept).toEqual([cover]);
-      expect(result.deleted).toEqual([
-        `books/${id}/images/abandoned`,
-        `books/${id}/manuscript/abandoned`,
-      ]);
+      expect(result.deleted).toEqual([`books/${id}/images/abandoned`]);
       expect(media.destroyed).not.toContain(cover);
       expect(media.attached).toEqual([cover]);
+      media.stale = [];
+    });
+
+    it('deletes book-file uploads abandoned for a day, never a file a book uses', async () => {
+      const id = (await books.create('Sand Moulding', admin))._id.toString();
+      const abandoned = await manuscripts.start(id, 100, admin);
+      const recent = await manuscripts.start(id, 100, admin);
+      const { key: attachedKey } = await attachPdf(id);
+      // Bookkeeping that failed after attaching: a record lingers for a file the book uses.
+      await uploadModel.create({
+        bookId: id,
+        key: attachedKey,
+        uploadId: 'up-lingering',
+        bytes: 1,
+        partCount: 1,
+        status: 'uploaded',
+        startedBy: admin.sub,
+      });
+      const twoDaysAgo = new Date(Date.now() - 48 * 3600_000);
+      await uploadModel.collection.updateMany(
+        { key: { $in: [abandoned.key, attachedKey] } },
+        { $set: { createdAt: twoDaysAgo } },
+      );
+
+      const result = await moduleRef.get(UploadCleanupJob).run();
+
+      expect(result.deleted).toEqual([abandoned.key]);
+      expect(result.kept).toEqual([attachedKey]);
+      expect(files.aborted).toEqual([abandoned.uploadId]);
+      expect(files.objects.has(attachedKey)).toBe(true);
+      expect((await uploadModel.find().lean()).map((u) => u.key)).toEqual([
+        recent.key,
+      ]);
     });
   });
 });

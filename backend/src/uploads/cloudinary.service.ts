@@ -7,67 +7,36 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { v2 as cloudinary } from 'cloudinary';
 
-export const UPLOAD_KINDS = [
-  'cover',
-  'gallery',
-  'author-photo',
-  'manuscript',
-] as const;
+/** Public images only. Book PDFs go to private R2 storage (BookFilesService). */
+export const UPLOAD_KINDS = ['cover', 'gallery', 'author-photo'] as const;
 export type UploadKind = (typeof UPLOAD_KINDS)[number];
 
 interface KindRules {
-  resourceType: 'image';
-  /** `authenticated` assets are never publicly addressable (the manuscript). */
-  deliveryType: 'upload' | 'authenticated';
   formats: string[];
   folder: (ownerId: string) => string;
-  maxBytes: (config: { imageMax: number; manuscriptMax: number }) => number;
   minWidth?: number;
   minHeight?: number;
 }
 
 const RULES: Record<UploadKind, KindRules> = {
   cover: {
-    resourceType: 'image',
-    deliveryType: 'upload',
     formats: ['jpg', 'png', 'webp'],
     folder: (id) => `books/${id}/images`,
-    maxBytes: (c) => c.imageMax,
     minWidth: 1200,
     minHeight: 1800,
   },
   gallery: {
-    resourceType: 'image',
-    deliveryType: 'upload',
     formats: ['jpg', 'png', 'webp'],
     folder: (id) => `books/${id}/images`,
-    maxBytes: (c) => c.imageMax,
     minWidth: 800,
   },
   'author-photo': {
-    resourceType: 'image',
-    deliveryType: 'upload',
     formats: ['jpg', 'png', 'webp'],
     folder: (id) => `authors/${id}`,
-    maxBytes: (c) => c.imageMax,
     minWidth: 400,
     minHeight: 400,
   },
-  // Cloudinary treats a PDF as a multi-page image: it reports the page count and can render
-  // pages as thumbnails (the admin preview picker, BS-6).
-  manuscript: {
-    resourceType: 'image',
-    deliveryType: 'authenticated',
-    formats: ['pdf'],
-    folder: (id) => `books/${id}/manuscript`,
-    maxBytes: (c) => c.manuscriptMax,
-  },
 };
-
-export interface PendingAsset {
-  publicId: string;
-  deliveryType: 'upload' | 'authenticated';
-}
 
 export interface UploadTicket {
   uploadUrl: string;
@@ -86,8 +55,6 @@ export interface VerifiedAsset {
   bytes: number;
   width: number;
   height: number;
-  pages: number;
-  etag: string;
   dominantColor: string | null;
 }
 
@@ -104,7 +71,7 @@ export class CloudinaryService {
   readonly configured: boolean;
   readonly cloudName: string | undefined;
   private readonly root: string;
-  private readonly limits: { imageMax: number; manuscriptMax: number };
+  private readonly imageMax: number;
 
   constructor(config: ConfigService) {
     this.cloudName = config.get<string>('CLOUDINARY_CLOUD_NAME');
@@ -114,11 +81,7 @@ export class CloudinaryService {
     this.root = (
       config.get<string>('CLOUDINARY_FOLDER') ?? 'book-selling/development'
     ).replace(/\/+$/, '');
-    this.limits = {
-      imageMax: (config.get<number>('IMAGE_MAX_MB') ?? 15) * 1024 * 1024,
-      manuscriptMax:
-        (config.get<number>('MANUSCRIPT_MAX_MB') ?? 100) * 1024 * 1024,
-    };
+    this.imageMax = (config.get<number>('IMAGE_MAX_MB') ?? 10) * 1024 * 1024;
     if (this.configured) {
       cloudinary.config({
         cloud_name: this.cloudName,
@@ -144,7 +107,7 @@ export class CloudinaryService {
     const params: Record<string, string> = {
       timestamp: String(Math.floor(now / 1000)),
       folder: this.folderFor(kind, ownerId),
-      type: rules.deliveryType,
+      type: 'upload',
       allowed_formats: rules.formats.join(','),
       // Untagged later by `markAttached`; anything still `pending` after a day is cleaned up.
       tags: 'pending',
@@ -156,13 +119,13 @@ export class CloudinaryService {
       cloudinary.config().api_secret as string,
     );
     return {
-      uploadUrl: `https://api.cloudinary.com/v1_1/${this.cloudName}/${rules.resourceType}/upload`,
+      uploadUrl: `https://api.cloudinary.com/v1_1/${this.cloudName}/image/upload`,
       fields: {
         ...params,
         api_key: cloudinary.config().api_key as string,
         signature,
       },
-      maxBytes: rules.maxBytes(this.limits),
+      maxBytes: this.imageMax,
       chunkBytes: CHUNK_BYTES,
       allowedFormats: rules.formats,
     };
@@ -187,8 +150,8 @@ export class CloudinaryService {
     let resource: Record<string, unknown>;
     try {
       resource = (await cloudinary.api.resource(publicId, {
-        resource_type: rules.resourceType,
-        type: rules.deliveryType,
+        resource_type: 'image',
+        type: 'upload',
         colors: true,
       })) as Record<string, unknown>;
     } catch (error) {
@@ -209,17 +172,11 @@ export class CloudinaryService {
       bytes: Number(resource.bytes ?? 0),
       width: Number(resource.width ?? 0),
       height: Number(resource.height ?? 0),
-      pages: Number(resource.pages ?? 1),
-      etag: typeof resource.etag === 'string' ? resource.etag : '',
       dominantColor: CloudinaryService.dominantColor(resource.colors),
     };
-    const problem = CloudinaryService.problemWith(
-      asset,
-      rules,
-      rules.maxBytes(this.limits),
-    );
+    const problem = CloudinaryService.problemWith(asset, rules, this.imageMax);
     if (problem) {
-      await this.destroy(kind, publicId);
+      await this.destroy(publicId);
       throw new BadRequestException(problem);
     }
     return asset;
@@ -242,8 +199,6 @@ export class CloudinaryService {
     if (rules.minHeight && asset.height < rules.minHeight) {
       return `The image is ${asset.width}×${asset.height}px; use one at least ${rules.minHeight}px tall.`;
     }
-    if (format === 'pdf' && asset.pages < 1)
-      return 'That PDF has no readable pages.';
     return null;
   }
 
@@ -254,11 +209,10 @@ export class CloudinaryService {
   }
 
   /** Removes the `pending` tag so the cleanup job keeps this asset. */
-  async markAttached(kind: UploadKind, publicId: string): Promise<void> {
-    const rules = RULES[kind];
+  async markAttached(publicId: string): Promise<void> {
     await cloudinary.uploader.remove_tag('pending', [publicId], {
-      resource_type: rules.resourceType,
-      type: rules.deliveryType,
+      resource_type: 'image',
+      type: 'upload',
     });
   }
 
@@ -267,56 +221,51 @@ export class CloudinaryService {
    * `olderThan`, within this environment's folder only. At most `maxPages` × 500 per call; the
    * next run picks up the rest.
    */
-  async stalePendingAssets(
-    olderThan: Date,
-    maxPages = 4,
-  ): Promise<PendingAsset[]> {
+  async stalePendingAssets(olderThan: Date, maxPages = 4): Promise<string[]> {
     if (!this.configured) return [];
-    const found: PendingAsset[] = [];
-    for (const deliveryType of ['upload', 'authenticated'] as const) {
-      let cursor: string | undefined;
-      for (let page = 0; page < maxPages; page += 1) {
-        const result = (await cloudinary.api.resources_by_tag('pending', {
-          resource_type: 'image',
-          type: deliveryType,
-          max_results: 500,
-          ...(cursor ? { next_cursor: cursor } : {}),
-        })) as {
-          resources?: Array<{ public_id: string; created_at: string }>;
-          next_cursor?: string;
-        };
-        for (const resource of result.resources ?? []) {
-          if (
-            resource.public_id.startsWith(`${this.root}/`) &&
-            new Date(resource.created_at) < olderThan
-          ) {
-            found.push({ publicId: resource.public_id, deliveryType });
-          }
+    const found: string[] = [];
+    let cursor: string | undefined;
+    for (let page = 0; page < maxPages; page += 1) {
+      const result = (await cloudinary.api.resources_by_tag('pending', {
+        resource_type: 'image',
+        type: 'upload',
+        max_results: 500,
+        ...(cursor ? { next_cursor: cursor } : {}),
+      })) as {
+        resources?: Array<{ public_id: string; created_at: string }>;
+        next_cursor?: string;
+      };
+      for (const resource of result.resources ?? []) {
+        if (
+          resource.public_id.startsWith(`${this.root}/`) &&
+          new Date(resource.created_at) < olderThan
+        ) {
+          found.push(resource.public_id);
         }
-        cursor = result.next_cursor;
-        if (!cursor) break;
       }
+      cursor = result.next_cursor;
+      if (!cursor) break;
     }
     return found;
   }
 
-  /** Deletes one asset by its delivery type (for the cleanup job, which has no upload kind). */
-  async destroyAsset(asset: PendingAsset): Promise<void> {
+  /** Deletes one image; for the cleanup job it throws, so a failure is reported and retried. */
+  async destroyStrict(publicId: string): Promise<void> {
     if (!this.configured) return;
-    await cloudinary.uploader.destroy(asset.publicId, {
+    await cloudinary.uploader.destroy(publicId, {
       resource_type: 'image',
-      type: asset.deliveryType,
+      type: 'upload',
       invalidate: true,
     });
   }
 
-  async destroy(kind: UploadKind, publicId: string): Promise<void> {
+  /** Best effort: a failure is logged, never thrown. */
+  async destroy(publicId: string): Promise<void> {
     if (!this.configured) return;
-    const rules = RULES[kind];
     try {
       await cloudinary.uploader.destroy(publicId, {
-        resource_type: rules.resourceType,
-        type: rules.deliveryType,
+        resource_type: 'image',
+        type: 'upload',
         invalidate: true,
       });
     } catch (error) {
@@ -364,110 +313,6 @@ export class CloudinaryService {
         : null;
     } catch {
       return null;
-    }
-  }
-
-  /** Short-lived signed download URL for an authenticated asset (manuscript; BS-6/BS-9). */
-  privateDownloadUrl(
-    publicId: string,
-    format: string,
-    expiresInSeconds = 300,
-  ): string {
-    this.assertConfigured();
-    return cloudinary.utils.private_download_url(publicId, format, {
-      resource_type: 'image',
-      type: 'authenticated',
-      expires_at: Math.floor(Date.now() / 1000) + expiresInSeconds,
-    });
-  }
-
-  /**
-   * Reads the private manuscript on the server (preview building). The short-lived signed URL is
-   * used once here and never leaves the process.
-   */
-  async downloadManuscript(publicId: string): Promise<Uint8Array> {
-    const url = this.privateDownloadUrl(publicId, 'pdf', 600);
-    const response = await fetch(url, {
-      signal: AbortSignal.timeout(5 * 60_000),
-    });
-    if (!response.ok) {
-      throw new Error(
-        `Could not download the manuscript from Cloudinary (${response.status})`,
-      );
-    }
-    return new Uint8Array(await response.arrayBuffer());
-  }
-
-  /**
-   * A signed image of one manuscript page, for the admin's preview picker only. Small (240px) and
-   * returned only to staff with two-step verification.
-   */
-  manuscriptPageUrl(
-    publicId: string,
-    version: number,
-    page: number,
-    width = 240,
-  ): string {
-    this.assertConfigured();
-    return cloudinary.url(publicId, {
-      resource_type: 'image',
-      type: 'authenticated',
-      sign_url: true,
-      secure: true,
-      version,
-      format: 'jpg',
-      transformation: [{ page }, { width, crop: 'scale', quality: 'auto' }],
-    });
-  }
-
-  /**
-   * Stores a deliberately unreadable hint of a locked page (48px wide, heavily blurred) as a
-   * public image, and returns its URL. Only this tiny derived image is public, never the page.
-   */
-  async createTeaser(
-    manuscriptPublicId: string,
-    version: number,
-    page: number,
-    bookId: string,
-    index: number,
-  ): Promise<string> {
-    this.assertConfigured();
-    const source = cloudinary.url(manuscriptPublicId, {
-      resource_type: 'image',
-      type: 'authenticated',
-      sign_url: true,
-      secure: true,
-      version,
-      format: 'jpg',
-      transformation: [
-        { page },
-        { width: 48, crop: 'scale' },
-        { effect: 'blur:800', quality: 30 },
-      ],
-    });
-    const result = (await cloudinary.uploader.upload(source, {
-      folder: `${this.root}/books/${bookId}/preview`,
-      public_id: `teaser-${index}`,
-      overwrite: true,
-      invalidate: true,
-      resource_type: 'image',
-      type: 'upload',
-    })) as { secure_url: string };
-    return result.secure_url;
-  }
-
-  /** Deletes a book's teaser images (when the draft is deleted). Best effort. */
-  async destroyPreviewTeasers(bookId: string): Promise<void> {
-    if (!this.configured) return;
-    try {
-      await cloudinary.api.delete_resources_by_prefix(
-        `${this.root}/books/${bookId}/preview/`,
-        { resource_type: 'image', type: 'upload' },
-      );
-    } catch (error) {
-      this.logger.warn(
-        `Could not delete preview teasers of ${bookId}: ${(error as Error).message}`,
-      );
     }
   }
 

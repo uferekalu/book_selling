@@ -1,21 +1,20 @@
 "use client";
 
 import { CheckCircle2, ExternalLink, Loader2, Plus, RefreshCw, Trash2, TriangleAlert } from "lucide-react";
-import Image from "next/image";
 import { useMemo, useState } from "react";
-import { Alert, Badge, Button, FormField, Icon, IconButton, Input, Skeleton, useToast } from "@/components/ui";
+import { Alert, Badge, Button, FormField, Icon, IconButton, Input, useToast } from "@/components/ui";
 import {
-  useManuscriptPagesQuery,
   useRebuildPreviewMutation,
   useSetPreviewMutation,
   type AdminBook,
   type PreviewStatus,
 } from "@/lib/api/catalog-admin-api";
-import { errorMessage, errorProblems, errorStatus } from "@/lib/api/errors";
+import { errorMessage, errorProblems } from "@/lib/api/errors";
 import { cn } from "@/lib/cn";
 import { useAppSelector } from "@/lib/redux/hooks";
 import { maxPreviewPages, parseSections, previewPageCount, type SectionDraft } from "../preview-sections";
 import { useReportDirty } from "./dirty";
+import { PageThumbnails } from "./page-thumbnails";
 import { EditorSection } from "./section";
 
 const STATUS: Record<PreviewStatus, { label: string; tone: "neutral" | "info" | "success" | "danger" }> = {
@@ -25,8 +24,6 @@ const STATUS: Record<PreviewStatus, { label: string; tone: "neutral" | "info" | 
   ready: { label: "Ready", tone: "success" },
   failed: { label: "Failed", tone: "danger" },
 };
-
-const THUMBS_PER_PAGE = 24;
 
 const draftsFrom = (book: AdminBook): SectionDraft[] =>
   book.preview.sections.length
@@ -275,57 +272,5 @@ function OpenPreviewButton({ bookId }: { bookId: string }) {
     <Button size="sm" variant="outline" isLoading={busy} leadingIcon={<Icon icon={ExternalLink} size="sm" />} onClick={() => void open()}>
       Open preview
     </Button>
-  );
-}
-
-/** Page thumbnails to find the right page numbers; free pages are highlighted. */
-function PageThumbnails({ book, selected }: { book: AdminBook; selected: Array<{ fromPage: number; toPage: number }> }) {
-  const [visible, setVisible] = useState(THUMBS_PER_PAGE);
-  const pages = book.manuscript?.pages ?? 0;
-  const { data, error, isLoading, isFetching } = useManuscriptPagesQuery({ id: book.id, from: 1, to: Math.min(visible, pages) }, { skip: pages === 0 });
-  const isFree = (page: number) => selected.some((s) => page >= s.fromPage && page <= s.toPage);
-
-  if (error) {
-    return (
-      <p className="text-sm text-text-muted">
-        {errorStatus(error) === 503
-          ? "Page thumbnails need Cloudinary, which isn’t set up on this server yet."
-          : `Page thumbnails couldn’t be loaded (${errorMessage(error)}).`}{" "}
-        Use the page numbers shown in your PDF viewer.
-      </p>
-    );
-  }
-  return (
-    <details className="group rounded-xl border border-border p-4" open>
-      <summary className="cursor-pointer text-sm font-medium text-text">Find the pages</summary>
-      <div className="mt-4 flex flex-col gap-4">
-        {isLoading ? (
-          <div className="grid grid-cols-3 gap-3 sm:grid-cols-6">
-            {Array.from({ length: 6 }, (_, i) => (
-              <Skeleton key={i} className="aspect-[3/4] w-full" />
-            ))}
-          </div>
-        ) : (
-          <ul className="grid grid-cols-3 gap-3 sm:grid-cols-6">
-            {data?.map(({ page, url }) => (
-              <li key={page} className="flex flex-col items-center gap-1">
-                <div className={cn("relative aspect-[3/4] w-full overflow-hidden rounded-md border bg-paper-50", isFree(page) ? "border-primary ring-2 ring-primary" : "border-border")}>
-                  <Image src={url} alt={`Page ${page}`} fill sizes="120px" className="object-contain" unoptimized />
-                </div>
-                <span className={cn("text-xs tabular-nums", isFree(page) ? "font-medium text-primary" : "text-text-subtle")}>
-                  {page}
-                  {isFree(page) ? " · free" : ""}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-        {visible < pages && (
-          <Button variant="ghost" size="sm" className="self-center" isLoading={isFetching} onClick={() => setVisible((v) => Math.min(pages, v + THUMBS_PER_PAGE))}>
-            Show more pages
-          </Button>
-        )}
-      </div>
-    </details>
   );
 }

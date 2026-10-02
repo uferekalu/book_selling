@@ -62,16 +62,29 @@ export const envValidationSchema = Joi.object({
         'TWO_FACTOR_ENCRYPTION_KEY must decode to exactly 32 bytes',
     }),
 
-  // ---- Media: Cloudinary (docs/ARCHITECTURE.md §10.0) ----
-  // Without these outside production, uploads are disabled (503) and books show typographic covers.
+  // ---- Images: Cloudinary (docs/ARCHITECTURE.md §10.0) ----
+  // Without these outside production, image uploads are disabled (503) and books show typographic covers.
   CLOUDINARY_CLOUD_NAME: requiredInProduction(Joi.string()),
   CLOUDINARY_API_KEY: requiredInProduction(Joi.string()),
   CLOUDINARY_API_SECRET: requiredInProduction(Joi.string()),
   // Keeps environments apart inside one Cloudinary account, e.g. "book-selling/production".
   CLOUDINARY_FOLDER: optionalString().default('book-selling/development'),
-  // Must not exceed the Cloudinary plan's own maximum upload size.
-  MANUSCRIPT_MAX_MB: Joi.number().integer().min(1).max(2000).default(100),
-  IMAGE_MAX_MB: Joi.number().integer().min(1).max(100).default(15),
+  // Must not exceed the Cloudinary plan's maximum image size (10 MB on the free plan).
+  IMAGE_MAX_MB: Joi.number().integer().min(1).max(100).default(10),
+
+  // ---- Book files (manuscript PDFs): Cloudflare R2, private (docs/ARCHITECTURE.md §10.0) ----
+  // Without these outside production, book PDF uploads are disabled (503).
+  R2_ACCOUNT_ID: requiredInProduction(Joi.string()),
+  R2_ACCESS_KEY_ID: requiredInProduction(Joi.string()),
+  R2_SECRET_ACCESS_KEY: requiredInProduction(Joi.string()),
+  R2_BUCKET: requiredInProduction(Joi.string()),
+  // Keeps environments apart inside one bucket, e.g. "book-selling/production".
+  R2_FOLDER: optionalString().default('book-selling/development'),
+  // Only for an S3-compatible store other than R2 (e.g. MinIO locally); R2 derives it from the account id.
+  R2_ENDPOINT: optionalString().uri({ scheme: ['http', 'https'] }),
+  // Building a preview holds the whole PDF in memory several times over: keep the server's RAM
+  // at least 4× this (DEPLOYMENT §4a).
+  MANUSCRIPT_MAX_MB: Joi.number().integer().min(1).max(2000).default(200),
   // Largest share of a book the free preview may show (PRODUCT_RULES §4). Owner-editable in BS-12.
   PREVIEW_MAX_PERCENT: Joi.number().integer().min(1).max(50).default(15),
   // Lets the API tell the storefront to refresh cached catalogue pages after an edit.

@@ -1,6 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 import { v2 as cloudinary } from 'cloudinary';
-import { CloudinaryService } from './cloudinary.service.js';
+import { CloudinaryService, UPLOAD_KINDS } from './cloudinary.service.js';
 
 const config = (overrides: Record<string, unknown> = {}) =>
   new ConfigService({
@@ -8,7 +8,6 @@ const config = (overrides: Record<string, unknown> = {}) =>
     CLOUDINARY_API_KEY: '1234567890',
     CLOUDINARY_API_SECRET: 'top-secret-value',
     CLOUDINARY_FOLDER: 'book-selling/test',
-    MANUSCRIPT_MAX_MB: 200,
     IMAGE_MAX_MB: 15,
     ...overrides,
   });
@@ -48,20 +47,6 @@ describe('CloudinaryService', () => {
     expect(JSON.stringify(ticket)).not.toContain('top-secret-value');
   });
 
-  it('signs manuscripts as private (authenticated) PDFs with the configured size limit', () => {
-    const ticket = new CloudinaryService(config()).signUpload(
-      'manuscript',
-      BOOK,
-    );
-    expect(ticket.fields).toMatchObject({
-      type: 'authenticated',
-      allowed_formats: 'pdf',
-      folder: `book-selling/test/books/${BOOK}/manuscript`,
-    });
-    expect(ticket.maxBytes).toBe(200 * 1024 * 1024);
-    expect(ticket.chunkBytes).toBe(6 * 1024 * 1024);
-  });
-
   it('rejects an asset from another folder without asking Cloudinary', async () => {
     const media = new CloudinaryService(config());
     const lookup = vi.spyOn(cloudinary.api, 'resource');
@@ -95,63 +80,56 @@ describe('CloudinaryService', () => {
     );
   });
 
-  it('returns verified metadata including the dominant colour and page count', async () => {
+  it('returns verified metadata including the dominant colour', async () => {
     const media = new CloudinaryService(config());
     vi.spyOn(cloudinary.api, 'resource').mockResolvedValue({
       version: 9,
-      format: 'pdf',
-      bytes: 52_000_000,
-      width: 1240,
-      height: 1754,
-      pages: 318,
-      etag: 'abc',
+      format: 'jpg',
+      bytes: 2_000_000,
+      width: 1600,
+      height: 2400,
       colors: [['#F2E8DC', 60]],
     });
     const asset = await media.verify(
-      'manuscript',
+      'cover',
       BOOK,
-      `book-selling/test/books/${BOOK}/manuscript/file`,
+      `book-selling/test/books/${BOOK}/images/cover`,
     );
     expect(asset).toMatchObject({
       version: 9,
-      format: 'pdf',
-      pages: 318,
-      etag: 'abc',
+      format: 'jpg',
+      width: 1600,
       dominantColor: '#f2e8dc',
     });
   });
 
+  it('only takes images: book PDFs go to private R2 storage instead', () => {
+    expect(UPLOAD_KINDS).toEqual(['cover', 'gallery', 'author-photo']);
+  });
+
   it('rejects files over the limit and the wrong format', () => {
-    const rules = {
-      resourceType: 'image' as const,
-      deliveryType: 'authenticated' as const,
-      formats: ['pdf'],
-      folder: () => '',
-      maxBytes: () => 0,
-    };
+    const rules = { formats: ['jpg', 'png'], folder: () => '' };
     const base = {
       publicId: 'x',
       version: 1,
-      width: 0,
-      height: 0,
-      pages: 10,
-      etag: '',
+      width: 2000,
+      height: 3000,
       dominantColor: null,
     };
     expect(
       CloudinaryService.problemWith(
-        { ...base, format: 'pdf', bytes: 300 * 1_048_576 },
+        { ...base, format: 'jpg', bytes: 12 * 1_048_576 },
         rules,
-        200 * 1_048_576,
+        10 * 1_048_576,
       ),
-    ).toMatch(/300\.0 MB; the limit is 200 MB/);
+    ).toMatch(/12\.0 MB; the limit is 10 MB/);
     expect(
       CloudinaryService.problemWith(
-        { ...base, format: 'docx', bytes: 10 },
+        { ...base, format: 'pdf', bytes: 10 },
         rules,
-        200 * 1_048_576,
+        10 * 1_048_576,
       ),
-    ).toMatch(/Upload a PDF/);
+    ).toMatch(/Upload a JPG, PNG/);
   });
 
   it('builds delivery URLs with the crop first, so later resizing applies to the cropped cover', () => {
@@ -169,19 +147,5 @@ describe('CloudinaryService', () => {
     expect(media.imageUrl('p', 1)).toBe(
       'https://res.cloudinary.com/books-cloud/image/upload/v1/p',
     );
-  });
-
-  it('issues short-lived download URLs for private files', () => {
-    const url = new CloudinaryService(config()).privateDownloadUrl(
-      'book-selling/test/books/x/manuscript/file',
-      'pdf',
-      300,
-    );
-    const parsed = new URL(url);
-    expect(parsed.hostname).toBe('api.cloudinary.com');
-    expect(Number(parsed.searchParams.get('expires_at'))).toBeLessThanOrEqual(
-      Math.floor(Date.now() / 1000) + 300,
-    );
-    expect(parsed.searchParams.get('type')).toBe('authenticated');
   });
 });

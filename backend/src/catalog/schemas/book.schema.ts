@@ -111,7 +111,7 @@ export class Preview {
   @Prop({ type: [Number], default: [] }) pageMap: number[];
   /** Manuscript checksum the served file was built from. */
   @Prop({ type: String, default: null }) sourceChecksum: string | null;
-  /** Public URLs of two tiny, blurred images of the pages just after the preview. */
+  /** Two tiny, blurred JPEGs (data URIs) of the pages just after the preview. */
   @Prop({ type: [String], default: [] }) teasers: string[];
   @Prop({ type: String, default: null }) error: string | null;
   /** Changes on every queue, so a stale build can't overwrite a newer request. */
@@ -153,6 +153,12 @@ export class Book {
   @Prop({ type: [StoredImageSchema], default: [] }) gallery: StoredImage[];
   @Prop({ type: ManuscriptSchema, default: null })
   manuscript: Manuscript | null;
+  /**
+   * Replaced files of a book that was on sale, kept because buyers' copies came from them. BS-9
+   * moves buyers to the new file; a never-sold book's old file is deleted on replace instead.
+   */
+  @Prop({ type: [ManuscriptSchema], default: [] })
+  previousManuscripts: Manuscript[];
   @Prop({ type: PreviewSchema, default: () => ({}) }) preview: Preview;
 
   @Prop({ type: [BookFormatSchema], default: [] }) formats: BookFormat[];

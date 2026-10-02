@@ -3,7 +3,6 @@ import {
   Injectable,
   Logger,
   NotFoundException,
-  ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
@@ -21,7 +20,8 @@ import {
   CATALOG_TAGS,
   StorefrontRevalidator,
 } from '../catalog/storefront-revalidator.js';
-import { CloudinaryService } from '../uploads/cloudinary.service.js';
+import { BookFilesService } from '../uploads/book-files.service.js';
+import { renderTeasers } from './page-teaser.js';
 import {
   buildPreview,
   DEFAULT_MAX_PREVIEW_PERCENT,
@@ -35,7 +35,7 @@ import { PreviewStorage } from './preview-storage.js';
 
 /** A build that ran longer than this is assumed dead (instance restarted) and is re-queued. */
 export const STALE_BUILD_MS = 15 * 60_000;
-/** Transient failures (network, Cloudinary) are retried this many times. */
+/** Transient failures (network, R2) are retried this many times. */
 export const MAX_BUILD_ATTEMPTS = 3;
 const TEASER_COUNT = 2;
 
@@ -80,7 +80,7 @@ export class PreviewService {
   constructor(
     @InjectModel(Book.name) private readonly books: Model<Book>,
     private readonly storage: PreviewStorage,
-    private readonly media: CloudinaryService,
+    private readonly files: BookFilesService,
     private readonly audit: AuditService,
     private readonly revalidator: StorefrontRevalidator,
     private readonly config: ConfigService,
@@ -147,34 +147,6 @@ export class PreviewService {
     return book;
   }
 
-  /** Signed thumbnails of manuscript pages for the section picker (staff only). */
-  async manuscriptPages(
-    id: string,
-    from: number,
-    to: number,
-  ): Promise<Array<{ page: number; url: string }>> {
-    const book = await this.getBook(id);
-    if (!book.manuscript) return [];
-    if (!this.media.configured) {
-      throw new ServiceUnavailableException(
-        'Page thumbnails need Cloudinary, which is not configured on this server.',
-      );
-    }
-    const last = Math.min(to, book.manuscript.pages, from + 59);
-    const pages: Array<{ page: number; url: string }> = [];
-    for (let page = Math.max(1, from); page <= last; page += 1) {
-      pages.push({
-        page,
-        url: this.media.manuscriptPageUrl(
-          book.manuscript.publicId,
-          book.manuscript.version,
-          page,
-        ),
-      });
-    }
-    return pages;
-  }
-
   // ---------------------------------------------------------------- worker
 
   /**
@@ -211,12 +183,12 @@ export class PreviewService {
       if (!manuscript) {
         throw new PreviewBuildError('Upload the book PDF first.');
       }
-      if (!this.media.configured) {
+      if (!this.files.configured) {
         throw new PreviewBuildError(
-          'File storage (Cloudinary) is not configured on this server, so the book PDF can’t be read.',
+          'Book file storage (Cloudflare R2) is not configured on this server, so the book PDF can’t be read.',
         );
       }
-      const source = await this.media.downloadManuscript(manuscript.publicId);
+      const source = await this.files.download(manuscript.key);
       const built = await buildPreview(source, {
         title: book.title,
         sections: book.preview.sections,
@@ -228,7 +200,13 @@ export class PreviewService {
         { bookId: book._id.toString(), sourceChecksum: manuscript.checksum },
       );
       const pageMap = previewPageNumbers(book.preview.sections);
-      const teasers = await this.teasers(book, pageMap, built.sourcePages);
+      // Last use of `source`: rendering the teasers takes ownership of its memory.
+      const teasers = await this.teasers(
+        book,
+        source,
+        pageMap,
+        built.sourcePages,
+      );
 
       // Only applies if nobody queued a newer build meanwhile.
       const previousFileId = book.preview.fileId;
@@ -295,33 +273,25 @@ export class PreviewService {
   /** Two blurred hints of the next pages. Optional: a failure here never fails the build. */
   private async teasers(
     book: BookDocument,
+    source: Uint8Array,
     pageMap: number[],
     totalPages: number,
   ): Promise<string[]> {
-    const manuscript = book.manuscript;
-    if (!manuscript || !this.media.configured) return [];
     const after = pageMap.at(-1) ?? 0;
-    const urls: string[] = [];
+    const pages: number[] = [];
     for (let i = 1; i <= TEASER_COUNT; i += 1) {
       const page = after + i;
-      if (page > totalPages || pageMap.includes(page)) continue;
-      try {
-        urls.push(
-          await this.media.createTeaser(
-            manuscript.publicId,
-            manuscript.version,
-            page,
-            book._id.toString(),
-            i,
-          ),
-        );
-      } catch (error) {
-        this.logger.warn(
-          `Teaser for page ${page} skipped: ${(error as Error).message}`,
-        );
-      }
+      if (page <= totalPages && !pageMap.includes(page)) pages.push(page);
     }
-    return urls;
+    try {
+      const rendered = await renderTeasers(source, pages);
+      return rendered.filter((teaser): teaser is string => teaser !== null);
+    } catch (error) {
+      this.logger.warn(
+        `Teasers for "${book.title}" skipped: ${(error as Error).message}`,
+      );
+      return [];
+    }
   }
 
   // ---------------------------------------------------------------- public

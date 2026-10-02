@@ -89,9 +89,9 @@ export class AuthorsService {
       alt: dto.alt ?? author.name,
     };
     await author.save();
-    await this.media.markAttached('author-photo', asset.publicId);
+    await this.media.markAttached(asset.publicId);
     if (previous && previous !== asset.publicId)
-      await this.media.destroy('author-photo', previous);
+      await this.media.destroy(previous);
     await this.record(actor, 'author.photo_changed', author);
     return author;
   }
@@ -104,8 +104,7 @@ export class AuthorsService {
       );
     }
     await author.deleteOne();
-    if (author.photo)
-      await this.media.destroy('author-photo', author.photo.publicId);
+    if (author.photo) await this.media.destroy(author.photo.publicId);
     await this.record(actor, 'author.deleted', author, { name: author.name });
   }
 

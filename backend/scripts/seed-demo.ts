@@ -23,6 +23,7 @@ import { Author } from '../src/catalog/schemas/author.schema.js';
 import { Book } from '../src/catalog/schemas/book.schema.js';
 import { Category } from '../src/catalog/schemas/category.schema.js';
 import { buildPreview } from '../src/preview/preview-builder.js';
+import { renderTeasers } from '../src/preview/page-teaser.js';
 import { PreviewStorage } from '../src/preview/preview-storage.js';
 import { demoManuscript } from './demo-manuscript.js';
 
@@ -427,6 +428,12 @@ try {
         sections,
         maxPercent: 15,
       });
+      const size = manuscript.bytes.length;
+      const lastFree = manuscript.introduction.toPage;
+      // Last use of the manuscript bytes: rendering takes ownership of them.
+      const teasers = (
+        await renderTeasers(manuscript.bytes, [lastFree + 1, lastFree + 2])
+      ).filter((t): t is string => t !== null);
       const checksum = `demo-${book._id.toString()}`;
       const fileId = await storage.save(
         built.bytes,
@@ -446,10 +453,10 @@ try {
               children: [],
             })),
             pageCount: manuscript.pages,
+            // A placeholder key: the demo manuscript is never uploaded (the preview is built here).
             manuscript: {
-              publicId: `demo/${book.slug}`,
-              version: 1,
-              bytes: manuscript.bytes.length,
+              key: `demo/${book.slug}.pdf`,
+              bytes: size,
               pages: manuscript.pages,
               checksum,
               uploadedAt: new Date(),
@@ -467,7 +474,7 @@ try {
                 ),
               ),
               sourceChecksum: checksum,
-              teasers: [],
+              teasers,
               error: null,
               buildToken: 1,
               attempts: 0,

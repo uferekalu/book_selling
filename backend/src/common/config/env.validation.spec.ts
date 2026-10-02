@@ -16,6 +16,11 @@ const productionRequired = {
   CLOUDINARY_CLOUD_NAME: 'books-cloud',
   CLOUDINARY_API_KEY: '123456789012345',
   CLOUDINARY_API_SECRET: 'cloudinary-secret',
+  // Private book files (R2) are mandatory in production too (BS-20).
+  R2_ACCOUNT_ID: 'acct123',
+  R2_ACCESS_KEY_ID: 'r2-access-key',
+  R2_SECRET_ACCESS_KEY: 'r2-secret-key',
+  R2_BUCKET: 'book-selling-production',
   // Payments must say test or live explicitly in production (BS-8).
   PAYMENTS_MODE: 'test',
 };
