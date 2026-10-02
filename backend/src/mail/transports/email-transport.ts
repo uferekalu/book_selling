@@ -10,6 +10,11 @@ export interface OutgoingEmail {
   /** Provider tags for filtering in its dashboard (template name, category). */
   tags: Record<string, string>;
   headers?: Record<string, string>;
+  attachments?: Array<{
+    filename: string;
+    content: Buffer;
+    contentType: string;
+  }>;
 }
 
 export interface EmailTransport {

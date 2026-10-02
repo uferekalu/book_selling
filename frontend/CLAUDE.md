@@ -99,6 +99,9 @@ Full design: `../docs/ARCHITECTURE.md` §6 (design system) and §7 (frontend arc
   retried, cancellable); book PDFs use `useManuscriptUpload(bookId)` → `uploadInParts` (private R2:
   8MB pieces, 3 in parallel, per-piece retry, fresh links on 403). Don't call either store any
   other way.
+- PDFs from the API (invoices) go through `files-api.ts`: the query returns an object URL (so the
+  store stays serialisable and the sign-in refresh applies) and `saveObjectUrl` saves and frees it.
+- The preview and full readers share `reader-controls.tsx` and `PdfPage`; don't fork them.
 - Admin editor sections save independently and report unsaved state with `useReportDirty`. Sync
   from server data during render keyed on `updatedAt`, not in an effect (React's
   `set-state-in-effect` lint fails otherwise).

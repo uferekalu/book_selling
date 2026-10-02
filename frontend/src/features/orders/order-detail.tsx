@@ -1,10 +1,12 @@
 "use client";
 
-import { Badge, BookCover, Button, Card, Divider } from "@/components/ui";
+import { BookOpen } from "lucide-react";
+import { Badge, BookCover, Button, ButtonLink, Card, Divider, Icon } from "@/components/ui";
 import type { OrderStatus, OrderView } from "@/lib/api/commerce-api";
 import { countryName } from "@/lib/countries";
 import { PayNow } from "@/features/checkout/pay-now";
 import { formatMoney } from "@/lib/money";
+import { hasInvoice, InvoiceButton, ShipmentProgress } from "./order-extras";
 
 export const ORDER_STATUS: Record<OrderStatus, { label: string; tone: "neutral" | "info" | "success" | "warning" | "danger" }> = {
   pending_payment: { label: "Awaiting payment", tone: "warning" },
@@ -30,14 +32,19 @@ export function OrderDetail({
   onCancel,
   cancelling,
   guest = false,
+  staff = false,
 }: {
   order: OrderView;
   onCancel?: () => void;
   cancelling?: boolean;
   /** A guest order (paying needs the key kept on this device). */
   guest?: boolean;
+  /** Shown inside the admin order page, which has its own invoice, shipping and ebook panels. */
+  staff?: boolean;
 }) {
   const money = (amount: number) => formatMoney({ amount, currency: order.currency });
+  // Signed-in owners open their ebooks from here; a full refund removed them from the library.
+  const canRead = !guest && !staff && hasInvoice(order) && order.status !== "refunded";
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -45,7 +52,10 @@ export function OrderDetail({
           <h1 className="text-4xl font-medium">Order {order.orderNumber}</h1>
           <p className="text-sm text-text-muted">Placed {when.format(new Date(order.createdAt))}</p>
         </div>
-        <OrderStatusBadge order={order} />
+        <div className="flex flex-wrap items-center gap-3">
+          <OrderStatusBadge order={order} />
+          {hasInvoice(order) && !staff && <InvoiceButton order={order} guest={guest} />}
+        </div>
       </div>
 
       {order.awaitingPayment && (
@@ -77,7 +87,15 @@ export function OrderDetail({
                   {item.quantity > 1 ? " each" : ""}
                 </p>
               </div>
-              <span className="font-medium tabular-nums">{money(item.lineTotal)}</span>
+              <div className="flex flex-col items-end gap-2">
+                <span className="font-medium tabular-nums">{money(item.lineTotal)}</span>
+                {canRead && item.format === "ebook" && (
+                  <ButtonLink href={`/account/library/${item.bookId}/read`} size="sm" variant="outline">
+                    <Icon icon={BookOpen} size="sm" />
+                    Read now
+                  </ButtonLink>
+                )}
+              </div>
             </li>
           ))}
         </ul>
@@ -128,6 +146,8 @@ export function OrderDetail({
           )}
         </Card>
       )}
+
+      {!staff && <ShipmentProgress order={order} />}
 
       <Card className="flex flex-col gap-3">
         <h2 className="text-xl font-medium">History</h2>

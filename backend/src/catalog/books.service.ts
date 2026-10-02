@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Types, type QueryFilter, type Model } from 'mongoose';
 import { AuditService } from '../audit/audit.module.js';
@@ -13,7 +14,10 @@ import { markdownToSafeHtml } from '../common/text/rich-text.js';
 import { toObjectId } from '../common/utils/object-id.js';
 import { PreviewStorage } from '../preview/preview-storage.js';
 import { queuePreviewBuild } from '../preview/preview.service.js';
+import { Entitlement } from '../commerce/schemas/entitlement.schema.js';
+import { MailService } from '../mail/mail.service.js';
 import { BookFilesService } from '../uploads/book-files.service.js';
+import { User } from '../users/schemas/user.schema.js';
 import { CloudinaryService } from '../uploads/cloudinary.service.js';
 import { normaliseIsbn13, publishProblems } from './catalog-rules.js';
 import type {
@@ -44,6 +48,8 @@ const ADMIN_PAGE_SIZE = 25;
 /** Everything staff do to books (ARCHITECTURE §10.0). Every change is audited and refreshes the storefront. */
 @Injectable()
 export class BooksService {
+  private readonly frontendUrl: string;
+
   constructor(
     @InjectModel(Book.name) private readonly books: Model<Book>,
     @InjectModel(Author.name) private readonly authors: Model<Author>,
@@ -54,7 +60,17 @@ export class BooksService {
     private readonly previewFiles: PreviewStorage,
     private readonly manuscripts: ManuscriptsService,
     private readonly files: BookFilesService,
-  ) {}
+    @InjectModel(Entitlement.name)
+    private readonly entitlements: Model<Entitlement>,
+    @InjectModel(User.name) private readonly users: Model<User>,
+    private readonly mail: MailService,
+    config: ConfigService,
+  ) {
+    this.frontendUrl = (config.get<string>('FRONTEND_URL') ?? '').replace(
+      /\/+$/,
+      '',
+    );
+  }
 
   async list(query: AdminBookListQuery): Promise<{
     items: BookDocument[];
@@ -387,12 +403,52 @@ export class BooksService {
     await book.save();
     await this.manuscripts.attached(file.key);
     if (previous && !book.listedAt) await this.files.delete(previous.key);
+    // Owners' libraries switch to the new edition by themselves (BS-9); telling them is optional,
+    // so a typo fix doesn't email everyone.
+    const notified =
+      previous && dto.notifyBuyers
+        ? await this.notifyOwners(book, file.checksum)
+        : 0;
     await this.record(actor, 'book.manuscript_changed', book, {
       pages: file.pages,
       bytes: file.bytes,
       replaced: Boolean(previous),
+      notified,
     });
     return book;
+  }
+
+  /** Emails every current owner that an updated edition is in their library; returns how many. */
+  private async notifyOwners(
+    book: BookDocument,
+    checksum: string,
+  ): Promise<number> {
+    const owners = await this.entitlements
+      .find({ bookId: book._id, revokedAt: null }, { userId: 1 })
+      .lean()
+      .exec();
+    if (owners.length === 0) return 0;
+    const users = await this.users
+      .find(
+        { _id: { $in: owners.map((o) => o.userId) } },
+        { name: 1, email: 1 },
+      )
+      .lean()
+      .exec();
+    for (const user of users) {
+      await this.mail.enqueue({
+        to: user.email,
+        template: 'library.edition-updated',
+        // Once per owner per edition, however often the editor saves.
+        dedupeKey: `edition-updated:${book._id.toString()}:${checksum}:${user._id.toString()}`,
+        data: {
+          name: user.name.split(' ')[0] || user.name,
+          title: book.title,
+          libraryUrl: `${this.frontendUrl}/account/library`,
+        },
+      });
+    }
+    return users.length;
   }
 
   async publish(id: string, actor: AccessTokenPayload): Promise<BookDocument> {

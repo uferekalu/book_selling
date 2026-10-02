@@ -1,6 +1,6 @@
 # Roadmap
 
-**Next planned ticket: BS-9** · **Next reactive ticket: BS-23**
+**Next planned ticket: BS-10** · **Next reactive ticket: BS-23**
 
 Each ticket is one branch (`feature/BS-<n>-<suffix>`) and one squash-merged PR. The order is
 deliberate: each ticket builds only on merged work. When a ticket finishes, its row is rewritten
@@ -18,7 +18,7 @@ so planned numbers never shift; they get a new row at the end of the table.
 | BS-6 | `preview-reader` | See detail below | ✅ Done |
 | BS-7 | `cart-checkout-orders` | See detail below | ✅ Done |
 | BS-8 | `payments` | See detail below | ✅ Done |
-| BS-9 | `library-fulfillment` | Entitlements, My Library, online full reader (signed range-request URL, synced progress), downloads (5-min signed URLs, rate limit), per-buyer PDF stamping; shipments admin flow with tracking; receipt with PDF invoice; all commerce emails | ⏳ Planned |
+| BS-9 | `library-fulfillment` | See detail below | ✅ Done |
 | BS-10 | `messaging` | Socket.IO gateway (handshake auth, rooms, rejoin on reconnect), conversations and messages, staff inbox, "Ask the author" and order-linked threads, read receipts and unread counts, offline email fallback via delayed outbox, contact form (Turnstile/honeypot), in-app notifications bell | ⏳ Planned |
 | BS-11 | `reviews-wishlist-coupons` | Verified-buyer reviews with rating aggregation, wishlist, coupons admin UI | ⏳ Planned |
 | BS-12 | `admin-dashboard` | Revenue per currency, orders, preview → purchase conversion per book, best sellers, low stock, **Needs attention** queue (reconciliation, attention orders, dead emails), customers, audit log viewer, settings (currencies, provider switches, preview cap, refund threshold) | ⏳ Planned |
@@ -617,3 +617,42 @@ checklist is reviewed whenever a ticket is planned, so nothing important is forg
   (refund Flutterwave orders from the admin); Paystack and Flutterwave have no refund idempotency
   key (one more reason refunds are never retried automatically); the owner must decide on Stripe
   for a Nigerian business before going live.
+
+## BS-9: My Library, personal copies, shipping and invoices (✅ Done, 2026-10-02)
+
+- **Library and reading** (ARCHITECTURE §10.2): `library` module (`LibraryService`,
+  `reading_progress`, `download_events`); My Library page; the full reader for owners, streaming
+  the buyer's copy from R2 in byte ranges through a 60-minute link renewed in place; progress
+  synced to the account (resume on any device; `maxPage` for refund decisions); owners are sent
+  from the preview to the full book, and the book page says "Read now".
+- **Personal copies** (§10.3): every page stamped "Licensed to <name> · <email> · Order …" along
+  the visible bottom edge (rotated pages too; Yoruba letters outside the PDF font fall back to base
+  letters), built in the background (`CopyWorker`, build tokens, retries, owner alert on failure),
+  rebuilt automatically for a new edition while the old copy stays readable. Downloads: 5-minute
+  "save as" links, 10 per book per hour, abuse alert at 30 a day.
+- **Shipping** (§10.4): processing → shipped (carrier, tracking) → delivered with buyer emails,
+  conditional updates in transactions, delivery fulfils the order; admin "To ship" list and
+  shipping panel; customer delivery progress with tracking link.
+- **Invoices** (§10.5): PDF invoice for buyers, guests and staff, attached to the receipt through
+  new outbox attachment references (built at send time, sent without after 3 failed attempts).
+- **Emails**: `order.shipped`, `order.delivered`, `order.refund-issued` (on every confirmed
+  refund, in the same transaction, once per refund), `library.edition-updated` (opt-in when
+  replacing a sold book's file), owner alerts `ops.download-abuse` and `ops.copy-failed`; the
+  receipt now opens the library and carries the invoice. **Deviations**: "Your book is ready" is
+  part of the receipt rather than a second email at the same moment; "payment failed" is the
+  existing "complete your order" email, which already says the payment didn't go through.
+- **Refund evidence**: the admin order page shows per-ebook downloads, first opened, furthest page
+  and where the preview ends.
+- **Tests**: copy stamping read back with pdf.js (exact position on 0/90/180/270° pages), library
+  (copies, new editions, overtaken builds, retries and alerts, access, archived books, outline,
+  download limit and abuse alert, progress), shipments (sequence, refusals, concurrency, partial
+  refunds), invoice content read back with pdf.js, outbox attachments (and the fallback), refund
+  and receipt emails in the payments suite, library e2e routes, and a regression test for a race
+  the money-path review found (delivery must not overwrite a refund landing meanwhile; fixed by
+  conditioning on the exact order status). Backend 346 unit + 38 e2e; frontend 294.
+  **Live**: a 4 MB book in the owner's real R2 bucket, read in Chromium at 375px and 1280px: copy
+  prepared, pages streamed with range requests, stamp present, resume on the saved page, download
+  and invoice saved, no console errors (19/19).
+- **Also**: backend tests now run at most half the cores at once (`maxWorkers: '50%'`): with one
+  in-memory MongoDB per file, a file per core starved them and unrelated tests timed out locally.
+

@@ -4,6 +4,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Interval } from '@nestjs/schedule';
 import type { Model } from 'mongoose';
 import { JobLockService } from '../jobs/job-lock.service.js';
+import { AttachmentRegistry, type ResolvedAttachment } from './attachments.js';
 import { MailService } from './mail.service.js';
 import {
   MAX_ATTEMPTS,
@@ -35,6 +36,9 @@ const BATCH_SIZE = 25;
  * through the transport with the outbox id as idempotency key, and records the outcome. Retryable
  * failures back off; permanent ones and exhausted retries become `dead` and alert the owner.
  */
+/** Attempts to build an email's attachments before it is sent without them. */
+const ATTACHMENT_ATTEMPTS = 3;
+
 @Injectable()
 export class OutboxWorker {
   private readonly logger = new Logger(OutboxWorker.name);
@@ -49,6 +53,7 @@ export class OutboxWorker {
     private readonly renderer: TemplateRendererService,
     private readonly mail: MailService,
     private readonly locks: JobLockService,
+    private readonly attachmentFiles: AttachmentRegistry,
     config: ConfigService,
   ) {
     this.from =
@@ -151,6 +156,31 @@ export class OutboxWorker {
       return;
     }
 
+    let attachments: ResolvedAttachment[] = [];
+    if (row.attachments?.length) {
+      try {
+        attachments = await this.attachmentFiles.resolve(row.attachments);
+      } catch (error) {
+        // The email matters more than its attachment (a receipt also links to the invoice):
+        // retry a couple of times, then send it without.
+        if (row.attempts < ATTACHMENT_ATTEMPTS) {
+          await this.fail(
+            row,
+            now,
+            new EmailSendError(
+              `Attachment failed: ${(error as Error).message}`,
+              true,
+            ),
+            rendered.subject,
+          );
+          return;
+        }
+        this.logger.warn(
+          `Sending ${row.template} (${id}) without its attachment: ${(error as Error).message}`,
+        );
+      }
+    }
+
     try {
       const { providerMessageId } = await this.transport.send({
         from: this.from,
@@ -161,6 +191,7 @@ export class OutboxWorker {
         text: rendered.text,
         idempotencyKey: `outbox-${id}`,
         tags: { template: row.template, category: row.category },
+        ...(attachments.length ? { attachments } : {}),
       });
       const sensitive =
         isTemplateName(row.template) && EMAIL_TEMPLATES[row.template].sensitive;

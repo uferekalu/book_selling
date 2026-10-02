@@ -13,6 +13,7 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  IsUrl,
   Matches,
   Max,
   MaxLength,
@@ -29,6 +30,7 @@ import {
   type FormatType,
 } from '../../catalog/schemas/book.schema.js';
 import { COUPON_KINDS, type CouponKind } from '../schemas/coupon.schema.js';
+import { SHIPMENT_ACTIONS, type ShipmentAction } from '../shipments.service.js';
 
 const trim = ({ value }: { value: unknown }) =>
   typeof value === 'string' ? value.trim() : value;
@@ -175,6 +177,33 @@ export class GuestOrderDto {
 
 // ---------------------------------------------------------------- admin
 
+export class ShipmentUpdateDto {
+  @ApiProperty({ enum: SHIPMENT_ACTIONS })
+  @IsIn(SHIPMENT_ACTIONS)
+  status: ShipmentAction;
+
+  @ApiPropertyOptional({ description: 'Required when marking shipped' })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(80)
+  carrier?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(80)
+  trackingNumber?: string;
+
+  @ApiPropertyOptional({ description: 'The carrier’s tracking page (https)' })
+  @IsOptional()
+  @Transform(trim)
+  @IsUrl({ protocols: ['https'], require_protocol: true })
+  @MaxLength(500)
+  trackingUrl?: string;
+}
+
 class RateDto {
   @ApiProperty({ enum: CURRENCIES }) @IsIn(CURRENCIES) currency: Currency;
   @ApiProperty() @IsInt() @Min(0) @Max(MAX_PRICE_MINOR) firstItem: number;
@@ -282,6 +311,13 @@ export class AdminOrdersQuery {
   @IsString()
   @MaxLength(40)
   status?: string;
+  @ApiPropertyOptional({
+    enum: ['to_ship'],
+    description: 'Paid orders with print copies not shipped yet',
+  })
+  @IsOptional()
+  @IsIn(['to_ship'])
+  shipment?: 'to_ship';
   @ApiPropertyOptional()
   @IsOptional()
   @Transform(trim)

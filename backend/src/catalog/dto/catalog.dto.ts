@@ -71,6 +71,14 @@ export class AttachManuscriptDto {
   @IsNotEmpty()
   @MaxLength(300)
   key: string;
+
+  @ApiPropertyOptional({
+    description:
+      'When replacing the file of a book on sale: email every owner that an updated edition is in their library',
+  })
+  @IsOptional()
+  @IsBoolean()
+  notifyBuyers?: boolean;
 }
 
 export class StartManuscriptUploadDto {

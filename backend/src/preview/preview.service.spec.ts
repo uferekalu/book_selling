@@ -46,7 +46,12 @@ describe('Preview (build, serve, rebuild)', () => {
         ConfigModule.forRoot({
           isGlobal: true,
           ignoreEnvFile: true,
-          load: [() => ({ PREVIEW_MAX_PERCENT: 15 })],
+          load: [
+            () => ({
+              PREVIEW_MAX_PERCENT: 15,
+              FRONTEND_URL: 'https://books.example.com',
+            }),
+          ],
         }),
         MongooseModule.forRoot(mongod.getUri()),
         AuditModule,

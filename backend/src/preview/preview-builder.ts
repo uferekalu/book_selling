@@ -74,16 +74,31 @@ export function sectionProblems(
   return problems;
 }
 
-/** Helvetica only encodes WinAnsi; anything else in a title becomes a plain substitute. */
-function encodable(text: string, font: PDFFont): string {
-  let out = '';
-  for (const char of text) {
+/**
+ * Helvetica only encodes WinAnsi. A letter outside it falls back to its base letter (Yoruba "ọ",
+ * "ṣ", "ẹ" become o, s, e), and only then to "?".
+ */
+export function encodable(text: string, font: PDFFont): string {
+  const fits = (char: string) => {
     try {
       font.encodeText(char);
-      out += char;
+      return true;
     } catch {
-      out += '?';
+      return false;
     }
+  };
+  const fitsAll = (value: string) => {
+    for (const char of value) if (!fits(char)) return false;
+    return true;
+  };
+  let out = '';
+  for (const char of text) {
+    if (fits(char)) {
+      out += char;
+      continue;
+    }
+    const base = char.normalize('NFD').replace(/\p{M}/gu, '');
+    out += base && fitsAll(base) ? base : '?';
   }
   return out;
 }

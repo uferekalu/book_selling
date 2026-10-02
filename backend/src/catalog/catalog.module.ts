@@ -1,6 +1,12 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { JobsModule } from '../jobs/jobs.module.js';
+import { MailModule } from '../mail/mail.module.js';
+import {
+  Entitlement,
+  EntitlementSchema,
+} from '../commerce/schemas/entitlement.schema.js';
+import { User, UserSchema } from '../users/schemas/user.schema.js';
 import { UploadsController } from '../uploads/uploads.controller.js';
 import { UploadsModule } from '../uploads/uploads.module.js';
 import { AdminCatalogController } from './admin-catalog.controller.js';
@@ -33,7 +39,11 @@ import { PreviewWorker } from '../preview/preview.worker.js';
   imports: [
     UploadsModule,
     JobsModule,
+    MailModule,
     MongooseModule.forFeature([
+      // Read-only here: who owns a book, to email them about an updated edition.
+      { name: Entitlement.name, schema: EntitlementSchema },
+      { name: User.name, schema: UserSchema },
       { name: Book.name, schema: BookSchema },
       { name: Author.name, schema: AuthorSchema },
       { name: Category.name, schema: CategorySchema },

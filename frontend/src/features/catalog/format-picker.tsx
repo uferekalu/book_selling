@@ -1,14 +1,15 @@
 "use client";
 
-import { BookOpen, Download, ShoppingBag, Truck } from "lucide-react";
+import { BookOpen, CheckCircle2, Download, ShoppingBag, Truck } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Badge, Button, ButtonLink, Icon, PriceTag, RadioGroup, useToast } from "@/components/ui";
 import { useAddToCartMutation } from "@/lib/api/commerce-api";
 import { errorMessage, errorStatus } from "@/lib/api/errors";
 import type { FormatType, PublicFormat } from "@/lib/catalog-types";
+import { useOwnedBooksQuery } from "@/lib/api/library-api";
 import { useCurrency } from "@/lib/client-currency";
-import { useAppDispatch } from "@/lib/redux/hooks";
+import { useAppDispatch, useAppSelector } from "@/lib/redux/hooks";
 import { cartOpened } from "@/lib/redux/slices/cart-ui-slice";
 
 const LABEL: Record<FormatType, string> = { ebook: "Ebook (PDF)", print: "Print" };
@@ -50,7 +51,12 @@ export function FormatPicker({
   const current = purchasable.find((f) => f.type === selected);
   const currency = useCurrency();
   const [add, addState] = useAddToCartMutation();
-  const [owned, setOwned] = useState(false);
+  const [refusedAsOwned, setRefusedAsOwned] = useState(false);
+  const signedIn = useAppSelector((state) => state.session.status === "authenticated");
+  const { data: ownedBooks } = useOwnedBooksQuery(undefined, { skip: !signedIn });
+  // Owners read instead of buying again (checkout refuses a second copy anyway).
+  const ownsEbook = refusedAsOwned || Boolean(ownedBooks?.some((b) => b.bookId === bookId));
+  const owned = ownsEbook && current?.type === "ebook";
   const router = useRouter();
   const dispatch = useAppDispatch();
   const { toast } = useToast();
@@ -70,7 +76,7 @@ export function FormatPicker({
         toast({ title: "Added to your cart", tone: "success" });
       }
     } catch (error) {
-      if (errorStatus(error) === 409 && current.type === "ebook") setOwned(true);
+      if (errorStatus(error) === 409 && current.type === "ebook") setRefusedAsOwned(true);
       toast({ title: errorMessage(error), tone: "danger" });
     }
   };
@@ -81,10 +87,7 @@ export function FormatPicker({
         legend="Choose a format"
         variant="cards"
         value={selected}
-        onChange={(value) => {
-          setSelected(value);
-          setOwned(false);
-        }}
+        onChange={(value) => setSelected(value)}
         options={purchasable.map((format) => ({
           value: format.type,
           label: (
@@ -100,8 +103,9 @@ export function FormatPicker({
       />
       <div className="flex flex-col gap-3 sm:flex-row">
         {owned ? (
-          <ButtonLink href="/account/orders" size="lg" variant="outline" fullWidth>
-            In your library
+          <ButtonLink href={`/account/library/${bookId}/read`} size="lg" variant="accent" fullWidth>
+            <Icon icon={BookOpen} size="sm" />
+            Read now
           </ButtonLink>
         ) : (
           <Button
@@ -117,7 +121,7 @@ export function FormatPicker({
             {current?.type === "print" ? "Add to cart" : "Buy ebook"}
           </Button>
         )}
-        {!showPreviewButton ? null : hasPreview ? (
+        {!showPreviewButton || owned ? null : hasPreview ? (
           <ButtonLink href={`/books/${slug}/read`} size="lg" variant="outline" fullWidth>
             <Icon icon={BookOpen} size="sm" />
             Read the introduction
@@ -128,7 +132,13 @@ export function FormatPicker({
           </Button>
         )}
       </div>
-      <p className="text-sm text-text-muted">Secure payment with Paystack, Flutterwave or Stripe.</p>
+      {owned ? (
+        <p className="flex items-center gap-2 text-sm text-success">
+          <Icon icon={CheckCircle2} size="sm" /> This ebook is in your library: read it online or download it any time.
+        </p>
+      ) : (
+        <p className="text-sm text-text-muted">Secure payment with Paystack, Flutterwave or Stripe.</p>
+      )}
       {current?.type === "print" && (
         <p className="flex items-center gap-2 text-sm text-text-muted">
           <Icon icon={Truck} size="sm" /> Ships worldwide; the cost for your country is shown before you pay.

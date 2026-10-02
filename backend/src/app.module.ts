@@ -9,6 +9,7 @@ import { AccessTokenGuard, RolesGuard } from './auth/guards/auth.guards.js';
 import { AuthModule } from './auth/auth.module.js';
 import { CatalogModule } from './catalog/catalog.module.js';
 import { CommerceModule } from './commerce/commerce.module.js';
+import { LibraryModule } from './library/library.module.js';
 import { PaymentsModule } from './payments/payments.module.js';
 import { envValidationSchema } from './common/config/env.validation.js';
 import { DatabaseModule } from './database/database.module.js';
@@ -73,6 +74,7 @@ import { UsersModule } from './users/users.module.js';
     CatalogModule,
     CommerceModule,
     PaymentsModule,
+    LibraryModule,
   ],
   // Order matters: rate limit first, then authentication (default-deny), then roles.
   providers: [

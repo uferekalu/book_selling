@@ -2,7 +2,7 @@ import { ConfigModule } from '@nestjs/config';
 import { MongooseModule, getModelToken } from '@nestjs/mongoose';
 import { Test, type TestingModule } from '@nestjs/testing';
 import type { MongoMemoryReplSet } from 'mongodb-memory-server';
-import type { Model } from 'mongoose';
+import { Types, type Model } from 'mongoose';
 import { startMongo } from '../../test/mongo.js';
 import { AuditLog, AuditModule } from '../audit/audit.module.js';
 import type { AccessTokenPayload } from '../auth/interfaces/auth.types.js';
@@ -340,6 +340,53 @@ describe('Catalog (books, authors, categories, storefront queries)', () => {
       ]);
       expect(files.objects.has(before.key)).toBe(true);
       expect(await uploadModel.countDocuments()).toBe(0);
+    });
+
+    it('emails current owners about an updated edition only when asked, once per edition', async () => {
+      const book = await readyBook();
+      const id = book._id.toString();
+      const db = bookModel.db;
+      const users = await db.collection('users').insertMany([
+        { email: 'owner1@example.com', name: 'Ada Okafor' },
+        { email: 'owner2@example.com', name: 'Bayo Ade' },
+        { email: 'refunded@example.com', name: 'Chi Eze' },
+      ]);
+      const ids = Object.values(users.insertedIds);
+      await db.collection('entitlements').insertMany(
+        ids.map((userId, i) => ({
+          userId,
+          bookId: book._id,
+          orderId: new Types.ObjectId(),
+          grantedAt: new Date(),
+          revokedAt: i === 2 ? new Date() : null,
+        })),
+      );
+      const outbox = () =>
+        db
+          .collection('email_outbox')
+          .find({ template: 'library.edition-updated' })
+          .toArray();
+
+      // A replacement without the box ticked: nobody is emailed.
+      await attachPdf(id, await manuscriptPdf(41));
+      expect(await outbox()).toHaveLength(0);
+
+      const key = await files.upload(
+        manuscripts,
+        id,
+        await manuscriptPdf(42),
+        admin,
+      );
+      await books.attachManuscript(id, { key, notifyBuyers: true }, admin);
+      const sent = await outbox();
+      expect(sent.map((e) => e.to).sort((a, b) => a.localeCompare(b))).toEqual([
+        'owner1@example.com',
+        'owner2@example.com',
+      ]);
+      expect(sent[0].data).toMatchObject({
+        title: book.title,
+        libraryUrl: 'https://books.example.com/account/library',
+      });
     });
 
     describe('book file (R2) uploads', () => {
