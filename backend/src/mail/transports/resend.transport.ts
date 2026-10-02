@@ -44,6 +44,15 @@ export class ResendTransport implements EmailTransport {
           html: email.html,
           text: email.text,
           headers: email.headers,
+          ...(email.attachments?.length
+            ? {
+                attachments: email.attachments.map((a) => ({
+                  filename: a.filename,
+                  content: a.content,
+                  contentType: a.contentType,
+                })),
+              }
+            : {}),
           tags: Object.entries(email.tags).map(([name, value]) => ({
             name,
             // Resend tag values allow only ASCII letters, numbers, underscores and dashes.

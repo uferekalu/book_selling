@@ -1,7 +1,8 @@
 "use client";
 
 import { FileCheck2, Lock } from "lucide-react";
-import { Alert, Icon, Spinner, useToast } from "@/components/ui";
+import { useState } from "react";
+import { Alert, Checkbox, Icon, Spinner, useToast } from "@/components/ui";
 import { useAttachManuscriptMutation, type AdminBook } from "@/lib/api/catalog-admin-api";
 import { errorMessage } from "@/lib/api/errors";
 import { formatBytes } from "@/lib/upload";
@@ -15,13 +16,17 @@ const uploadedOn = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "lo
 export function ManuscriptSection({ book }: { book: AdminBook }) {
   const { upload, cancel, progress } = useManuscriptUpload(book.id);
   const [attach, attachState] = useAttachManuscriptMutation();
+  const [notifyBuyers, setNotifyBuyers] = useState(false);
   const { toast } = useToast();
+  // Replacing the file of a book that was ever on sale reaches its owners (BS-9).
+  const replacingSoldBook = Boolean(book.manuscript && book.listedAt);
 
   const choose = async (file: File) => {
     try {
       const key = await upload(file);
       if (!key) return;
-      const saved = await attach({ id: book.id, key }).unwrap();
+      const saved = await attach({ id: book.id, key, notifyBuyers: replacingSoldBook && notifyBuyers }).unwrap();
+      setNotifyBuyers(false);
       toast({
         title: "Book file saved",
         description: saved.manuscript ? `${saved.manuscript.pages} pages · ${formatBytes(saved.manuscript.bytes)}` : undefined,
@@ -51,9 +56,18 @@ export function ManuscriptSection({ book }: { book: AdminBook }) {
       ) : null}
       {book.manuscript && book.listedAt && (
         <Alert tone="info" title="Replacing the file of a book on sale">
-          New buyers get the new file. Existing buyers keep the version they bought until library updates arrive (planned
-          with the reading library).
+          Everyone who owns the ebook gets the new edition in their library automatically (their personal copies are made
+          again). Copies they downloaded before don’t change.
         </Alert>
+      )}
+      {replacingSoldBook && (
+        <Checkbox
+          label="Email existing buyers about the updated edition"
+          description="Worth it for a new edition or important corrections; leave it off for small fixes."
+          checked={notifyBuyers}
+          onChange={(e) => setNotifyBuyers(e.target.checked)}
+          disabled={attachState.isLoading || progress !== undefined}
+        />
       )}
       {attachState.isLoading ? (
         <div className="flex items-center gap-3 rounded-2xl border border-border bg-surface-sunken p-5" aria-live="polite">

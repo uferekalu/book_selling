@@ -173,7 +173,34 @@ export interface AdminPayment {
   }>;
 }
 
-export type AdminOrderView = OrderView & { attention: { required: boolean; reason: string } };
+/** What a buyer did with an order's ebooks, for refund decisions (PRODUCT_RULES §9). */
+export interface EbookUsage {
+  bookId: string;
+  title: string;
+  downloads: number;
+  lastDownloadedAt: string | null;
+  firstOpenedAt: string | null;
+  furthestPage: number | null;
+  previewEndsAt: number | null;
+  readBeyondPreview: boolean;
+  removed: boolean;
+}
+
+export type AdminOrderView = OrderView & {
+  attention: { required: boolean; reason: string };
+  /** Only on the single-order view. */
+  ebookUsage?: EbookUsage[];
+};
+
+export type ShipmentStep = "processing" | "shipped" | "delivered";
+
+export interface ShipmentUpdateInput {
+  orderNumber: string;
+  status: ShipmentStep;
+  carrier?: string;
+  trackingNumber?: string;
+  trackingUrl?: string;
+}
 
 type CartLineKey = { bookId: string; format: FormatType; quantity: number; currency: Currency };
 
@@ -234,7 +261,8 @@ export const commerceApi = api.injectEndpoints({
     }),
     verifyPayment: builder.mutation<PaymentVerification, string>({
       query: (reference) => ({ url: "/payments/verify", method: "POST", body: { reference } }),
-      invalidatesTags: ["Orders", "Cart"],
+      // A paid ebook is now owned: the library and "In your library" refresh.
+      invalidatesTags: ["Orders", "Cart", "Library"],
     }),
     adminOrder: builder.query<AdminOrderView, string>({
       query: (orderNumber) => `/admin/orders/${orderNumber}`,
@@ -268,7 +296,11 @@ export const commerceApi = api.injectEndpoints({
       query: (id) => ({ url: `/admin/shipping-zones/${id}`, method: "DELETE" }),
       invalidatesTags: ["AdminShipping"],
     }),
-    adminOrders: builder.query<AdminOrderView[], { status?: string; q?: string }>({
+    updateShipment: builder.mutation<AdminOrderView, ShipmentUpdateInput>({
+      query: ({ orderNumber, ...body }) => ({ url: `/admin/orders/${orderNumber}/shipment`, method: "POST", body }),
+      invalidatesTags: (_r, _e, { orderNumber }) => [{ type: "AdminOrders", id: orderNumber }, "AdminOrders"],
+    }),
+    adminOrders: builder.query<AdminOrderView[], { status?: string; q?: string; shipment?: "to_ship" }>({
       query: (params) => ({ url: "/admin/orders", params }),
       providesTags: ["AdminOrders"],
     }),
@@ -299,4 +331,5 @@ export const {
   useAdminOrderPaymentsQuery,
   useRefundOrderMutation,
   useResolveAttentionMutation,
+  useUpdateShipmentMutation,
 } = commerceApi;

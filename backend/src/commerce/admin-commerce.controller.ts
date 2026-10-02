@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  Header,
   HttpCode,
   HttpStatus,
   NotFoundException,
@@ -10,6 +11,7 @@ import {
   Post,
   Put,
   Query,
+  StreamableFile,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
@@ -20,8 +22,12 @@ import { CouponsService } from './coupons.service.js';
 import {
   AdminOrdersQuery,
   CouponDto,
+  ShipmentUpdateDto,
   ShippingZoneDto,
 } from './dto/commerce.dto.js';
+import { EbookUsageService } from './ebook-usage.service.js';
+import { InvoiceService } from './invoice.service.js';
+import { ShipmentsService } from './shipments.service.js';
 import { presentOrder } from './order.presenter.js';
 import {
   Order,
@@ -43,6 +49,9 @@ export class AdminCommerceController {
     private readonly shipping: ShippingService,
     private readonly coupons: CouponsService,
     @InjectModel(Order.name) private readonly orders: Model<Order>,
+    private readonly shipments: ShipmentsService,
+    private readonly invoices: InvoiceService,
+    private readonly usage: EbookUsageService,
   ) {}
 
   // ---- shipping zones
@@ -135,7 +144,7 @@ export class AdminCommerceController {
     return this.couponList();
   }
 
-  // ---- orders (a first, read-only view; fulfilment and refunds arrive in BS-8/BS-9)
+  // ---- orders (refunds: AdminPaymentsController; shipping: below)
 
   @Get('orders')
   async orderList(@Query() query: AdminOrdersQuery) {
@@ -145,6 +154,11 @@ export class AdminCommerceController {
       (ORDER_STATUSES as readonly string[]).includes(query.status)
     ) {
       filter.status = query.status as OrderStatus;
+    }
+    if (query.shipment === 'to_ship') {
+      // Print copies waiting to go out, oldest first so nothing waits too long.
+      filter['shipment.status'] = { $in: ['pending', 'processing'] };
+      filter.status = { $in: ['paid', 'partially_refunded'] };
     }
     if (query.q) {
       const pattern = { $regex: escapeRegex(query.q), $options: 'i' };
@@ -156,7 +170,7 @@ export class AdminCommerceController {
     }
     const orders = await this.orders
       .find(filter)
-      .sort({ createdAt: -1 })
+      .sort({ createdAt: query.shipment === 'to_ship' ? 1 : -1 })
       .limit(100)
       .exec();
     return orders.map((order) => ({
@@ -169,6 +183,37 @@ export class AdminCommerceController {
   async order(@Param('orderNumber') orderNumber: string) {
     const order = await this.orders.findOne({ orderNumber }).exec();
     if (!order) throw new NotFoundException('Order not found');
-    return { ...presentOrder(order), attention: order.attention };
+    return {
+      ...presentOrder(order),
+      attention: order.attention,
+      // For refund decisions: was each ebook downloaded or read past the preview?
+      ebookUsage: await this.usage.forOrder(order),
+    };
+  }
+
+  /** Processing → Shipped (carrier, tracking) → Delivered; the buyer is emailed when it ships and arrives. */
+  @Post('orders/:orderNumber/shipment')
+  @HttpCode(HttpStatus.OK)
+  async shipment(
+    @Param('orderNumber') orderNumber: string,
+    @Body() dto: ShipmentUpdateDto,
+    @CurrentUser() actor: AccessTokenPayload,
+  ) {
+    const order = await this.shipments.update(orderNumber, dto, actor);
+    return {
+      ...presentOrder(order),
+      attention: order.attention,
+      ebookUsage: await this.usage.forOrder(order),
+    };
+  }
+
+  @Get('orders/:orderNumber/invoice')
+  @Header('Content-Type', 'application/pdf')
+  @Header('Cache-Control', 'no-store')
+  async invoice(@Param('orderNumber') orderNumber: string) {
+    const { bytes, filename } = await this.invoices.forOrderNumber(orderNumber);
+    return new StreamableFile(Buffer.from(bytes), {
+      disposition: `attachment; filename="${filename}"`,
+    });
   }
 }

@@ -9,6 +9,7 @@ import type { MongoMemoryReplSet } from 'mongodb-memory-server';
 import type { Connection, Model } from 'mongoose';
 import { startMongo } from '../../test/mongo.js';
 import { JobsModule } from '../jobs/jobs.module.js';
+import { AttachmentRegistry } from './attachments.js';
 import { MailService } from './mail.service.js';
 import { OutboxWorker } from './outbox-worker.service.js';
 import { MAX_ATTEMPTS, SEND_LEASE_MS } from './retry-policy.js';
@@ -52,6 +53,8 @@ describe('Email outbox (MailService + OutboxWorker)', () => {
   let suppressions: Model<EmailSuppression>;
   let connection: Connection;
   let transport: FakeTransport;
+  let attachments: AttachmentRegistry;
+  let invoiceFailures = 0;
 
   beforeAll(async () => {
     mongod = await startMongo();
@@ -79,6 +82,7 @@ describe('Email outbox (MailService + OutboxWorker)', () => {
       ],
       providers: [
         MailService,
+        AttachmentRegistry,
         OutboxWorker,
         TemplateRendererService,
         { provide: EMAIL_TRANSPORT, useValue: transport },
@@ -86,6 +90,18 @@ describe('Email outbox (MailService + OutboxWorker)', () => {
     }).compile();
     mail = moduleRef.get(MailService);
     worker = moduleRef.get(OutboxWorker);
+    attachments = moduleRef.get(AttachmentRegistry);
+    attachments.register('invoice', (ref) => {
+      if (invoiceFailures > 0) {
+        invoiceFailures -= 1;
+        return Promise.reject(new Error('order not found'));
+      }
+      return Promise.resolve({
+        filename: `invoice-${ref}.pdf`,
+        content: Buffer.from('%PDF-1.7 fake'),
+        contentType: 'application/pdf',
+      });
+    });
     outbox = moduleRef.get(getModelToken(EmailOutbox.name));
     suppressions = moduleRef.get(getModelToken(EmailSuppression.name));
     connection = moduleRef.get(getConnectionToken());
@@ -103,6 +119,7 @@ describe('Email outbox (MailService + OutboxWorker)', () => {
     await suppressions.deleteMany({});
     transport.sent = [];
     transport.failures = [];
+    invoiceFailures = 0;
   });
 
   const load = async (dedupeKey: string) =>
@@ -431,6 +448,50 @@ describe('Email outbox (MailService + OutboxWorker)', () => {
       });
       await worker.processDue();
       expect(transport.sent).toHaveLength(1);
+    });
+  });
+
+  describe('attachments', () => {
+    const receipt = EMAIL_TEMPLATES['order.receipt'].sample;
+
+    it('builds attachments when sending, never storing the file in the outbox', async () => {
+      await mail.enqueue({
+        to: 'ada@example.com',
+        template: 'order.receipt',
+        data: receipt,
+        dedupeKey: 'receipt:1',
+        attachments: [{ kind: 'invoice', ref: 'order-1' }],
+      });
+      expect((await load('receipt:1')).attachments).toEqual([
+        { kind: 'invoice', ref: 'order-1' },
+      ]);
+      await worker.processDue();
+      expect(transport.sent[0].attachments).toEqual([
+        {
+          filename: 'invoice-order-1.pdf',
+          content: Buffer.from('%PDF-1.7 fake'),
+          contentType: 'application/pdf',
+        },
+      ]);
+    });
+
+    it('retries a failed attachment, then sends the email without it rather than not at all', async () => {
+      invoiceFailures = 10;
+      await mail.enqueue({
+        to: 'ada@example.com',
+        template: 'order.receipt',
+        data: receipt,
+        dedupeKey: 'receipt:2',
+        attachments: [{ kind: 'invoice', ref: 'order-2' }],
+      });
+      let now = new Date();
+      for (let i = 0; i < 3; i += 1) {
+        await worker.processDue(now);
+        now = new Date(now.getTime() + minutes(60));
+      }
+      expect(transport.sent).toHaveLength(1);
+      expect(transport.sent[0].attachments).toBeUndefined();
+      expect((await load('receipt:2')).status).toBe('sent');
     });
   });
 });

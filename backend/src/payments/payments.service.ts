@@ -796,8 +796,13 @@ export class PaymentsService {
             ? `${order.shippingAddress.city}, ${countryName(order.shippingAddress.country)}`
             : null,
           orderUrl: `${this.frontendUrl}/account/orders/${order.orderNumber}`,
+          libraryUrl: order.items.some((i) => i.format === 'ebook')
+            ? `${this.frontendUrl}/account/library`
+            : null,
           claimPending: user?.accountStatus === 'unclaimed',
         },
+        // The PDF invoice is built when the email is sent (InvoiceService).
+        attachments: [{ kind: 'invoice', ref: order._id.toString() }],
       },
       session,
     );
@@ -1142,7 +1147,45 @@ export class PaymentsService {
         .exec();
       if (!payment) return; // already finalized
       await this.applyRefundTotals(payment, session);
+      await this.queueRefundEmail(payment, refundId, session);
     });
+  }
+
+  /** Tells the buyer about a confirmed refund, once per refund (PRODUCT_RULES §10). */
+  private async queueRefundEmail(
+    payment: PaymentDocument,
+    refundId: string,
+    session: ClientSession,
+  ) {
+    const refund = payment.refunds.find((r) => r.refundId === refundId);
+    const order = await this.orders
+      .findById(payment.orderId)
+      .session(session)
+      .exec();
+    if (!refund || !order) return;
+    const full = order.status === 'refunded';
+    await this.mail.enqueue(
+      {
+        to: order.email,
+        template: 'order.refund-issued',
+        dedupeKey: `refund-issued:${refundId}`,
+        data: {
+          name: order.customerName.split(' ')[0] || order.customerName,
+          orderNumber: order.orderNumber,
+          amount: formatMoney(money(refund.amount, payment.currency)),
+          kind: full ? 'Full refund' : 'Partial refund',
+          paymentMethod: PROVIDER_LABEL[payment.provider],
+          // A full refund removes the order's ebooks from the library (§8.7).
+          ebooksRemoved: full
+            ? order.items
+                .filter((i) => i.format === 'ebook')
+                .map((i) => i.titleSnapshot)
+            : [],
+          orderUrl: `${this.frontendUrl}/account/orders/${order.orderNumber}`,
+        },
+      },
+      session,
+    );
   }
 
   /** Recomputes payment and order refund state from the succeeded refunds (idempotent). */

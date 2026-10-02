@@ -104,15 +104,26 @@ class FakeAdapter implements PaymentAdapter {
   }
 }
 
+type SentEmail = {
+  to: string;
+  template: string;
+  dedupeKey: string;
+  data?: Record<string, unknown>;
+  attachments?: Array<{ kind: string; ref: string }>;
+};
+
 class FakeMail {
-  sent: Array<{ to: string; template: string; dedupeKey: string }> = [];
-  enqueue(email: { to: string; template: string; dedupeKey: string }) {
+  sent: SentEmail[] = [];
+  enqueue(email: SentEmail) {
     if (!this.sent.some((e) => e.dedupeKey === email.dedupeKey))
       this.sent.push(email);
     return Promise.resolve({});
   }
   count(template: string) {
     return this.sent.filter((e) => e.template === template).length;
+  }
+  find(template: string) {
+    return this.sent.filter((e) => e.template === template);
   }
 }
 
@@ -526,6 +537,12 @@ describe('Payments (settlement, webhooks, reconciliation, refunds)', () => {
           .lean(),
       ).toMatchObject({ revokedAt: null });
       expect(mail.count('order.receipt')).toBe(1);
+      // The receipt carries the PDF invoice (built at send time) and opens the library.
+      const [receipt] = mail.find('order.receipt');
+      expect(receipt.attachments).toEqual([
+        { kind: 'invoice', ref: order._id.toString() },
+      ]);
+      expect(receipt.data?.libraryUrl).toMatch(/\/account\/library$/);
       expect(mail.count('order.new-sale')).toBe(1);
       expect(claimLinks).toEqual([order.email]);
       // The guest's cart no longer holds what they just bought.
@@ -1042,6 +1059,17 @@ describe('Payments (settlement, webhooks, reconciliation, refunds)', () => {
         amount: order.total,
         idempotencyKey: expect.stringMatching(/^RF-/),
       });
+      const [email] = mail.find('order.refund-issued');
+      expect(mail.count('order.refund-issued')).toBe(1);
+      expect(email).toMatchObject({
+        to: order.email,
+        data: {
+          orderNumber: order.orderNumber,
+          kind: 'Full refund',
+          paymentMethod: 'Paystack',
+          ebooksRemoved: [order.items[0].titleSnapshot],
+        },
+      });
     });
 
     it('partial refunds add up; going over what was paid is impossible, even concurrently', async () => {
@@ -1188,6 +1216,15 @@ describe('Payments (settlement, webhooks, reconciliation, refunds)', () => {
         refundedTotal: 500_000,
         attention: { required: false },
       });
+      // The buyer hears once the provider confirms, not when it was only requested.
+      expect(mail.find('order.refund-issued')).toEqual([
+        expect.objectContaining({
+          data: expect.objectContaining({
+            kind: 'Partial refund',
+            ebooksRemoved: [],
+          }),
+        }),
+      ]);
     });
 
     it('a refund made outside the app is recorded and flagged', async () => {
@@ -1215,6 +1252,7 @@ describe('Payments (settlement, webhooks, reconciliation, refunds)', () => {
         (await models.entitlement.findOne({ orderId: order._id }).lean())!
           .revokedAt,
       ).toBeInstanceOf(Date);
+      expect(mail.count('order.refund-issued')).toBe(1);
     });
 
     it('refunds only paid orders', async () => {

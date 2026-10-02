@@ -1121,27 +1121,80 @@ as built in BS-6 unless marked *later*):
 - The abstract is **also** rendered as real HTML on the book page (instant, indexable, and
   accessible without loading the reader), with a "Read the introduction" button opening the reader.
 
-### 10.2 Online reading for owners
+### 10.2 Online reading for owners (built in BS-9)
 
-A buyer with an ebook entitlement can read the **full** book in the same reader
-(`/account/library/[bookId]/read`). `GET /library/:bookId/read` (auth, entitlement check,
-rate-limited) returns a **5-minute signed URL** to their stamped copy (§10.3), fetched by pdf.js with
-HTTP range requests so large books stream page by page. Progress syncs to `reading_progress`
-(debounced), so they resume on any device. The reader component is the same one; `mode: 'full'`
-just removes the paywall.
+- **My Library** (`/account/library`, `LibraryService`): every ebook the customer owns and hasn't
+  had refunded (`entitlements` with `revokedAt: null`), archived books included. Each card shows
+  reading progress and Read / Download; while a personal copy is being prepared the page polls
+  every 5 s. `GET /library`, `GET /library/:bookId` (with the contents mapped to PDF pages through
+  the preview's page offset) and `GET /library/owned` (ids and slugs, for "In your library").
+- **The full reader** (`/account/library/[bookId]/read`, in the `(reader)` group, sign-in
+  required): the same pdf.js page renderer, page tones, zoom, keyboard and full screen as the
+  preview (`reader-controls.tsx` is shared), without the paywall. `POST /library/:bookId/read`
+  returns a **60-minute** signed R2 link to the buyer's copy (or `{ status: 'preparing' }`). pdf.js
+  opens it with `disableAutoFetch`/`disableStream`, so it reads **only the byte ranges of the
+  pages near the screen** (verified live against R2 through the bucket's CORS rules). The link is
+  renewed 5 minutes before it expires and the book reopens in place, so long sessions never break.
+  (Longer than the 5 minutes first planned: range reading needs the link for the whole session.)
+- **Progress**: `PUT /library/:bookId/progress { page }` 1.5 s after the reader settles on a
+  page; `reading_progress` keeps `page` and `maxPage` (only ever grows). The reader resumes at
+  `?page=`, else the saved page.
+- **Owners never see the paywall**: the preview reader sends a signed-in owner to the full reader
+  at the same page (this is also how a buyer returns from checkout), and the book page's format
+  picker shows "Read now" instead of "Buy ebook".
 
-### 10.3 Ebook downloads
+### 10.3 Ebook downloads and personal copies (built in BS-9)
 
-- Manuscripts are private objects in Cloudflare R2 (§10.0), never publicly addressable.
-- `GET /library/:bookId/download` (auth required, entitlement not revoked, rate-limited 10/hour per
-  user) records a `download_event` and returns a **signed URL valid for 5 minutes**.
-- If the format has `stampWithBuyer` set, the PDF is stamped on each page footer ("Licensed to
-  <name> <email> · Order BS-…") with `pdf-lib` at first download. The stamped copy is cached as its
-  own authenticated asset per entitlement. This discourages sharing without DRM friction.
-### 10.4 Print fulfilment
+- **Personal copies** (`CopiesService`, `CopyWorker` every 5 s, job-locked): when the ebook
+  format has `stampWithBuyer` (the default), each buyer gets their own PDF with
+  "Licensed to <name> · <email> · Order BS-…" along the **visible** bottom edge of every page
+  (rotated pages included; letters outside the PDF font fall back to their base letter). It is
+  stored in R2 at `<R2_FOLDER>/books/<bookId>/copies/<entitlementId>-<random>.pdf` and tracked on
+  the entitlement (`copy`: status, key, source checksum, build token). New purchases are queued
+  within 30 s; anything missed is queued when the buyer opens their library. Builds are claimed
+  with a conditional update, applied only if no newer request arrived (`buildToken`), retried 3
+  times, then marked failed with an `ops.copy-failed` alert to the owner (the buyer sees a clear
+  message, and it is retried on their next visit after 30 minutes). Unstamped books serve the
+  master file.
+- **New editions reach owners automatically**: a copy made from an older manuscript checksum is
+  rebuilt; the old copy stays readable (marked "updated edition coming") until the new one is in
+  place, then it is deleted. Replacing a sold book's file in the editor can also email every owner
+  (`library.edition-updated`, opt-in tick box, once per owner per edition).
+- **Downloads**: `POST /library/:bookId/download` returns a **5-minute** signed link that answers
+  with "save as" (`<slug>.pdf`). At most **10 per book per hour** (429 with the minutes to wait);
+  every link issued is a `download_events` row (kept 400 days) and increments
+  `entitlement.downloadCount`. 30 in 24 hours sends the owner `ops.download-abuse`, once a day.
+- **Refund evidence**: the admin order page shows, per ebook, downloads, first opened, the
+  furthest page read and where the preview ends (`EbookUsageService`), against the policy
+  "refundable within 7 days if not downloaded or read beyond the preview". A full refund still
+  revokes the entitlement (§8.7), which removes the book from the library and every link.
 
-- A shipment record is created on payment; an admin moves it through
-  processing → shipped (carrier + tracking number) → delivered. Each step emails the buyer.
+### 10.4 Print fulfilment (built in BS-9)
+
+- `ShipmentsService`: pending → processing → shipped (carrier required; tracking number and an
+  https tracking link optional) → delivered, also pending → shipped. Shipped → shipped corrects
+  the tracking details without a second email. Each step is a conditional update on the current
+  shipment status inside a transaction with the buyer's email (`order.shipped` with tracking,
+  `order.delivered`), audited; two staff members can't both apply it. Refunded or unpaid orders
+  can't ship. **Delivered fulfils a paid order** (`paid → fulfilled` through the state machine; a
+  partly refunded order stays so). Ebook-only orders stay `paid` (ebooks are delivered at payment).
+- Admin: `POST /admin/orders/:n/shipment`; `GET /admin/orders?shipment=to_ship` lists paid orders
+  with print copies not yet shipped, oldest first. The customer's order page shows the progress
+  (being prepared, shipped with carrier and tracking link, delivered).
+
+### 10.5 Invoices (built in BS-9)
+
+- `buildInvoice` (pdf-lib): seller (`BRAND_NAME`, `BUSINESS_POSTAL_ADDRESS`, `SUPPORT_EMAIL`,
+  site), invoice number = order number, date paid, status, provider, bill-to and ship-to, items
+  (long titles wrap; more items continue on a new page under the headings), subtotal, discount with
+  the code, shipping, total paid, refunds and net. Amounts use currency codes ("NGN 15,000.00")
+  because the PDF's built-in font has no naira sign; digits are grouped by string, never floats.
+  "Prices include any applicable taxes" (v1 is tax-inclusive).
+- Built on demand, so a refund shows on the next download: `GET /orders/:n/invoice` (the buyer),
+  `POST /guest-orders/invoice { orderNumber, checkoutKey }` (a guest), `GET /admin/orders/:n/invoice`.
+  Only for paid (or since refunded) orders.
+- **Attached to the receipt** through the outbox's attachment references (§11), built when the
+  email is sent rather than inside the settlement transaction.
 
 ## 11. Email system (built in BS-3)
 
@@ -1162,6 +1215,11 @@ and reported to the owner. It is never silently lost, and never sent twice for t
   - Pass the caller's `session` so the email commits or rolls back with the state change. This is
     tested: an email enqueued inside a failed transaction is never sent.
   - `cancel(dedupeKey)` withdraws an unsent email (unread-message reminders).
+  - `attachments: [{ kind, ref }]` (BS-9): files are **referenced**, not stored, and built when
+    the email is sent by the resolver a module registers with `AttachmentRegistry` (the invoice:
+    `{ kind: 'invoice', ref: <orderId> }`). If building fails, the email is retried; after 3
+    attempts it is sent without the attachment (a receipt matters more than its PDF, which the
+    order page also offers).
   - `requeue(id)` retries a dead one once its cause is fixed (future admin action).
 - **Outbox worker** (`OutboxWorker`, every 5 s, under the `mail-outbox` job lease so one API
   instance works at a time):

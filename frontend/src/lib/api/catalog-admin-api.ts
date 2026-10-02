@@ -209,7 +209,7 @@ export const catalogAdminApi = api.injectEndpoints({
       query: ({ id, ...body }) => ({ url: `/admin/catalog/books/${id}/manuscript-uploads/abort`, method: "POST", body }),
     }),
     /** The server reads the finished upload, checks it and makes it the book's file. */
-    attachManuscript: builder.mutation<AdminBook, { id: string; key: string }>({
+    attachManuscript: builder.mutation<AdminBook, { id: string; key: string; notifyBuyers?: boolean }>({
       query: ({ id, ...body }) => ({ url: `/admin/catalog/books/${id}/manuscript`, method: "POST", body }),
       invalidatesTags: (_r, _e, { id }) => bookTags(id),
     }),

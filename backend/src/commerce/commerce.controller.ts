@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  Header,
   Headers,
   HttpCode,
   HttpStatus,
@@ -12,6 +13,7 @@ import {
   Query,
   Req,
   Res,
+  StreamableFile,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ApiTags } from '@nestjs/swagger';
@@ -37,6 +39,10 @@ import {
   PlaceOrderDto,
   QuoteDto,
 } from './dto/commerce.dto.js';
+import {
+  filename as invoiceFilename,
+  InvoiceService,
+} from './invoice.service.js';
 import { presentOrder } from './order.presenter.js';
 import { CheckoutProblemsException, OrdersService } from './orders.service.js';
 import { PricingService } from './pricing.service.js';
@@ -177,6 +183,7 @@ export class CheckoutController extends CartAware {
     config: ConfigService,
     private readonly pricing: PricingService,
     private readonly orders: OrdersService,
+    private readonly invoices: InvoiceService,
   ) {
     super(cart, config.get<string>('NODE_ENV') === 'production');
   }
@@ -259,6 +266,21 @@ export class CheckoutController extends CartAware {
     return presentOrder(await this.orders.forUser(orderNumber, user.sub));
   }
 
+  /** The PDF invoice of one of the customer's paid orders. */
+  @Get('orders/:orderNumber/invoice')
+  @Header('Content-Type', 'application/pdf')
+  @Header('Cache-Control', 'no-store')
+  @Throttle(perMinute(20))
+  async invoice(
+    @CurrentUser() user: AccessTokenPayload,
+    @Param('orderNumber') orderNumber: string,
+  ) {
+    const order = await this.orders.forUser(orderNumber, user.sub);
+    return new StreamableFile(Buffer.from(await this.invoices.pdf(order)), {
+      disposition: `attachment; filename="${invoiceFilename(order)}"`,
+    });
+  }
+
   @Post('orders/:orderNumber/cancel')
   @HttpCode(HttpStatus.OK)
   async cancel(
@@ -278,6 +300,20 @@ export class CheckoutController extends CartAware {
     return presentOrder(
       await this.orders.forGuest(dto.orderNumber, dto.checkoutKey),
     );
+  }
+
+  /** A guest's invoice, proven by their checkout key (in the body, never the URL). */
+  @OptionalAuth()
+  @Post('guest-orders/invoice')
+  @HttpCode(HttpStatus.OK)
+  @Header('Content-Type', 'application/pdf')
+  @Header('Cache-Control', 'no-store')
+  @Throttle(perMinute(20))
+  async guestInvoice(@Body() dto: GuestOrderDto) {
+    const order = await this.orders.forGuest(dto.orderNumber, dto.checkoutKey);
+    return new StreamableFile(Buffer.from(await this.invoices.pdf(order)), {
+      disposition: `attachment; filename="${invoiceFilename(order)}"`,
+    });
   }
 
   @OptionalAuth()

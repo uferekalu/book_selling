@@ -17,6 +17,8 @@ import { errorMessage } from "@/lib/api/errors";
 import { formatMoney } from "@/lib/money";
 import { useAppSelector } from "@/lib/redux/hooks";
 import { AdminQueryError } from "./admin-query-error";
+import { AdminInvoiceButton, EbookUsagePanel, ShipmentPanel } from "./order-fulfilment";
+import { hasInvoice } from "@/features/orders/order-extras";
 
 const PAYMENT_STATUS: Record<AdminPayment["status"], { label: string; tone: "neutral" | "success" | "warning" | "danger" | "info" }> = {
   initiated: { label: "Started", tone: "neutral" },
@@ -38,7 +40,7 @@ const PROVIDER_NAME: Record<AdminPayment["provider"], string> = { paystack: "Pay
 
 const when = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 
-/** One order for staff: attention, payments and refunds, then the customer's view of it. */
+/** One order for staff: attention, shipping, payments and refunds, ebook use, then the customer's view of it. */
 export function OrderAdminDetail({ orderNumber }: { orderNumber: string }) {
   const order = useAdminOrderQuery(orderNumber);
   const payments = useAdminOrderPaymentsQuery(orderNumber);
@@ -54,11 +56,16 @@ export function OrderAdminDetail({ orderNumber }: { orderNumber: string }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <NextLink href="/admin/orders" className="inline-flex min-h-11 items-center gap-1.5 self-start text-sm font-medium text-text-muted hover:text-text">
-        <Icon icon={ArrowLeft} size="sm" /> All orders
-      </NextLink>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <NextLink href="/admin/orders" className="inline-flex min-h-11 items-center gap-1.5 text-sm font-medium text-text-muted hover:text-text">
+          <Icon icon={ArrowLeft} size="sm" /> All orders
+        </NextLink>
+        {hasInvoice(data) && <AdminInvoiceButton orderNumber={data.orderNumber} />}
+      </div>
 
       {data.attention.required && <AttentionBanner order={data} />}
+
+      <ShipmentPanel order={data} />
 
       <Card className="flex flex-col gap-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -120,7 +127,9 @@ export function OrderAdminDetail({ orderNumber }: { orderNumber: string }) {
         )}
       </Card>
 
-      <OrderDetail order={data} />
+      <EbookUsagePanel usage={data.ebookUsage ?? []} />
+
+      <OrderDetail order={data} staff />
 
       {refunding && settled && (
         <RefundDialog orderNumber={data.orderNumber} payment={settled} refundable={refundable} onClose={() => setRefunding(false)} />

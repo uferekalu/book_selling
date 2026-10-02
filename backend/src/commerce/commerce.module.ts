@@ -35,6 +35,13 @@ import {
   ShippingZoneSchema,
 } from './schemas/shipping-zone.schema.js';
 import { ShippingService } from './shipping.service.js';
+import { ShipmentsService } from './shipments.service.js';
+import { InvoiceService } from './invoice.service.js';
+import { EbookUsageService } from './ebook-usage.service.js';
+import {
+  ReadingProgress,
+  ReadingProgressSchema,
+} from '../library/schemas/reading-progress.schema.js';
 import { Payment, PaymentSchema } from '../payments/schemas/payment.schema.js';
 
 /** Cart, pricing, shipping, coupons and orders (ARCHITECTURE §8). Payments arrive in BS-8. */
@@ -56,6 +63,8 @@ import { Payment, PaymentSchema } from '../payments/schemas/payment.schema.js';
       { name: Entitlement.name, schema: EntitlementSchema },
       // Read-only here: expiry and one-open-checkout skip orders with a payment in progress.
       { name: Payment.name, schema: PaymentSchema },
+      // Read-only here: how far a buyer read, for refund decisions (EbookUsageService).
+      { name: ReadingProgress.name, schema: ReadingProgressSchema },
     ]),
   ],
   controllers: [CartController, CheckoutController, AdminCommerceController],
@@ -66,6 +75,9 @@ import { Payment, PaymentSchema } from '../payments/schemas/payment.schema.js';
     CartService,
     OrdersService,
     OrderExpiryJob,
+    ShipmentsService,
+    InvoiceService,
+    EbookUsageService,
   ],
   exports: [OrdersService, PricingService, CartService, MongooseModule],
 })

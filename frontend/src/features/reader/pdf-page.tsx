@@ -26,6 +26,7 @@ export function PdfPage({
   tone,
   caption,
   onVisible,
+  onAspect,
 }: {
   doc: PDFDocumentProxy;
   pageNumber: number;
@@ -36,6 +37,8 @@ export function PdfPage({
   tone: PaperTone;
   caption: string;
   onVisible: (pageNumber: number) => void;
+  /** Reports the page's real height / width once loaded (pages of one book can differ). */
+  onAspect?: (pageNumber: number, aspect: number) => void;
 }) {
   const frameRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -69,6 +72,7 @@ export function PdfPage({
       const page = await doc.getPage(pageNumber);
       if (cancelled) return;
       const base = page.getViewport({ scale: 1 });
+      onAspect?.(pageNumber, base.height / base.width);
       const viewport = page.getViewport({ scale: width / base.width });
       const ratio = Math.min(window.devicePixelRatio || 1, 3);
       const canvas = canvasRef.current;
@@ -99,7 +103,7 @@ export function PdfPage({
       task?.cancel();
       textLayer?.cancel();
     };
-  }, [near, doc, pageNumber, width]);
+  }, [near, doc, pageNumber, width, onAspect]);
 
   const style = { width, height: Math.round(width * aspect) } as CSSProperties;
   return (

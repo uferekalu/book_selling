@@ -14,5 +14,8 @@ export default defineConfig({
     testTimeout: 20_000,
     // Each file starts its own MongoDB in beforeAll; under full parallel load that can take >10s.
     hookTimeout: 120_000,
+    // One MongoDB per file: running a file per core starved them (BS-9 added three such files and
+    // unrelated tests began timing out locally). Half the cores keeps every file responsive.
+    maxWorkers: '50%',
   },
 });

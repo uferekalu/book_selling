@@ -1,6 +1,6 @@
 "use client";
 
-import { Package, Search } from "lucide-react";
+import { Package, Search, Truck } from "lucide-react";
 import { useDeferredValue, useState } from "react";
 import NextLink from "next/link";
 import { Badge, Card, EmptyState, FormField, Icon, Input, Select, Skeleton } from "@/components/ui";
@@ -9,14 +9,21 @@ import { useAdminOrdersQuery } from "@/lib/api/commerce-api";
 import { formatMoney } from "@/lib/money";
 import { AdminQueryError } from "./admin-query-error";
 
+/** The "Status" filter's extra option: print copies waiting to go out. */
+const TO_SHIP = "__to_ship";
+
 const when = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 
-/** A first, read-only orders list (fulfilment, payments and refunds arrive in BS-8/BS-9). */
+/** Orders for staff: search, filter by status, or just the print copies waiting to ship (oldest first). */
 export function OrdersAdmin() {
   const [status, setStatus] = useState("");
   const [search, setSearch] = useState("");
   const q = useDeferredValue(search.trim());
-  const { data, error, isLoading, refetch } = useAdminOrdersQuery({ ...(status ? { status } : {}), ...(q ? { q } : {}) });
+  const toShip = status === TO_SHIP;
+  const { data, error, isLoading, refetch } = useAdminOrdersQuery({
+    ...(toShip ? { shipment: "to_ship" as const } : status ? { status } : {}),
+    ...(q ? { q } : {}),
+  });
 
   return (
     <div className="flex flex-col gap-5">
@@ -34,7 +41,11 @@ export function OrdersAdmin() {
           <Select
             value={status}
             onChange={(e) => setStatus(e.target.value)}
-            options={[{ value: "", label: "All statuses" }, ...Object.entries(ORDER_STATUS).map(([value, s]) => ({ value, label: s.label }))]}
+            options={[
+              { value: "", label: "All statuses" },
+              { value: TO_SHIP, label: "To ship (print)" },
+              ...Object.entries(ORDER_STATUS).map(([value, s]) => ({ value, label: s.label })),
+            ]}
           />
         </FormField>
       </div>
@@ -43,7 +54,11 @@ export function OrdersAdmin() {
       ) : isLoading ? (
         <Skeleton className="h-48 w-full rounded-2xl" />
       ) : !data?.length ? (
-        <EmptyState icon={Package} title="No orders yet" description="Orders appear here as soon as they are placed." />
+        toShip ? (
+          <EmptyState icon={Truck} title="Nothing to ship" description="Paid orders with print copies appear here until they’re marked as shipped." />
+        ) : (
+          <EmptyState icon={Package} title="No orders yet" description="Orders appear here as soon as they are placed." />
+        )
       ) : (
         <ul className="flex flex-col gap-3">
           {data.map((order) => (
@@ -62,6 +77,12 @@ export function OrdersAdmin() {
                 <span className="text-sm text-text-muted">{when.format(new Date(order.createdAt))}</span>
                 <span className="font-medium tabular-nums">{formatMoney({ amount: order.total, currency: order.currency })}</span>
                 <OrderStatusBadge order={order} />
+                {(order.shipment.status === "pending" || order.shipment.status === "processing") &&
+                  (order.status === "paid" || order.status === "partially_refunded") && (
+                    <Badge tone="info" size="sm">
+                      {order.shipment.status === "pending" ? "To ship" : "Being prepared"}
+                    </Badge>
+                  )}
                 {order.attention?.required && (
                   <Badge tone="warning" size="sm">
                     Needs attention

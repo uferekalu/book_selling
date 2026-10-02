@@ -1,18 +1,20 @@
 "use client";
 
-import { ArrowLeft, Coffee, List, Maximize, Minimize, Moon, Settings2, Sun, X, ZoomIn, ZoomOut } from "lucide-react";
+import { ArrowLeft, List, Maximize, Minimize, Settings2, X } from "lucide-react";
 import NextLink from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Button, ButtonLink, Drawer, Icon, IconButton, ProgressBar, Skeleton } from "@/components/ui";
+import { useOwnedBooksQuery } from "@/lib/api/library-api";
 import type { PublicBook } from "@/lib/catalog-types";
-import { cn } from "@/lib/cn";
+import { useAppSelector } from "@/lib/redux/hooks";
 import { CheckoutFlow } from "@/features/checkout/checkout-flow";
 import { createTracker } from "./analytics";
 import { ContinueCard } from "./continue-card";
 import { openPdf } from "./pdf";
-import { PdfPage, type PaperTone } from "./pdf-page";
+import { PdfPage } from "./pdf-page";
+import { ToneButtons, useReaderTone, ZoomButtons } from "./reader-controls";
 import { ReaderContents } from "./reader-contents";
 import {
   nextZoom,
@@ -26,25 +28,6 @@ import {
   type PreviewData,
 } from "./reader-logic";
 
-const TONE_KEY = "bs_reader_tone";
-const TONES: Array<{ value: PaperTone; label: string; icon: typeof Sun }> = [
-  { value: "paper", label: "Paper", icon: Sun },
-  { value: "sepia", label: "Sepia", icon: Coffee },
-  { value: "night", label: "Night", icon: Moon },
-];
-
-function initialTone(): PaperTone {
-  try {
-    const stored = window.localStorage.getItem(TONE_KEY);
-    if (stored === "paper" || stored === "sepia" || stored === "night") return stored;
-  } catch {
-    // fall through
-  }
-  const theme = document.documentElement.getAttribute("data-theme");
-  const dark = theme === "dark" || (theme === null && window.matchMedia("(prefers-color-scheme: dark)").matches);
-  return dark ? "night" : "paper";
-}
-
 /**
  * "Read before you buy" (ARCHITECTURE §10.1). Only the server-built preview PDF is loaded, so
  * nothing here can reveal a locked page. Scroll to read; the end of the preview flows into the
@@ -52,6 +35,7 @@ function initialTone(): PaperTone {
  */
 export function PreviewReader({ book, preview }: { book: PublicBook; preview: PreviewData }) {
   const params = useSearchParams();
+  useOwnerRedirect(book.id, params.get("page"));
   const scrollRef = useRef<HTMLDivElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLElement>(null);
@@ -63,7 +47,7 @@ export function PreviewReader({ book, preview }: { book: PublicBook; preview: Pr
   const [attempt, setAttempt] = useState(0);
   const [available, setAvailable] = useState(360);
   const [zoom, setZoom] = useState(1);
-  const [tone, setTone] = useState<PaperTone>(initialTone);
+  const [tone, chooseTone] = useReaderTone();
   const [current, setCurrent] = useState(1);
   const [contentsOpen, setContentsOpen] = useState(false);
   const [displayOpen, setDisplayOpen] = useState(false);
@@ -178,15 +162,6 @@ export function PreviewReader({ book, preview }: { book: PublicBook; preview: Pr
   };
 
   // ---- controls --------------------------------------------------------------------------------
-  const chooseTone = (value: PaperTone) => {
-    setTone(value);
-    try {
-      window.localStorage.setItem(TONE_KEY, value);
-    } catch {
-      // ignore
-    }
-  };
-
   const toggleFullscreen = useCallback(() => {
     if (document.fullscreenElement) void document.exitFullscreen();
     else void rootRef.current?.requestFullscreen?.().catch(() => undefined);
@@ -228,42 +203,9 @@ export function PreviewReader({ book, preview }: { book: PublicBook; preview: Pr
 
   const pages = useMemo(() => Array.from({ length: preview.pageCount }, (_, i) => i + 1), [preview.pageCount]);
   const label = progressLabel(current, preview);
+  const toneButtons = <ToneButtons tone={tone} onChange={chooseTone} />;
+  const zoomButtons = <ZoomButtons zoom={zoom} onChange={setZoom} />;
 
-  const toneButtons = (
-    <div role="radiogroup" aria-label="Page colour" className="flex gap-1">
-      {TONES.map((t) => (
-        <button
-          key={t.value}
-          type="button"
-          role="radio"
-          aria-checked={tone === t.value}
-          onClick={() => chooseTone(t.value)}
-          className={cn(
-            "flex min-h-11 items-center gap-2 rounded-full px-3 text-sm font-medium transition-colors",
-            tone === t.value ? "bg-primary text-on-primary" : "text-text hover:bg-secondary",
-          )}
-        >
-          <Icon icon={t.icon} size="sm" />
-          <span className="sm:sr-only lg:not-sr-only">{t.label}</span>
-        </button>
-      ))}
-    </div>
-  );
-
-  const zoomButtons = (
-    <div className="flex items-center gap-1">
-      <IconButton label="Zoom out" icon={<Icon icon={ZoomOut} size="sm" />} onClick={() => setZoom((z) => nextZoom(z, -1))} disabled={zoom <= 0.75} />
-      <button
-        type="button"
-        onClick={() => setZoom(1)}
-        className="min-h-11 min-w-14 rounded-full px-2 text-sm font-medium text-text tabular-nums hover:bg-secondary"
-        aria-label={`Zoom ${Math.round(zoom * 100)}%, reset to fit width`}
-      >
-        {Math.round(zoom * 100)}%
-      </button>
-      <IconButton label="Zoom in" icon={<Icon icon={ZoomIn} size="sm" />} onClick={() => setZoom((z) => nextZoom(z, 1))} disabled={zoom >= 2} />
-    </div>
-  );
 
   return (
     <div ref={rootRef} className="flex h-dvh flex-col bg-surface-sunken">
@@ -415,4 +357,18 @@ export function PreviewReader({ book, preview }: { book: PublicBook; preview: Pr
       </Drawer>
     </div>
   );
+}
+
+/**
+ * An owner never sees the paywall: they go straight to the full book, at the same page. This is
+ * also how a buyer returns from checkout (`returnTo=/books/<slug>/read?page=<n>`).
+ */
+function useOwnerRedirect(bookId: string, page: string | null) {
+  const router = useRouter();
+  const signedIn = useAppSelector((state) => state.session.status === "authenticated");
+  const { data: owned } = useOwnedBooksQuery(undefined, { skip: !signedIn });
+  const owns = Boolean(owned?.some((b) => b.bookId === bookId));
+  useEffect(() => {
+    if (owns) router.replace(`/account/library/${bookId}/read${page ? `?page=${encodeURIComponent(page)}` : ""}`);
+  }, [owns, bookId, page, router]);
 }

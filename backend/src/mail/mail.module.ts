@@ -4,6 +4,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { JobsModule } from '../jobs/jobs.module.js';
 import { MailWebhooksController } from './mail-webhooks.controller.js';
 import { MailWebhooksService } from './mail-webhooks.service.js';
+import { AttachmentRegistry } from './attachments.js';
 import { MailService } from './mail.service.js';
 import { OutboxWorker } from './outbox-worker.service.js';
 import {
@@ -30,6 +31,7 @@ import { ResendTransport } from './transports/resend.transport.js';
   controllers: [MailWebhooksController],
   providers: [
     MailService,
+    AttachmentRegistry,
     OutboxWorker,
     MailWebhooksService,
     TemplateRendererService,
@@ -43,6 +45,6 @@ import { ResendTransport } from './transports/resend.transport.js';
       },
     },
   ],
-  exports: [MailService],
+  exports: [MailService, AttachmentRegistry],
 })
 export class MailModule {}

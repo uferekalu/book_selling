@@ -67,6 +67,8 @@ export interface OrderReceiptData {
   hasPrint: boolean;
   shippingTo: string | null;
   orderUrl: string;
+  /** Where the ebooks are (BS-9); omitted for print-only orders. */
+  libraryUrl?: string | null;
   /** True for a guest's new account: a separate email lets them set a password. */
   claimPending: boolean;
 }
@@ -128,7 +130,15 @@ export function OrderReceipt({
           tracking.
         </Paragraph>
       )}
-      <ActionButton href={data.orderUrl}>View your order</ActionButton>
+      <Paragraph muted>
+        Your invoice is attached as a PDF, and you can download it again from
+        your order at any time.
+      </Paragraph>
+      {data.hasEbook && data.libraryUrl ? (
+        <ActionButton href={data.libraryUrl}>Open your library</ActionButton>
+      ) : (
+        <ActionButton href={data.orderUrl}>View your order</ActionButton>
+      )}
       {data.claimPending && (
         <Note>
           We&rsquo;ve also sent a separate email with a link to set your

@@ -10,6 +10,7 @@ import {
   CompleteMultipartUploadCommand,
   CreateMultipartUploadCommand,
   DeleteObjectCommand,
+  PutObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
   ListObjectsV2Command,
@@ -310,14 +311,46 @@ export class BookFilesService {
 
   /**
    * A short-lived link to read a private file. Only ever given to staff (the preview page picker)
-   * and, from BS-9, to the buyer it was made for.
+   * and to the buyer it was made for (their library). With `downloadAs`, the browser saves the
+   * file under that name instead of opening it.
    */
-  async signedReadUrl(key: string, expiresInSeconds: number): Promise<string> {
+  async signedReadUrl(
+    key: string,
+    expiresInSeconds: number,
+    { downloadAs }: { downloadAs?: string } = {},
+  ): Promise<string> {
     const client = this.require();
     return getSignedUrl(
       client,
-      new GetObjectCommand({ Bucket: this.bucket, Key: key }),
+      new GetObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+        ResponseContentType: 'application/pdf',
+        ...(downloadAs
+          ? {
+              ResponseContentDisposition: `attachment; filename="${downloadAs.replace(/[^\w.-]/g, '-')}"`,
+            }
+          : {}),
+      }),
       { expiresIn: expiresInSeconds },
+    );
+  }
+
+  /** Where a buyer's personal copy is stored; a fresh random name per build. */
+  copyKey(bookId: string, entitlementId: string): string {
+    return `${this.root}/books/${bookId}/copies/${entitlementId}-${randomBytes(8).toString('hex')}.pdf`;
+  }
+
+  /** Stores a file the server made (a buyer's copy). */
+  async put(key: string, bytes: Uint8Array): Promise<void> {
+    const client = this.require();
+    await client.send(
+      new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+        Body: bytes,
+        ContentType: 'application/pdf',
+      }),
     );
   }
 

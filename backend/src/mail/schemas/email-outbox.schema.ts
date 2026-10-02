@@ -85,6 +85,13 @@ export class EmailOutbox {
   @Prop({ type: Date, default: null })
   deliveryUpdatedAt: Date | null;
 
+  /** Files to attach, built when the email is sent (e.g. `{ kind: 'invoice', ref: <orderId> }`). */
+  @Prop({
+    type: [{ kind: String, ref: String, _id: false }],
+    default: [],
+  })
+  attachments: Array<{ kind: string; ref: string }>;
+
   /** Set when the row reaches a final state; a TTL index removes it 180 days later. */
   @Prop({ type: Date, default: null })
   expireAt: Date | null;

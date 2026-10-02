@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Types, type ClientSession, type Model } from 'mongoose';
+import type { AttachmentRef } from './attachments.js';
 import { RETENTION_MS } from './retry-policy.js';
 import {
   EmailOutbox,
@@ -23,6 +24,8 @@ export interface EnqueueEmail<N extends TemplateName> {
   dedupeKey: string;
   /** Deliver no earlier than this, e.g. "unread message" reminders (docs/ARCHITECTURE.md §11). */
   sendAfter?: Date;
+  /** Files built when the email is sent (`AttachmentRegistry`), e.g. the receipt's invoice. */
+  attachments?: AttachmentRef[];
 }
 
 /**
@@ -66,6 +69,7 @@ export class MailService {
             status: 'queued',
             attempts: 0,
             nextAttemptAt: email.sendAfter ?? new Date(),
+            attachments: email.attachments ?? [],
           },
         },
         { upsert: true, returnDocument: 'after', session },

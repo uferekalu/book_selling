@@ -127,6 +127,11 @@ export class FakeBookFiles extends BookFilesService {
     return new Uint8Array(bytes);
   }
 
+  override put(key: string, bytes: Uint8Array): Promise<void> {
+    this.objects.set(key, new Uint8Array(bytes));
+    return Promise.resolve();
+  }
+
   override signedReadUrl(key: string, seconds: number): Promise<string> {
     return Promise.resolve(`https://r2.test/${key}?X-Amz-Expires=${seconds}`);
   }

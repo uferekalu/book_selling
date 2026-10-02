@@ -91,6 +91,11 @@ filters, decorators, `money/`, `utils/`). The module map and ticket per module a
   manuscript key or link to visitors or buyers; staff get `manuscript-link` (30 minutes).
 - `UploadCleanupJob` deletes abandoned uploads after 24h in both stores, but only after checking
   no book or author references them.
+- **Library (BS-9)**: `LibraryService` checks the entitlement (owner, not revoked) on every call;
+  links to a buyer's file are signed R2 URLs (read 60 min, download 5 min), never stored or logged.
+  Personal copies are built only by `CopiesService` (claim → build → apply if `buildToken`
+  unchanged). Emails with files use outbox `attachments` references and an `AttachmentRegistry`
+  resolver, never bytes in the outbox.
 - Locked-page teasers are rendered on the server (`preview/page-teaser.ts`, pdf.js +
   `@napi-rs/canvas`) as data URIs. pdf.js **detaches** the buffer it is given: pass it bytes you
   no longer need.
