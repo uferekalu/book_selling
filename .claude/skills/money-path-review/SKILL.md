@@ -62,5 +62,5 @@ every ❌ before the PR merges.
 - [ ] Logs include `orderId`, `reference` and `provider`, and exclude secrets and full provider
       payloads.
 - [ ] Anything ambiguous surfaces in the admin "Needs attention" queue.
-- [ ] Env vars for new secrets are in Joi validation, `.env.example` and `render.yaml`. Live keys
+- [ ] Env vars for new secrets are in Joi validation, `.env.example` and the DEPLOYMENT.md §4 production table. Live keys
       are production-only.

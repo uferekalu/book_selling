@@ -19,13 +19,18 @@ const requiredInProduction = (schema: Joi.StringSchema) =>
 /**
  * Every env var the API reads, validated once at boot — the app refuses to start on a missing or
  * malformed value rather than failing later mid-request. Add a new var here, to `.env.example`,
- * and to `render.yaml` in the same change that first reads it (docs/ENGINEERING_RULES.md §4).
+ * and to the production table in docs/DEPLOYMENT.md §4 in the same change that first reads it
+ * (docs/ENGINEERING_RULES.md §4).
  */
 export const envValidationSchema = Joi.object({
   NODE_ENV: Joi.string()
     .valid('development', 'test', 'production')
     .default('development'),
   PORT: Joi.number().port().default(4000),
+  // Reverse proxies in front of the API that append to X-Forwarded-For (BS-24). Locally 1. Behind
+  // Vercel's /api rewrite AND Railway's edge it is 2, or every visitor looks like Vercel's server
+  // and per-visitor rate limits are shared by all customers.
+  TRUST_PROXY_HOPS: Joi.number().integer().min(0).max(5).default(1),
   MONGODB_URI: Joi.string()
     .uri({ scheme: ['mongodb', 'mongodb+srv'] })
     .required(),

@@ -2,7 +2,7 @@ import { createParamDecorator, type ExecutionContext } from '@nestjs/common';
 import type { Request } from 'express';
 
 export interface ClientInfo {
-  /** Real client IP (Express `trust proxy` = 1 resolves it behind Render's proxy). */
+  /** Real client IP (Express `trust proxy` = TRUST_PROXY_HOPS resolves it behind the proxies). */
   ip: string;
   userAgent: string;
 }

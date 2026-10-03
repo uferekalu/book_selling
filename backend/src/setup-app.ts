@@ -11,13 +11,17 @@ import { AllExceptionsFilter } from './common/filters/all-exceptions.filter.js';
  * that skips this runs with no validation, no error filter and no cookie parsing.
  */
 export function setupApp(app: INestApplication): void {
-  // Exactly one reverse proxy (Render) sits in front of the API. `1`, not `true`: trusting the
-  // whole chain would let a client spoof X-Forwarded-For and dodge per-IP rate limits.
-  (app as NestExpressApplication).set('trust proxy', 1);
+  const config = app.get(ConfigService);
+  // How many reverse proxies sit in front of the API (TRUST_PROXY_HOPS: 2 for Vercel's rewrite +
+  // Railway's edge). A number, never `true`: trusting the whole chain would let a client spoof
+  // X-Forwarded-For and dodge per-IP rate limits.
+  (app as NestExpressApplication).set(
+    'trust proxy',
+    config.get<number>('TRUST_PROXY_HOPS') ?? 1,
+  );
   app.use(helmet());
   app.use(cookieParser());
 
-  const config = app.get(ConfigService);
   const corsOrigins = config
     .getOrThrow<string>('CORS_ORIGINS')
     .split(',')

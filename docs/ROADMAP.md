@@ -1,6 +1,6 @@
 # Roadmap
 
-**Next planned ticket: BS-10** · **Next reactive ticket: BS-24**
+**Next planned ticket: BS-10** · **Next reactive ticket: BS-25**
 
 Each ticket is one branch (`feature/BS-<n>-<suffix>`) and one squash-merged PR. The order is
 deliberate: each ticket builds only on merged work. When a ticket finishes, its row is rewritten
@@ -33,6 +33,7 @@ so planned numbers never shift; they get a new row at the end of the table.
 | BS-21 | `r2-storage-limit` | See detail below | ✅ Done |
 | BS-22 | `stripe-country-allowlist` | See detail below | ✅ Done |
 | BS-23 | `payment-reliability` | See detail below | ✅ Done |
+| BS-24 | `railway-vercel-deploy` | See detail below | ✅ Done |
 
 **Launch line.** BS-1 to BS-14 are the launch. The store goes live after BS-14 with the complete
 buying, reading, email, messaging and admin experience. BS-15 to BS-18 are growth features shipped
@@ -279,6 +280,21 @@ checklist is reviewed whenever a ticket is planned, so nothing important is forg
      empty-state padding tightened on phones.
   7. Script robustness: the responsive check now rejects Git Bash–mangled paths and sanitises `?`
      in screenshot names.
+
+## BS-24: Deploy on Vercel + Railway (✅ Done, 2026-10-03)
+
+- **Decision**: the owner chose **Railway** for the API instead of Render; Vercel stays for the
+  storefront. A test (staging) deployment comes first, with test payment keys.
+- **What changed**: `backend/railway.json` (build with dev tools, pre-deploy migrations, start,
+  `/health` check, restart on failure); `render.yaml` removed, and the production variables now
+  live in a table in DEPLOYMENT §4 (rules updated everywhere that named `render.yaml`); Node 24
+  pinned through `engines` in both apps; `migrate-mongo` moved to dependencies (migrations run in
+  production).
+- **Bug found while preparing**: the API trusted exactly one proxy, but browser requests pass
+  through two (Vercel's `/api` rewrite, then Railway's edge), so every visitor would have looked
+  like Vercel's server and per-visitor rate limits (e.g. 10 payment starts a minute) would have
+  been shared by all customers. New `TRUST_PROXY_HOPS` (default 1; 2 in production), with a
+  post-deploy check in DEPLOYMENT §4.
 
 ## BS-23: Payments that start reliably, and paying in another currency (✅ Done, 2026-10-03)
 
