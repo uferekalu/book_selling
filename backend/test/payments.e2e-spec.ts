@@ -97,8 +97,9 @@ describe('Payments over HTTP (e2e)', () => {
       providers: [{ id: 'paystack', label: 'Paystack' }],
       default: 'paystack',
     });
+    // Paystack accounts take NGN unless PAYSTACK_CURRENCIES says otherwise (BS-23).
     const usd = await http().get('/payments/options?currency=USD').expect(200);
-    expect(usd.body.default).toBe('paystack');
+    expect(usd.body).toEqual({ currency: 'USD', providers: [], default: null });
     await http().get('/payments/options?currency=JPY').expect(400);
   });
 

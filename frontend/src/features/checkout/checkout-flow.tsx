@@ -27,9 +27,11 @@ import { errorMessage, errorProblems } from "@/lib/api/errors";
 import { cn } from "@/lib/cn";
 import { countryName, countryOptions } from "@/lib/countries";
 import { formatMoney, type Currency } from "@/lib/money";
+import { setCurrency } from "@/lib/client-currency";
 import { useAppSelector } from "@/lib/redux/hooks";
 import { checkoutKeyFor, fingerprintOf, forgetCheckoutKey, rememberGuestOrder } from "./checkout-key";
 import { PayNow } from "./pay-now";
+import { SwitchCurrency } from "./switch-currency";
 
 type Step = "details" | "shipping" | "review";
 
@@ -138,7 +140,20 @@ export function CheckoutFlow({ returnPath, onNavigate }: { returnPath?: string; 
     [currency, cartSignature, needsShipping, address.country, buyerCountry, couponCode, email],
   );
 
-  if (placed) return <OrderPlaced order={placed} signedIn={signedIn} onNavigate={onNavigate} />;
+  if (placed) {
+    return (
+      <OrderPlaced
+        order={placed}
+        signedIn={signedIn}
+        onNavigate={onNavigate}
+        onSwitched={() => {
+          // Same books, details and address: back to "Review & pay", re-priced in the new currency.
+          setPlaced(null);
+          setStep("review");
+        }}
+      />
+    );
+  }
 
   if (isLoading || !currency || session.status === "checking") {
     return (
@@ -280,6 +295,19 @@ export function CheckoutFlow({ returnPath, onNavigate }: { returnPath?: string; 
               }}
             />
           </FormField>
+          {buyerCountry === "NG" && currency !== "NGN" && (
+            <Alert
+              tone="info"
+              title="Paying from Nigeria?"
+              action={
+                <Button size="sm" variant="outline" onClick={() => setCurrency("NGN")}>
+                  Pay in naira (₦)
+                </Button>
+              }
+            >
+              You’re checking out in {currency}. Switch to naira to pay with Paystack or Flutterwave in ₦, at the store’s naira prices.
+            </Alert>
+          )}
           <Button size="lg" onClick={goNext} className="self-stretch sm:self-end">
             Continue
           </Button>
@@ -512,7 +540,17 @@ function Review({ quote, loading, currency }: { quote: Quote | undefined; loadin
   );
 }
 
-function OrderPlaced({ order, signedIn, onNavigate }: { order: OrderView; signedIn: boolean; onNavigate?: () => void }) {
+function OrderPlaced({
+  order,
+  signedIn,
+  onNavigate,
+  onSwitched,
+}: {
+  order: OrderView;
+  signedIn: boolean;
+  onNavigate?: () => void;
+  onSwitched: () => void;
+}) {
   const until = order.expiresAt ? new Date(order.expiresAt) : null;
   return (
     <section className="flex flex-col gap-5 rounded-2xl border border-border bg-surface p-5 sm:p-6" aria-labelledby="placed-heading">
@@ -531,6 +569,7 @@ function OrderPlaced({ order, signedIn, onNavigate }: { order: OrderView; signed
         </div>
       </div>
       <PayNow order={order} guest={!signedIn} />
+      <SwitchCurrency order={order} guest={!signedIn} onSwitched={onSwitched} />
       <p className="text-xs text-text-subtle">
         Your receipt goes to {order.email} as soon as the payment is confirmed.{" "}
         <NextLink href={signedIn ? `/account/orders/${order.orderNumber}` : `/checkout/order/${order.orderNumber}`} onClick={onNavigate} className="underline underline-offset-4">

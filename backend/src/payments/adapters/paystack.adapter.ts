@@ -3,6 +3,7 @@ import { isCurrency, type Money } from '../../common/money/currency.js';
 import { money } from '../../common/money/money.js';
 import {
   header,
+  providerFetch,
   ProviderRejectedError,
   requestJson,
   type Fetch,
@@ -42,7 +43,7 @@ export class PaystackAdapter implements PaymentAdapter {
 
   constructor(
     private readonly secretKey: string | undefined,
-    private readonly fetchImpl: Fetch = fetch,
+    private readonly fetchImpl: Fetch = providerFetch,
   ) {
     this.enabled = Boolean(secretKey);
   }

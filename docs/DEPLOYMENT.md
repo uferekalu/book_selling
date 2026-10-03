@@ -195,7 +195,13 @@ For **each** provider:
 - [ ] Webhook secret set (`STRIPE_WEBHOOK_SECRET`; Paystack signs with the secret key;
       `FLUTTERWAVE_WEBHOOK_HASH` must match the "secret hash" in the Flutterwave dashboard).
 - [ ] Currencies enabled on the account: Paystack NGN; Flutterwave NGN, USD, GBP and EUR as the
-      account allows; Stripe USD, GBP and EUR (never NGN).
+      account allows; Stripe USD, GBP and EUR (never NGN). Set `PAYSTACK_CURRENCIES` and
+      `FLUTTERWAVE_CURRENCIES` to exactly what each account accepts (a provider is only offered for
+      those): Paystack says "Currency not supported by merchant" for a currency it hasn't enabled.
+- [ ] **Account limits lifted**: a Flutterwave account that isn't approved to go live refuses
+      payments above a small amount ("Merchant limit is set at 3000 pending go live", seen in test
+      mode, BS-23). Complete each provider's business verification (KYC) before launch, then make one
+      real payment and refund per provider.
 - [ ] Events to send: **Stripe** `checkout.session.completed`,
       `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`,
       `checkout.session.expired`, `charge.refunded`, `charge.dispute.created`; **Paystack**

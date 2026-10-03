@@ -496,6 +496,98 @@ describe('Payments (settlement, webhooks, reconciliation, refunds)', () => {
 
   // ---------------------------------------------------------------- settlement
 
+  describe('release (pay another way, BS-23)', () => {
+    it('releases an unpaid order after checking its open attempt with the provider', async () => {
+      const { order, checkoutKey, bookId } = await placeOrder();
+      const reference = await startPayment(order, checkoutKey);
+      const released = await payments.release({
+        orderNumber: order.orderNumber,
+        actor: null,
+        checkoutKey,
+      });
+      expect(released.status).toBe('cancelled');
+      expect((await models.payment.findOne({ reference }).lean())!.status).toBe(
+        'abandoned',
+      );
+      // The held copies are free again.
+      expect((await printStock(bookId)).stockReserved).toBe(0);
+    });
+
+    it('refuses, and settles it, when the earlier attempt actually went through', async () => {
+      const { order, checkoutKey } = await placeOrder();
+      const reference = await startPayment(order, checkoutKey);
+      paystack.verifyResults.set(reference, paid(reference, order.total));
+      await expect(
+        payments.release({
+          orderNumber: order.orderNumber,
+          actor: null,
+          checkoutKey,
+        }),
+      ).rejects.toThrow(/has just gone through/);
+      expect((await freshOrder(order._id)).status).toBe('paid');
+      expect(mail.count('order.receipt')).toBe(1);
+    });
+
+    it('releases nothing when the provider can’t be reached', async () => {
+      const { order, checkoutKey } = await placeOrder();
+      await startPayment(order, checkoutKey);
+      paystack.verifyError = new Error('ECONNRESET');
+      await expect(
+        payments.release({
+          orderNumber: order.orderNumber,
+          actor: null,
+          checkoutKey,
+        }),
+      ).rejects.toThrow(/couldn't confirm with Paystack/);
+      expect((await freshOrder(order._id)).status).toBe('pending_payment');
+    });
+
+    it('only for the buyer, and only an unpaid order', async () => {
+      const { order, checkoutKey } = await placeOrder();
+      await expect(
+        payments.release({
+          orderNumber: order.orderNumber,
+          actor: null,
+          checkoutKey: randomToken(24),
+        }),
+      ).rejects.toThrow(/not found/);
+      await payments.release({
+        orderNumber: order.orderNumber,
+        actor: null,
+        checkoutKey,
+      });
+      await expect(
+        payments.release({
+          orderNumber: order.orderNumber,
+          actor: null,
+          checkoutKey,
+        }),
+      ).rejects.toThrow(/already closed/);
+    });
+  });
+
+  describe('provider account currencies (BS-23)', () => {
+    it('never offers Paystack for a currency its account doesn’t take', async () => {
+      const ids = payments
+        .options('USD', 'NG')
+        .providers.map((provider) => provider.id);
+      expect(ids).toEqual(['flutterwave']);
+      const usd = await placeOrder({
+        currency: 'USD',
+        ebookOnly: true,
+        country: 'NG',
+      });
+      await expect(
+        payments.initiate({
+          orderNumber: usd.order.orderNumber,
+          provider: 'paystack',
+          actor: null,
+          checkoutKey: usd.checkoutKey,
+        }),
+      ).rejects.toThrow(/Paystack can't take this payment/);
+    });
+  });
+
   describe('settle', () => {
     it('success path: pays the order and applies every effect once, in one go', async () => {
       await moduleRef

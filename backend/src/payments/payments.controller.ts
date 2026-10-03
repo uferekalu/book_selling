@@ -74,6 +74,15 @@ class OptionsQuery {
   country?: string;
 }
 
+class ReleaseDto {
+  @ApiProperty() @IsString() @Matches(/^BS-\d{4}-\d{6}$/) orderNumber: string;
+  @ApiPropertyOptional({ description: "A guest's checkout key" })
+  @IsOptional()
+  @IsString()
+  @Matches(/^[A-Za-z0-9_-]{22,100}$/)
+  checkoutKey?: string;
+}
+
 class InitiateDto {
   @ApiProperty() @IsString() @Matches(/^BS-\d{4}-\d{6}$/) orderNumber: string;
   @ApiProperty({ enum: PROVIDERS }) @IsIn(PROVIDERS) provider: Provider;
@@ -141,6 +150,27 @@ export class PaymentsController {
       actor: user,
       checkoutKey: dto.checkoutKey,
     });
+  }
+
+  /**
+   * "Pay another way": releases an unpaid order (checking every open attempt with its provider
+   * first) so the buyer can check out again, e.g. in another currency (BS-23).
+   */
+  @OptionalAuth()
+  @Post('release')
+  @HttpCode(HttpStatus.OK)
+  @Throttle(perMinute(10))
+  async release(
+    @OptionalUser() user: AccessTokenPayload | null,
+    @Body() dto: ReleaseDto,
+  ) {
+    return presentOrder(
+      await this.payments.release({
+        orderNumber: dto.orderNumber,
+        actor: user,
+        checkoutKey: dto.checkoutKey,
+      }),
+    );
   }
 
   /** Called by /checkout/callback: asks the provider directly; never trusts the browser. */

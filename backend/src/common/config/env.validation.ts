@@ -125,6 +125,22 @@ export const envValidationSchema = Joi.object({
   FLUTTERWAVE_SECRET_KEY: optionalString().optional(),
   // The "secret hash" set in the Flutterwave dashboard, sent back in the verif-hash header.
   FLUTTERWAVE_WEBHOOK_HASH: optionalString().min(16).optional(),
+  // The currencies each provider account can take (BS-23). Paystack starts with NGN only; add USD
+  // once Paystack enables it for the business. Flutterwave accounts usually take all four.
+  PAYSTACK_CURRENCIES: optionalString()
+    .pattern(/^\s*(NGN|USD|GBP|EUR)(\s*,\s*(NGN|USD|GBP|EUR))*\s*$/i)
+    .messages({
+      'string.pattern.base':
+        'PAYSTACK_CURRENCIES must be store currencies separated by commas, e.g. NGN,USD',
+    })
+    .default('NGN'),
+  FLUTTERWAVE_CURRENCIES: optionalString()
+    .pattern(/^\s*(NGN|USD|GBP|EUR)(\s*,\s*(NGN|USD|GBP|EUR))*\s*$/i)
+    .messages({
+      'string.pattern.base':
+        'FLUTTERWAVE_CURRENCIES must be store currencies separated by commas, e.g. NGN,USD,GBP,EUR',
+    })
+    .default('NGN,USD,GBP,EUR'),
   // Where the business may lawfully take payments through Stripe: buyer countries (ISO codes,
   // comma-separated, e.g. "US,GB,IE,DE"). Stripe is offered nowhere else, and never for NGN.
   STRIPE_COUNTRIES: optionalString()

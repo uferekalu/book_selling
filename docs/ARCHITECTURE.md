@@ -883,6 +883,25 @@ geo header, else the browser language) and stores it on the order (`order.countr
 endpoint takes that country; `initiate` checks the **order's** country again, so a buyer can't
 reach Stripe by asking for it. The buyer sees the default preselected and can switch.
 
+**Per-account currencies** (BS-23): `PAYSTACK_CURRENCIES` (default NGN) and
+`FLUTTERWAVE_CURRENCIES` (default NGN, USD, GBP, EUR) say what each provider ACCOUNT accepts; a
+provider is offered, and `initiate` allowed, only for those.
+
+**Paying in another currency** (BS-23): an unpaid order's amounts are fixed in its currency. "Pay
+in ₦ instead" (shown on the pay step, and automatically when the visitor switches the site's
+currency after placing the order) calls `POST /payments/release`: every open attempt is first
+verified with its provider (a payment that went through is settled and the release refused; an
+unreachable provider releases nothing), open attempts are marked abandoned (a late success is still
+honoured), and the order is cancelled, freeing its holds. Checkout then returns to "Review & pay"
+with the same books, details and address, re-priced in the new currency. Checkout also suggests
+naira to a buyer who says they are paying from Nigeria while browsing in another currency.
+
+**Reaching the providers** (BS-23): provider calls use an undici agent with a 30 s connect
+timeout (Node's default 10 s failed real payments from slow connections), and a connection that
+couldn't be opened is retried up to 3 times; a request that may have reached the provider is never
+retried by this layer. A deliberate 503 now reaches the buyer with its message ("We couldn't reach
+Paystack. Please try again or choose another payment method.") instead of a generic error.
+
 ### 9.3 Provider specifics
 
 | | Stripe | Paystack | Flutterwave |

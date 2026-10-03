@@ -1,6 +1,6 @@
 # Roadmap
 
-**Next planned ticket: BS-10** · **Next reactive ticket: BS-23**
+**Next planned ticket: BS-10** · **Next reactive ticket: BS-24**
 
 Each ticket is one branch (`feature/BS-<n>-<suffix>`) and one squash-merged PR. The order is
 deliberate: each ticket builds only on merged work. When a ticket finishes, its row is rewritten
@@ -32,6 +32,7 @@ so planned numbers never shift; they get a new row at the end of the table.
 | BS-20 | `r2-book-files` | See detail below | ✅ Done |
 | BS-21 | `r2-storage-limit` | See detail below | ✅ Done |
 | BS-22 | `stripe-country-allowlist` | See detail below | ✅ Done |
+| BS-23 | `payment-reliability` | See detail below | ✅ Done |
 
 **Launch line.** BS-1 to BS-14 are the launch. The store goes live after BS-14 with the complete
 buying, reading, email, messaging and admin experience. BS-15 to BS-18 are growth features shipped
@@ -278,6 +279,44 @@ checklist is reviewed whenever a ticket is planned, so nothing important is forg
      empty-state padding tightened on phones.
   7. Script robustness: the responsive check now rejects Git Bash–mangled paths and sanitises `?`
      in screenshot names.
+
+## BS-23: Payments that start reliably, and paying in another currency (✅ Done, 2026-10-03)
+
+- **Reported**: "I tried to checkout and complete payment and it is not working": a 503 from
+  `/payments/initiate` after ~11 s; the provider page sometimes stayed blank; an order placed in
+  dollars couldn't be paid in naira without starting again.
+- **Causes, reproduced with the owner's test keys**:
+  1. Node's fetch gives up opening a connection after 10 s; from the owner's connection the TLS
+     handshake to Paystack/Flutterwave (Cloudflare) sometimes took longer: "fetch failed" → 503.
+     The same calls succeeded in 2–4 s at other times, and DNS lookups also failed intermittently.
+  2. Paystack was offered for USD, but the owner's Paystack account takes NGN only ("Currency not
+     supported by merchant").
+  3. Flutterwave's test checkout took 16–60 s to build its form on this connection (blank until
+     then), sometimes longer; and the owner's Flutterwave account refuses payments above ₦3,000
+     until it is approved to go live ("Merchant limit is set at 3000 pending go live").
+  4. An order's amounts are fixed in its currency by design; there was no way to change it.
+- **Fixes**: undici agent with a 30 s connect timeout and up to 3 attempts for connections that
+  never opened (`requestJson`; nothing that may have reached the provider is retried);
+  `PAYSTACK_CURRENCIES` / `FLUTTERWAVE_CURRENCIES`; `POST /payments/release` (verifies every open
+  attempt with its provider first) and "Pay in ₦ instead" on the pay step and order page; a naira
+  suggestion for buyers paying from Nigeria; deliberate 503 messages now reach the buyer.
+- **Verified**: unit tests for the connection retries (and that ECONNRESET is never retried),
+  release (pending → released and holds freed; already paid → settled and refused; provider down →
+  nothing released; wrong guest key; already closed), per-account currencies, and the error filter.
+  **Live in Chromium with the owner's test keys** (verification database, deleted after): a
+  Nigerian visitor browsing in dollars is offered naira; a USD order offers only Flutterwave; "Pay
+  in NGN" re-prices it to ₦; naira offers Paystack and Flutterwave; the buyer reaches Flutterwave's
+  secure page with the right amount. **A real Paystack test payment end to end**: a guest order at
+  ₦2,500 placed and started through our API, the test card charged (PIN/OTP), then our verify asked
+  Paystack and settled it: order paid, payment succeeded with exactly NGN 2,500, receipt queued with
+  the invoice attached, ebook in the library. (Paystack's charge API can't reuse the reference our
+  initialize created, so the card was charged under a fresh reference and our payment record pointed
+  at it; everything after that was real.) Flutterwave: its test page built the card form in 16–60 s
+  when it loaded at all for the automated browser, and the account's ₦3,000 pre-go-live cap refused
+  the ₦15,000 test order; the store's side was verified up to Flutterwave's page.
+- **For the owner before launch** (DEPLOYMENT §6): complete Paystack and Flutterwave business
+  verification so the test-mode limits are lifted; ask Paystack to enable USD if wanted, then add it
+  to `PAYSTACK_CURRENCIES`.
 
 ## BS-22: Stripe only where the business is compliant (✅ Done, 2026-10-02)
 

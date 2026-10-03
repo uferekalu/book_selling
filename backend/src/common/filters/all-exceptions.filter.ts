@@ -20,6 +20,7 @@ export interface ErrorBody {
 }
 
 const INTERNAL_SERVER_ERROR_CODE: number = HttpStatus.INTERNAL_SERVER_ERROR;
+const SERVICE_UNAVAILABLE_CODE: number = HttpStatus.SERVICE_UNAVAILABLE;
 
 function extractCode(response: string | object): string | undefined {
   if (typeof response === 'string') return undefined;
@@ -44,7 +45,9 @@ function extractMessage(response: string | object): string | string[] {
 /**
  * Gives every error response the same shape. 5xx errors are logged with a stack trace and their
  * message is replaced by a generic one — internal details (driver errors, provider payloads)
- * never reach the client. 4xx errors are expected client mistakes and are not logged.
+ * never reach the client — except a deliberate 503 (`ServiceUnavailableException`), whose message
+ * is written for the customer ("We couldn't reach Paystack…"). 4xx errors are expected client
+ * mistakes and are not logged.
  */
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
@@ -66,8 +69,12 @@ export class AllExceptionsFilter implements ExceptionFilter {
       );
     }
 
+    // 5xx details stay private, except a deliberate 503: its message is written for the customer
+    // ("We couldn't reach Paystack. Please try again or choose another payment method.", BS-23).
     const message =
-      isHttpException && status < INTERNAL_SERVER_ERROR_CODE
+      isHttpException &&
+      (status < INTERNAL_SERVER_ERROR_CODE ||
+        status === SERVICE_UNAVAILABLE_CODE)
         ? extractMessage(exception.getResponse())
         : 'Internal server error';
 

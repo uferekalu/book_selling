@@ -1,3 +1,4 @@
+import { Agent, fetch as undiciFetch } from 'undici';
 import type { Money } from '../../common/money/currency.js';
 import type { Provider } from '../schemas/payment.schema.js';
 
@@ -102,6 +103,47 @@ export class OutcomeUnknownError extends Error {}
 
 export type Fetch = typeof fetch;
 
+/**
+ * Node's built-in fetch gives up on opening a connection after 10 seconds. From a slow or
+ * congested network (seen from Lagos: Paystack and Flutterwave sit behind Cloudflare and the TLS
+ * handshake sometimes took longer) that failed real payments with "fetch failed" (BS-23). The
+ * providers get 30 seconds to connect; the whole request still has its own overall timeout.
+ */
+const providerAgent = new Agent({ connect: { timeout: 30_000 } });
+
+export const providerFetch: Fetch = ((
+  input: Parameters<Fetch>[0],
+  init?: RequestInit,
+) =>
+  undiciFetch(
+    input as never,
+    {
+      ...(init as object),
+      dispatcher: providerAgent,
+    } as never,
+  )) as unknown as Fetch;
+
+/**
+ * Failures before the request was sent: retrying them can't do anything twice (the provider never
+ * saw the first attempt), so they are retried even for payments and refunds.
+ */
+const NOT_SENT = new Set([
+  'UND_ERR_CONNECT_TIMEOUT',
+  'ECONNREFUSED',
+  'ENOTFOUND',
+  'EAI_AGAIN',
+  'ENETUNREACH',
+  'EHOSTUNREACH',
+]);
+
+function notSentCode(error: unknown): string | null {
+  const cause = (error as { cause?: { code?: string } }).cause;
+  const code = cause?.code ?? (error as { code?: string }).code;
+  return code && NOT_SENT.has(code) ? code : null;
+}
+
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 export function header(
   headers: Record<string, string | string[] | undefined>,
   name: string,
@@ -110,21 +152,37 @@ export function header(
   return Array.isArray(value) ? value[0] : value;
 }
 
-/** JSON request that separates "the provider said no" from "we don't know what happened". */
+/**
+ * JSON request that separates "the provider said no" from "we don't know what happened". A
+ * connection that couldn't be opened is retried (up to `attempts` times in all); anything that may
+ * have reached the provider is reported as an unknown outcome, never retried here.
+ */
 export async function requestJson<T>(
   fetchImpl: Fetch,
   url: string,
   init: RequestInit,
-  timeoutMs = 20_000,
+  timeoutMs = 45_000,
+  { attempts = 3, retryDelayMs = 1_000 } = {},
 ): Promise<{ status: number; body: T }> {
-  let response: Response;
-  try {
-    response = await fetchImpl(url, {
-      ...init,
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-  } catch (error) {
-    throw new OutcomeUnknownError(`Network error: ${(error as Error).message}`);
+  let response: Response | null = null;
+  for (let attempt = 1; !response; attempt += 1) {
+    try {
+      response = await fetchImpl(url, {
+        ...init,
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+    } catch (error) {
+      const code = notSentCode(error);
+      if (code && attempt < attempts) {
+        await wait(retryDelayMs * attempt);
+        continue;
+      }
+      throw new OutcomeUnknownError(
+        code
+          ? `Couldn't connect to the provider (${code}) after ${attempt} attempts`
+          : `Network error: ${(error as Error).message}`,
+      );
+    }
   }
   if (response.status >= 500) {
     throw new OutcomeUnknownError(`Provider error ${response.status}`);
