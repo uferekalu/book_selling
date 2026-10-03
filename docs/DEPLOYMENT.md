@@ -79,7 +79,10 @@ Tests don't need either: they use `mongodb-memory-server`.
   | `NEXT_PUBLIC_SITE_URL` | Production / Preview | `https://<domain>` / preview URL (canonical links, sitemap, JSON-LD) |
   | `REVALIDATE_SECRET` | Production / Preview | 16+ random characters (`openssl rand -base64 32`); the **same value** as the API's `FRONTEND_REVALIDATE_SECRET`, so catalogue edits appear at once |
 - The build **fails on purpose** if `API_URL` is missing in a production build
-  (`src/lib/backend-url.ts`), so we never ship a storefront pointing at localhost.
+  (`src/lib/backend-url.ts`), so we never ship a storefront pointing at localhost. A value that
+  isn't an address (e.g. a placeholder left in) fails with a message naming the variable.
+- `NEXT_PUBLIC_SITE_URL` unset or empty falls back to the address Vercel gives the project
+  (`VERCEL_PROJECT_PRODUCTION_URL`); set it explicitly once there is a custom domain.
 - Domains: `<domain>` (primary) and `www.<domain>` → redirect to the primary.
 
 ## 4. API on Railway
@@ -96,7 +99,10 @@ rewrite proxies it, so cookies stay first-party.
    `npm run start:prod`, health check `/health`, restart on failure. Node 24 comes from
    `engines` in `package.json`.
 2. Settings → Networking → **Generate Domain** (later a custom domain `api.<domain>`). That URL is
-   the frontend's `API_URL` and the base of every provider webhook.
+   the frontend's `API_URL` and the base of every provider webhook. **The domain's port must be the
+   port the API listens on**: Railway gives the app a `PORT` (usually 8080) and the deploy log
+   prints "API listening on port N". A different port there gives "Application failed to respond"
+   while the deploy itself looks healthy.
 3. Variables → **Raw Editor**: paste the production variables (table below; locally, a filled
    `backend/.env.railway` is gitignored). Railway sets `PORT` itself.
 4. Deploys follow `main`: merging a PR is the release. A failing migration or health check stops

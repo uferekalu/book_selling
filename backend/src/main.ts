@@ -32,6 +32,8 @@ async function bootstrap() {
 
   const port = app.get(ConfigService).get<number>('PORT') ?? 4000;
   await app.listen(port);
+  // Visible in the host's deploy logs: the public domain must point at this port (BS-25).
+  app.get(Logger).log(`API listening on port ${port}`, 'Bootstrap');
 }
 
 bootstrap().catch((error: unknown) => {

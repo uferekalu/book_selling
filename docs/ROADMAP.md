@@ -1,6 +1,6 @@
 # Roadmap
 
-**Next planned ticket: BS-10** · **Next reactive ticket: BS-25**
+**Next planned ticket: BS-10** · **Next reactive ticket: BS-26**
 
 Each ticket is one branch (`feature/BS-<n>-<suffix>`) and one squash-merged PR. The order is
 deliberate: each ticket builds only on merged work. When a ticket finishes, its row is rewritten
@@ -34,6 +34,7 @@ so planned numbers never shift; they get a new row at the end of the table.
 | BS-22 | `stripe-country-allowlist` | See detail below | ✅ Done |
 | BS-23 | `payment-reliability` | See detail below | ✅ Done |
 | BS-24 | `railway-vercel-deploy` | See detail below | ✅ Done |
+| BS-25 | `deploy-fixes` | See detail below | ✅ Done |
 
 **Launch line.** BS-1 to BS-14 are the launch. The store goes live after BS-14 with the complete
 buying, reading, email, messaging and admin experience. BS-15 to BS-18 are growth features shipped
@@ -280,6 +281,19 @@ checklist is reviewed whenever a ticket is planned, so nothing important is forg
      empty-state padding tightened on phones.
   7. Script robustness: the responsive check now rejects Git Bash–mangled paths and sanitises `?`
      in screenshot names.
+
+## BS-25: First deploy fixes (✅ Done, 2026-10-03)
+
+- **Reported**: the Vercel build failed with `ERR_INVALID_URL` (input `''`) collecting
+  `/_not-found`; the Railway URL answered "Application failed to respond".
+- **Vercel**: `NEXT_PUBLIC_SITE_URL` was empty, and `SITE_URL` only fell back when the variable
+  was missing (`??`), so `new URL('')` broke the build. `resolveSiteUrl` now treats empty as
+  unset, falls back to Vercel's own project address, and fails with a clear message for a value
+  that isn't an address; `API_URL` gets the same clear check (a placeholder like `FILL_ME_…`).
+- **Railway**: a healthy deploy that "fails to respond" is the public domain pointing at a port
+  the app doesn't listen on. The API now logs "API listening on port N", and DEPLOYMENT §4 says to
+  match the domain's port to it.
+- **Tests**: site and API URL resolution (set, empty, Vercel fallback, placeholder refused).
 
 ## BS-24: Deploy on Vercel + Railway (✅ Done, 2026-10-03)
 
