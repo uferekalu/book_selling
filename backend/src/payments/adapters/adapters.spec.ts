@@ -4,6 +4,7 @@ import { money } from '../../common/money/money.js';
 import { FlutterwaveAdapter } from './flutterwave.adapter.js';
 import {
   OutcomeUnknownError,
+  requestJson,
   ProviderRejectedError,
   type Fetch,
 } from './payment-adapter.js';
@@ -672,5 +673,60 @@ describe('StripeAdapter', () => {
         reason: 'x',
       }),
     ).rejects.toBeInstanceOf(OutcomeUnknownError);
+  });
+});
+
+describe('requestJson (connections to providers, BS-23)', () => {
+  const connectError = (code: string) =>
+    Object.assign(new TypeError('fetch failed'), { cause: { code } });
+  const ok = () =>
+    new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+  it('retries a connection that could not be opened (nothing reached the provider)', async () => {
+    let calls = 0;
+    const fetchImpl = (() => {
+      calls += 1;
+      return calls < 3
+        ? Promise.reject(connectError('UND_ERR_CONNECT_TIMEOUT'))
+        : Promise.resolve(ok());
+    }) as unknown as typeof fetch;
+    const result = await requestJson(
+      fetchImpl,
+      'https://x.test',
+      { method: 'POST' },
+      1000,
+      { retryDelayMs: 0 },
+    );
+    expect(result.body).toEqual({ ok: true });
+    expect(calls).toBe(3);
+  });
+
+  it('gives up after three attempts with a clear message', async () => {
+    const fetchImpl = (() =>
+      Promise.reject(connectError('ENOTFOUND'))) as unknown as typeof fetch;
+    await expect(
+      requestJson(fetchImpl, 'https://x.test', { method: 'POST' }, 1000, {
+        retryDelayMs: 0,
+      }),
+    ).rejects.toThrow(
+      /Couldn't connect to the provider \(ENOTFOUND\) after 3 attempts/,
+    );
+  });
+
+  it('never retries an error that may have reached the provider', async () => {
+    let calls = 0;
+    const fetchImpl = (() => {
+      calls += 1;
+      return Promise.reject(connectError('ECONNRESET'));
+    }) as unknown as typeof fetch;
+    await expect(
+      requestJson(fetchImpl, 'https://x.test', { method: 'POST' }, 1000, {
+        retryDelayMs: 0,
+      }),
+    ).rejects.toBeInstanceOf(OutcomeUnknownError);
+    expect(calls).toBe(1);
   });
 });

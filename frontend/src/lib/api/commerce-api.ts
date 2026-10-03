@@ -259,6 +259,11 @@ export const commerceApi = api.injectEndpoints({
     initiatePayment: builder.mutation<{ redirectUrl: string; reference: string }, { orderNumber: string; provider: Provider; checkoutKey?: string }>({
       query: (body) => ({ url: "/payments/initiate", method: "POST", body }),
     }),
+    /** Stops paying this order (the server first checks no earlier attempt went through). */
+    releaseOrder: builder.mutation<OrderView, { orderNumber: string; checkoutKey?: string }>({
+      query: (body) => ({ url: "/payments/release", method: "POST", body }),
+      invalidatesTags: ["Orders", "Cart"],
+    }),
     verifyPayment: builder.mutation<PaymentVerification, string>({
       query: (reference) => ({ url: "/payments/verify", method: "POST", body: { reference } }),
       // A paid ebook is now owned: the library and "In your library" refresh.
@@ -332,4 +337,5 @@ export const {
   useRefundOrderMutation,
   useResolveAttentionMutation,
   useUpdateShipmentMutation,
+  useReleaseOrderMutation,
 } = commerceApi;

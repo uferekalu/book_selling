@@ -1,10 +1,12 @@
 "use client";
 
 import { BookOpen } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { Badge, BookCover, Button, ButtonLink, Card, Divider, Icon } from "@/components/ui";
 import type { OrderStatus, OrderView } from "@/lib/api/commerce-api";
 import { countryName } from "@/lib/countries";
 import { PayNow } from "@/features/checkout/pay-now";
+import { SwitchCurrency } from "@/features/checkout/switch-currency";
 import { formatMoney } from "@/lib/money";
 import { hasInvoice, InvoiceButton, ShipmentProgress } from "./order-extras";
 
@@ -43,6 +45,7 @@ export function OrderDetail({
   staff?: boolean;
 }) {
   const money = (amount: number) => formatMoney({ amount, currency: order.currency });
+  const router = useRouter();
   // Signed-in owners open their ebooks from here; a full refund removed them from the library.
   const canRead = !guest && !staff && hasInvoice(order) && order.status !== "refunded";
   return (
@@ -67,6 +70,7 @@ export function OrderDetail({
             </p>
           </div>
           <PayNow order={order} guest={guest} />
+          {!staff && <SwitchCurrency order={order} guest={guest} onSwitched={() => router.push("/checkout")} />}
           {onCancel && (
             <Button variant="ghost" size="sm" className="self-start" isLoading={cancelling} onClick={onCancel}>
               Cancel this order

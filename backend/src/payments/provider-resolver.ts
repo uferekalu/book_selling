@@ -1,4 +1,4 @@
-import type { Currency } from '../common/money/currency.js';
+import { CURRENCIES, type Currency } from '../common/money/currency.js';
 import type { Provider } from './schemas/payment.schema.js';
 
 /**
@@ -24,6 +24,11 @@ export const PROVIDER_LABEL: Record<Provider, string> = {
 export interface BuyerLocation {
   country: string | null;
   stripeCountries: ReadonlySet<string>;
+  /**
+   * The currencies each provider ACCOUNT can take (`PAYSTACK_CURRENCIES`, …; BS-23). A
+   * Paystack account takes only NGN until the business has USD enabled, for example.
+   */
+  accountCurrencies?: Partial<Record<Provider, ReadonlySet<Currency>>>;
 }
 
 /**
@@ -39,9 +44,24 @@ export function providersFor(
   return ROUTING[currency].filter(
     (provider) =>
       enabled.has(provider) &&
+      (location.accountCurrencies?.[provider]?.has(currency) ?? true) &&
       (provider !== 'stripe' ||
         (location.country !== null &&
           location.stripeCountries.has(location.country))),
+  );
+}
+
+/** "NGN, usd" → {NGN, USD}; anything that isn't a store currency is ignored. */
+export function parseCurrencyList(
+  value: string | undefined | null,
+): Set<Currency> {
+  return new Set(
+    (value ?? '')
+      .split(',')
+      .map((code) => code.trim().toUpperCase())
+      .filter((code): code is Currency =>
+        (CURRENCIES as readonly string[]).includes(code),
+      ),
   );
 }
 

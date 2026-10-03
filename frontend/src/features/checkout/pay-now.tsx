@@ -32,7 +32,7 @@ export function PayNow({ order, guest }: { order: OrderView; guest: boolean }) {
   if (options.providers.length === 0) {
     return (
       <Alert tone="warning" title={`Online payment in ${order.currency} isn’t available right now`}>
-        Please try again later or switch the currency at the top of the page and check out again.
+        Choose another currency below to pay with the methods available for it.
       </Alert>
     );
   }

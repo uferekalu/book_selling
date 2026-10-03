@@ -17,6 +17,7 @@ import {
   type Model,
 } from 'mongoose';
 import { AuditService } from '../audit/audit.module.js';
+import { OrdersService } from '../commerce/orders.service.js';
 import type { AccessTokenPayload } from '../auth/interfaces/auth.types.js';
 import { AuthService } from '../auth/auth.service.js';
 import { hashToken } from '../common/crypto/tokens.js';
@@ -40,8 +41,10 @@ import {
 } from './adapters/payment-adapter.js';
 import {
   parseCountryList,
+  parseCurrencyList,
   PROVIDER_LABEL,
   providersFor,
+  type BuyerLocation,
 } from './provider-resolver.js';
 import {
   Payment,
@@ -70,6 +73,8 @@ export class PaymentsService {
   private readonly ownerEmail: string | null;
   /** Buyer countries where Stripe may be used (`STRIPE_COUNTRIES`, BS-22). */
   private readonly stripeCountries: ReadonlySet<string>;
+  /** Currencies each provider account takes (BS-23). */
+  private readonly accountCurrencies: BuyerLocation['accountCurrencies'];
 
   constructor(
     @InjectConnection() private readonly connection: Connection,
@@ -77,6 +82,7 @@ export class PaymentsService {
     @InjectModel(WebhookEvent.name)
     private readonly webhookEvents: Model<WebhookEvent>,
     @InjectModel(Order.name) private readonly orders: Model<Order>,
+    private readonly orderActions: OrdersService,
     @InjectModel(Book.name) private readonly books: Model<Book>,
     @InjectModel(Cart.name) private readonly carts: Model<Cart>,
     @InjectModel(Coupon.name) private readonly coupons: Model<Coupon>,
@@ -101,6 +107,14 @@ export class PaymentsService {
     this.stripeCountries = parseCountryList(
       config.get<string>('STRIPE_COUNTRIES'),
     );
+    this.accountCurrencies = {
+      paystack: parseCurrencyList(
+        config.get<string>('PAYSTACK_CURRENCIES') ?? 'NGN',
+      ),
+      flutterwave: parseCurrencyList(
+        config.get<string>('FLUTTERWAVE_CURRENCIES') ?? 'NGN,USD,GBP,EUR',
+      ),
+    };
   }
 
   enabled(): Set<Provider> {
@@ -116,6 +130,7 @@ export class PaymentsService {
     const providers = providersFor(currency, this.enabled(), {
       country,
       stripeCountries: this.stripeCountries,
+      accountCurrencies: this.accountCurrencies,
     });
     return {
       currency,
@@ -164,6 +179,7 @@ export class PaymentsService {
         // The country the buyer gave at checkout, never what the browser says now.
         country: order.country ?? null,
         stripeCountries: this.stripeCountries,
+        accountCurrencies: this.accountCurrencies,
       }).includes(input.provider)
     ) {
       throw new BadRequestException(
@@ -231,6 +247,75 @@ export class PaymentsService {
         `We couldn't reach ${PROVIDER_LABEL[input.provider]}. Please try again or choose another payment method.`,
       );
     }
+  }
+
+  // ---------------------------------------------------------------- release (change of mind)
+
+  /**
+   * The buyer wants to stop paying this order, usually to pay in another currency (BS-23). Before
+   * the order is released, every open payment attempt is checked with its provider: a payment
+   * that went through is settled and the release is refused, so nobody pays for an order and then
+   * loses it. If a provider can't be reached, nothing is released (try again). Attempts still
+   * open are marked abandoned; a late success is still honoured by `settle()`.
+   */
+  async release(input: {
+    orderNumber: string;
+    actor: AccessTokenPayload | null;
+    checkoutKey?: string;
+  }) {
+    const order = await this.findOrder(
+      input.orderNumber,
+      input.actor,
+      input.checkoutKey,
+    );
+    if (order.status !== 'pending_payment') {
+      throw new ConflictException(
+        order.status === 'paid' || order.status === 'fulfilled'
+          ? 'This order is already paid.'
+          : 'This order is already closed. Your books are still in your cart.',
+      );
+    }
+    const open = await this.payments
+      .find({ orderId: order._id, status: { $in: ['initiated', 'failed'] } })
+      .exec();
+    for (const payment of open) {
+      let result: ProviderResult;
+      try {
+        result = await this.adapter(payment.provider).verify(
+          payment.reference,
+          payment.providerTransactionId,
+        );
+      } catch (error) {
+        this.logger.warn(
+          `Release of ${order.orderNumber}: ${payment.reference} could not be checked: ${(error as Error).message}`,
+        );
+        throw new ServiceUnavailableException(
+          `We couldn't confirm with ${PROVIDER_LABEL[payment.provider]} that your earlier payment attempt didn't go through. Please try again in a moment.`,
+        );
+      }
+      if (result.status === 'succeeded') {
+        await this.settle(payment.provider, result, 'release-check');
+        throw new ConflictException(
+          'Your payment for this order has just gone through, so it can’t be changed. Check your email for the receipt.',
+        );
+      }
+    }
+    await this.payments
+      .updateMany(
+        { orderId: order._id, status: 'initiated' },
+        {
+          $set: {
+            status: 'abandoned',
+            failureReason: 'Order released by the buyer',
+          },
+        },
+      )
+      .exec();
+    const released = await this.orderActions.cancel(order, 'customer');
+    this.logger.log(
+      `Order ${order.orderNumber} released by the buyer (${open.length} open attempt(s) checked)`,
+    );
+    return released;
   }
 
   // ---------------------------------------------------------------- verify on return
