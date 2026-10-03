@@ -47,7 +47,7 @@ response shapes. A contract change updates both sides in the same PR.
 | Health | Terminus `GET /health` (MongoDB ping) | Extended as dependencies are added |
 | Payments | Stripe, Paystack, Flutterwave behind one adapter interface | §9 |
 | Email | Resend + React Email templates, transactional outbox | §11 |
-| Realtime | Socket.IO gateway (messaging, notifications, order status) | §12 |
+| Realtime | Socket.IO gateway (messages, read receipts, bell) | §12 |
 | Files | Cloudinary: public covers/images; **Cloudflare R2 (private) for book PDFs** | §10 |
 | Scheduling | `@nestjs/schedule` | Outbox worker, payment reconciliation, order expiry |
 | Backend tests | Vitest; e2e boots the real `AppModule` against `mongodb-memory-server` | |
@@ -289,14 +289,21 @@ login or checkout.
 `deliveryStatus: 'delivered' | 'bounced' | 'complained' | null`, `sendAfter` (delayed messages).
 **`email_suppressions`**: `email` (unique), `reason: 'bounce' | 'complaint' | 'manual'`.
 
-**`conversations`**: `customerId`, `subject`, `orderId?`, `status: 'open' | 'closed'`,
-`lastMessageAt`, `lastMessagePreview`, `unread: { customer, staff }`.
-**`messages`**: `conversationId`, `senderId`, `senderRole: 'customer' | 'staff'`, `body` (plain
-text, max 5,000 characters), `attachments[]`, `readAt`. Index `conversationId + createdAt`.
-**`contact_requests`**: messages from visitors who aren't logged in (`name`, `email`, `subject`,
-`body`, `status`), converted into a conversation once the email is linked to an account.
+**`conversations`** (BS-10): `customerId`, `subject`, `orderId?` + `orderNumber` snapshot,
+`bookId?` + `bookTitle` snapshot, `status: 'open' | 'closed'`, `closedAt`, `lastMessageAt`,
+`lastMessagePreview`, `lastMessageBy`, `unread: { customer, staff }` (counters changed only with
+`$inc`/`$set` inside the transaction that writes or reads the messages), `reminders: { customer,
+staff }` (outbox `dedupeKey` of the pending "unread message" email, cancelled on read).
+**`messages`**: `conversationId`, `senderId`, `senderRole: 'customer' | 'staff'`, `senderName`
+snapshot, `body` (plain text, max 5,000 characters), `readAt`. Indexes `conversationId + _id`
+(pages go newest-first by id; ids are created by the API in send order) and `conversationId +
+senderRole + readAt`. Attachments are not supported yet.
+**`contact_requests`**: messages from visitors who aren't signed in (`name`, `email`, `subject`,
+`body`, `status: 'new' | 'replied' | 'closed'`, `replies[]` sent by email, `ipHash`).
+**`messaging_settings`**: one document (`_id: 'messaging'`) with the owner's `replyTime` line.
 
-**`notifications`**: `userId`, `type`, `title`, `body`, `link`, `readAt`. TTL 180 days.
+**`notifications`**: `userId`, `type`, `title`, `body`, `link` (a site path), `dedupeKey` (unique per
+user: one entry per event), `readAt`. TTL 180 days.
 
 ### 4.6 Engagement and admin
 
@@ -772,8 +779,9 @@ job. Steps:
    - write an audit entry.
 
    The partial unique index in §4.3 is the final guard against a double success.
-6. After commit: emit realtime events. If step 5 lost the race (another path already settled), it
-   commits nothing and returns the current state.
+6. After commit: the buyer's "payment received" and the staff "new sale" bell entries were written
+   in the transaction (BS-10) and appear on the next bell refresh. If step 5 lost the race (another
+   path already settled), it commits nothing and returns the current state.
 
 Because emails go through the outbox **inside the same transaction**, "paid but no receipt sent"
 and "receipt sent but not paid" are both impossible.
@@ -1293,22 +1301,62 @@ and reported to the owner. It is never silently lost, and never sent twice for t
 - **Admin visibility** (BS-12): dead or suppressed emails appear in the "Needs attention" queue with
   a requeue button.
 
-## 12. Messaging and notifications
+## 12. Messaging and notifications (built in BS-10)
 
 - **Conversations** between a customer and the store staff (owner and admins share one inbox),
-  optionally linked to an order. Customers start one from their account, an order page or a book
-  page ("Ask the author").
-- **Realtime**: one Socket.IO gateway, authenticated at handshake with the access token. Rooms are
-  `user:<id>` (auto-joined), `staff` (admins and owner) and `conversation:<id>`. Events:
-  `message:new`, `message:read`, `conversation:updated`, `notification:new`,
-  `order:status`. After a reconnect the client rejoins its rooms and refetches the RTK Query cache
-  (the reference lost room membership silently on reconnect).
-- **Delivery guarantee**: messages are persisted first; the socket only speeds delivery up. The
-  RTK Query cache is also refreshed on focus and reconnect, so nothing is lost if a socket event is.
-- **Offline fallback**: an email notification through the outbox with `sendAfter` (§11).
-- **Contact form** for visitors who aren't logged in: Cloudflare Turnstile or a honeypot plus rate
-  limit, stored as `contact_requests`, with an email acknowledgement.
-- **In-app notifications**: a bell with an unread count, backed by `notifications`.
+  optionally about an order ("Question about this order") or a book ("Ask the author"). Only
+  customers start them, from Account → Messages, an order page or a book page; staff answer from
+  Store admin → Messages. A second question about the same order goes into its open conversation.
+  Any new message reopens a closed conversation. Ownership is checked in `MessagingService` on
+  every call; someone else's conversation is a 404.
+- **Writes** (`MessagingService.append`): in one transaction, the message is inserted and the
+  recipient's `unread` counter incremented. When that counter goes from 0 to 1 (the start of an
+  unread streak), the same transaction also queues the **"you have a new message" email with
+  `sendAfter` = 10 minutes** (customer: their address; staff: `OWNER_ALERT_EMAIL`), records its
+  `dedupeKey` in `reminders`, and adds a bell entry. Later messages in the streak only add to the
+  count: a burst of messages sends one email. The message id is created before the transaction,
+  so a retried transaction reuses the same email `dedupeKey`.
+- **Reads** (`markRead`): in one transaction, the counter is zeroed, the other side's messages get
+  `readAt` (read receipts: "Sent" → "Seen") and the pending email is cancelled. It is a no-op when
+  nothing is unread. The matching bell entries are cleared too (all staff members' for the staff
+  side, since one person reading the inbox answers it for everyone).
+- **Realtime**: one Socket.IO gateway (`realtime/`). The browser connects **directly to the API's
+  address** (`NEXT_PUBLIC_REALTIME_URL`, set at build time from `API_URL`), because Vercel rewrites
+  can't carry WebSockets. It authenticates with the in-memory **access token** in the handshake
+  (`auth.token`), never a cookie, so the socket's CORS has credentials off and there is no
+  cross-site WebSocket risk. On connect the server joins the socket to `user:<id>`, and to `staff`
+  for an owner/admin session with two-step verification; clients send nothing else, so there is
+  no subscribe handler to authorise. The server disconnects the socket when its token expires;
+  the client (`RealtimeBridge`) renews the session under the shared refresh lock and reconnects,
+  which also rejoins the rooms (the reference project lost room membership silently on reconnect).
+  After 3 server drops in a minute it stops retrying and relies on refetching.
+- **Events carry ids only**: `message:new`, `message:read`, `conversation:updated`
+  (`{ conversationId }`) and `notification:new`. The client invalidates the matching RTK Query
+  tags and refetches, so the screen always shows what the API stored. Events are emitted **after**
+  the transaction commits (`RealtimeService`; a no-op until the gateway starts).
+- **Delivery guarantee**: messages are persisted first; the socket only speeds delivery up.
+  Message and bell queries also refetch on focus and reconnect, and the bell refreshes every minute
+  while the tab is in front, so nothing is lost if an event is.
+- **Scaling**: rooms live in one API process. Running more than one Railway instance needs the
+  Socket.IO Redis adapter first (not needed at this size).
+- **In-app notifications** (`notifications/`): the header bell, with an unread count and the
+  latest 20 entries. `NotificationsService.notify()` / `notifyStaff()` upsert by `dedupeKey`
+  (never insert-and-catch, which would abort the caller's transaction). Written with the caller's
+  `session`, they commit or roll back with the change that caused them and are picked up on the
+  next bell refresh; written without one, they are pushed at once. Sources: new message or reply,
+  contact form (staff), payment received (customer) and new sale (staff) in settlement, shipped
+  and delivered (customer), refund issued (customer).
+- **Contact form** (`POST /contact`, public): for visitors who aren't signed in. Bots are turned
+  away quietly with the same 202 a person gets: a hidden honeypot field, a minimum fill time
+  (2.5 s, measured by the form), and a rate limit of 5 per hour per IP. Stored as
+  `contact_requests` with a hashed IP. The visitor gets an acknowledgement (at most 3 per address
+  per day, so the form can't be used to mail-bomb someone), the owner gets an alert, staff get a
+  bell entry. Staff reply from the inbox; **replies go by email** and are kept with the request
+  (they are not turned into an account conversation: anyone can type any address into the form,
+  so linking it to that account would let a stranger write into someone's inbox). Cloudflare
+  Turnstile can be added later if spam gets past these.
+- **Reply time**: the owner sets the line shown next to every message box ("Usually replies within
+  a day") in Store admin → Messages (`messaging_settings`).
 
 ## 13. Security
 

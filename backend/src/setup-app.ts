@@ -4,6 +4,7 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter.js';
+import { RealtimeIoAdapter } from './realtime/realtime-io.adapter.js';
 
 /**
  * Every app-wide concern except Swagger and `listen()`. Called from `main.ts` AND from every e2e
@@ -27,6 +28,8 @@ export function setupApp(app: INestApplication): void {
     .split(',')
     .map((origin) => origin.trim());
   app.enableCors({ origin: corsOrigins, credentials: true });
+  // Live updates (Socket.IO) accept the same origins (ARCHITECTURE §12).
+  app.useWebSocketAdapter(new RealtimeIoAdapter(app, corsOrigins));
 
   app.useGlobalPipes(
     new ValidationPipe({

@@ -83,12 +83,19 @@ Tests don't need either: they use `mongodb-memory-server`.
   isn't an address (e.g. a placeholder left in) fails with a message naming the variable.
 - `NEXT_PUBLIC_SITE_URL` unset or empty falls back to the address Vercel gives the project
   (`VERCEL_PROJECT_PRODUCTION_URL`); set it explicitly once there is a custom domain.
+- Live updates (messages, the bell) connect **straight to `API_URL`** with Socket.IO, because
+  Vercel rewrites can't carry WebSockets. The address is baked in at build time
+  (`NEXT_PUBLIC_REALTIME_URL` in `next.config.ts`), so **redeploy the frontend after changing
+  `API_URL`**. The API must list the site in `CORS_ORIGINS` (it already must for the HTTP API).
 - Domains: `<domain>` (primary) and `www.<domain>` → redirect to the primary.
 
 ## 4. API on Railway
 
-Chosen over Render by the owner (BS-24). The browser never calls the API directly: Vercel's `/api`
-rewrite proxies it, so cookies stay first-party.
+Chosen over Render by the owner (BS-24). The browser's HTTP calls go through Vercel's `/api`
+rewrite, so cookies stay first-party. The one direct connection is the live-updates socket
+(Socket.IO, BS-10), which authenticates with the access token instead of a cookie. Railway
+supports WebSockets with no setting. **Keep one instance**: rooms live in memory, and a second
+instance needs the Socket.IO Redis adapter first (ARCHITECTURE §12).
 
 **Setup (dashboard, once per environment):**
 1. Railway → New Project → **Deploy from GitHub repo** → this repository. In the service's

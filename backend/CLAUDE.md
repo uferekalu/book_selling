@@ -179,3 +179,15 @@ npm run build
 npm test
 npm run test:e2e
 ```
+
+## Messaging, notifications and realtime (BS-10)
+
+- **Push after commit, never inside a transaction**: `RealtimeService.toUser()/toStaff()` with ids
+  only (`{ conversationId }`); the browser refetches. Global module, no-op until the gateway starts.
+- Bell entries: `NotificationsService.notify(userId, {..., dedupeKey}, session)` /
+  `notifyStaff(...)`. Pass the caller's `session` so they commit with the change. Global module;
+  module specs that load payments/commerce/library import `RealtimeModule` + `NotificationsModule`.
+- Unread counters and read receipts change only in `MessagingService` transactions; never `$set`
+  them elsewhere. Create ids used in email `dedupeKey`s **before** `withTransaction` (it retries).
+- `socket.io` is pinned to the version `@nestjs/platform-socket.io` uses; a second copy breaks
+  the adapter's types.

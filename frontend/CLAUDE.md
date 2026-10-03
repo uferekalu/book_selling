@@ -130,3 +130,13 @@ npm run build        # production build; set API_URL=http://localhost:4000 (or C
 # Production server for check:responsive: use `node node_modules/next/dist/bin/next start -p 3100`
 # in Git Bash (the npx shim exited with 127 mid-run there).
 ```
+
+## Messaging and live updates (BS-10)
+
+- `RealtimeBridge` (mounted once in the root layout) owns the socket. Features never open their
+  own: they read RTK Query data (`messaging-api.ts`), which the bridge invalidates on events.
+  Pass `LIVE` (`refetchOnFocus` + `refetchOnReconnect`) to message and bell queries.
+- The socket goes to `REALTIME_URL` (`src/lib/realtime.ts`), not `/api`: Vercel can't proxy
+  WebSockets. It sends the access token, never cookies.
+- Message bodies are plain text: render them with `whitespace-pre-wrap wrap-anywhere`, never as HTML.
+- `MessageThread` + `Composer` are shared by the customer and staff views; don't fork them.

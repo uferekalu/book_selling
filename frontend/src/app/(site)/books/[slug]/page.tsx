@@ -7,6 +7,7 @@ import { BookTabs } from "@/features/catalog/book-tabs";
 import { BookGrid } from "@/features/catalog/catalog-book-card";
 import { RecentlyViewed, RecordView } from "@/features/catalog/recently-viewed";
 import { FormatPicker } from "@/features/catalog/format-picker";
+import { AskTheAuthor } from "@/features/messaging/ask-links";
 import { getBook, relatedBooks } from "@/lib/catalog";
 import type { PublicBook } from "@/lib/catalog-types";
 import { minorToInput } from "@/lib/money";
@@ -159,6 +160,7 @@ export default async function BookPage({ params }: PageProps<"/books/[slug]">) {
             </div>
 
             <FormatPicker bookId={book.id} slug={book.slug} formats={book.formatDetails} hasPreview={book.hasPreview} />
+            <AskTheAuthor book={{ id: book.id, title: book.title }} />
 
             {book.abstractHtml && (
               <section aria-labelledby="abstract-heading" className="flex flex-col gap-3 rounded-2xl border border-border bg-surface p-5 sm:p-7">

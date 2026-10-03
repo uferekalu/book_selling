@@ -6,6 +6,7 @@ import { ButtonLink, Card, EmptyState, Icon, Skeleton, useToast } from "@/compon
 import { useCancelOrderMutation, useMyOrdersQuery, useOrderQuery } from "@/lib/api/commerce-api";
 import { errorMessage } from "@/lib/api/errors";
 import { formatMoney } from "@/lib/money";
+import { AskAboutOrder } from "@/features/messaging/ask-links";
 import { OrderDetail, OrderStatusBadge } from "./order-detail";
 
 const day = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric" });
@@ -67,16 +68,19 @@ export function AccountOrder({ orderNumber }: { orderNumber: string }) {
       ) : error || !data ? (
         <p className="text-danger">{errorMessage(error, "This order could not be found.")}</p>
       ) : (
-        <OrderDetail
-          order={data}
-          cancelling={cancelState.isLoading}
-          onCancel={() =>
-            void cancel(orderNumber)
-              .unwrap()
-              .then(() => toast({ title: "Order cancelled", tone: "success" }))
-              .catch((e: unknown) => toast({ title: errorMessage(e), tone: "danger" }))
-          }
-        />
+        <>
+          <OrderDetail
+            order={data}
+            cancelling={cancelState.isLoading}
+            onCancel={() =>
+              void cancel(orderNumber)
+                .unwrap()
+                .then(() => toast({ title: "Order cancelled", tone: "success" }))
+                .catch((e: unknown) => toast({ title: errorMessage(e), tone: "danger" }))
+            }
+          />
+          <AskAboutOrder orderNumber={data.orderNumber} />
+        </>
       )}
     </div>
   );

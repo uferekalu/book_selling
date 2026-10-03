@@ -30,6 +30,7 @@ import { Coupon, CouponRedemption } from '../commerce/schemas/coupon.schema.js';
 import { Entitlement } from '../commerce/schemas/entitlement.schema.js';
 import { Order, type OrderDocument } from '../commerce/schemas/order.schema.js';
 import { MailService } from '../mail/mail.service.js';
+import { NotificationsService } from '../notifications/notifications.service.js';
 import { User } from '../users/schemas/user.schema.js';
 import { countryName } from './countries.js';
 import {
@@ -92,6 +93,7 @@ export class PaymentsService {
     private readonly entitlements: Model<Entitlement>,
     @InjectModel(User.name) private readonly users: Model<User>,
     private readonly mail: MailService,
+    private readonly notifications: NotificationsService,
     private readonly audit: AuditService,
     private readonly auth: AuthService,
     @Inject(PAYMENT_ADAPTERS) adapters: PaymentAdapter[],
@@ -891,6 +893,30 @@ export class PaymentsService {
       },
       session,
     );
+    // Bell entries commit with the payment (BS-10); they appear on the next bell refresh.
+    await this.notifications.notify(
+      order.userId,
+      {
+        type: 'order_paid',
+        title: `Payment received for order ${order.orderNumber}`,
+        body: order.items.some((i) => i.format === 'ebook')
+          ? 'Your ebooks are ready in your library.'
+          : 'We’ll let you know when it ships.',
+        link: `/account/orders/${order.orderNumber}`,
+        dedupeKey: `order-paid:${order._id.toString()}`,
+      },
+      session,
+    );
+    await this.notifications.notifyStaff(
+      {
+        type: 'new_sale',
+        title: `New sale ${order.orderNumber}: ${m(order.total)}`,
+        body: order.customerName,
+        link: `/admin/orders/${order.orderNumber}`,
+        dedupeKey: `new-sale:${order._id.toString()}`,
+      },
+      session,
+    );
     if (this.ownerEmail) {
       await this.mail.enqueue(
         {
@@ -1268,6 +1294,17 @@ export class PaymentsService {
             : [],
           orderUrl: `${this.frontendUrl}/account/orders/${order.orderNumber}`,
         },
+      },
+      session,
+    );
+    await this.notifications.notify(
+      order.userId,
+      {
+        type: 'refund',
+        title: `${full ? 'Refund' : 'Partial refund'} issued for order ${order.orderNumber}`,
+        body: formatMoney(money(refund.amount, payment.currency)),
+        link: `/account/orders/${order.orderNumber}`,
+        dedupeKey: `refund:${refundId}`,
       },
       session,
     );

@@ -338,3 +338,31 @@ export function ItemTable({
     </Section>
   );
 }
+
+/** A message someone wrote, quoted as plain text with its line breaks kept. */
+export function Quote({ children }: { children: string }) {
+  return (
+    <Section
+      style={{
+        borderLeft: `3px solid ${t.color.accent}`,
+        backgroundColor: t.color.background,
+        borderRadius: 6,
+        padding: '12px 16px',
+        margin: '0 0 20px',
+      }}
+    >
+      <Text
+        style={{
+          margin: 0,
+          fontSize: 15,
+          lineHeight: '24px',
+          color: t.color.text,
+          whiteSpace: 'pre-wrap',
+          wordBreak: 'break-word',
+        }}
+      >
+        {children}
+      </Text>
+    </Section>
+  );
+}

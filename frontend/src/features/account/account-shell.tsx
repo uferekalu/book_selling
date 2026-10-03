@@ -35,7 +35,7 @@ function AccountNav() {
     <nav aria-label="Account">
       <ul className="scrollbar-none -mx-1 flex gap-2 overflow-x-auto px-1 lg:flex-col lg:gap-1 lg:overflow-visible">
         {ACCOUNT_NAV.map((item) => {
-          const active = pathname === item.href;
+          const active = pathname === item.href || (item.href !== "/account" && pathname.startsWith(`${item.href}/`));
           return (
             <li key={item.href} className="shrink-0">
               <NextLink

@@ -10,6 +10,7 @@ export const ACCOUNT_NAV = [
   { href: "/account", label: "Profile" },
   { href: "/account/orders", label: "Orders" },
   { href: "/account/library", label: "Library" },
+  { href: "/account/messages", label: "Messages" },
   { href: "/account/addresses", label: "Addresses" },
   { href: "/account/security", label: "Security" },
 ] as const;

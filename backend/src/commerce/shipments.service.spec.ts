@@ -11,6 +11,8 @@ import { AuditLog, AuditModule } from '../audit/audit.module.js';
 import type { AccessTokenPayload } from '../auth/interfaces/auth.types.js';
 import { AttachmentRegistry } from '../mail/attachments.js';
 import { MailService } from '../mail/mail.service.js';
+import { NotificationsModule } from '../notifications/notifications.module.js';
+import { RealtimeModule } from '../realtime/realtime.module.js';
 import { CloudinaryService } from '../uploads/cloudinary.service.js';
 import { CommerceModule } from './commerce.module.js';
 import { InvoiceService } from './invoice.service.js';
@@ -82,6 +84,8 @@ describe('Fulfilment: shipments and invoices', () => {
         }),
         MongooseModule.forRoot(mongod.getUri()),
         AuditModule,
+        RealtimeModule,
+        NotificationsModule,
         CommerceModule,
       ],
     })

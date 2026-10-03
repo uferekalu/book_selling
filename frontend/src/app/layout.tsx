@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Fraunces, Inter, JetBrains_Mono } from "next/font/google";
+import { RealtimeBridge } from "@/components/realtime-bridge";
 import { SessionBootstrap } from "@/components/session-bootstrap";
 import { CartSessionSync } from "@/features/cart/cart-session-sync";
 import { ThemeSync } from "@/components/theme-sync";
@@ -63,6 +64,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <StoreProvider>
           <ThemeSync />
           <SessionBootstrap />
+          <RealtimeBridge />
           <CartSessionSync />
           <ToastProvider>{children}</ToastProvider>
         </StoreProvider>
