@@ -36,7 +36,7 @@ A rule with a "why" came from a real incident, mostly in the sister project `foo
 3. New behaviour has tests (§6). Money paths meet the payment test matrix.
 4. The docs are updated (§8): the ROADMAP row, the ARCHITECTURE section it touched, and the
    CLAUDE.md files if a convention changed.
-5. New env vars are in Joi validation, `.env.example` and `render.yaml` (or the Vercel list in
+5. New env vars are in Joi validation, `.env.example` and the DEPLOYMENT.md §4 production table (or the Vercel list in
    DEPLOYMENT.md).
 6. UI changes pass `npm run check:responsive` (320px → 1440px, **light and dark**, no page wider
    than the device, no console errors) against a production build. You look at the screenshots, and
@@ -72,7 +72,7 @@ A rule with a "why" came from a real incident, mostly in the sister project `foo
   the query boundary with the `common/utils/object-id.ts` helpers. *Why:* Mongoose ref fields built
   with `@Prop()` silently match zero documents when string and ObjectId are mixed. This cost the
   reference project real incidents (FDP-89, FDP-92).
-- **Env vars**: add each to `common/config/env.validation.ts`, `.env.example` and `render.yaml` in
+- **Env vars**: add each to `common/config/env.validation.ts`, `.env.example` and the DEPLOYMENT.md §4 production table in
   the change that first reads it. The app refuses to boot on an invalid env.
 - **Module wiring**: after adding or removing a module import or constructor dependency, run
   `npm run test:e2e`. *Why:* unit tests with hand-picked providers can't see a circular module
@@ -105,7 +105,7 @@ A rule with a "why" came from a real incident, mostly in the sister project `foo
    return 2xx for anything verified (even if ignored), and never throw a 5xx at a provider.
 9. **Never log** full card data (we never receive it anyway), secret keys, webhook secrets, or
    complete provider payloads containing customer PII. Log references and IDs.
-10. **Test keys only** outside production. Production keys exist only in Render's env settings.
+10. **Test keys only** outside production. Production keys exist only in the production Railway service's variables.
 
 ## 6. Testing rules
 

@@ -1,6 +1,6 @@
 # Deployment Rules
 
-Hosting: **Vercel** (frontend), **Render** (API), **MongoDB Atlas** (database), **Resend** (email),
+Hosting: **Vercel** (frontend), **Railway** (API), **MongoDB Atlas** (database), **Resend** (email),
 **Cloudinary** (images), **Cloudflare R2** (private book PDFs), and payment providers **Paystack**, **Flutterwave**
 and **Stripe**. The production go-live is ticket BS-14. Until then, this document is the plan and the
 checklist.
@@ -11,11 +11,11 @@ checklist.
 |---|---|---|---|---|
 | Local | `localhost:3000` | `localhost:4000` | local replica set or an Atlas dev cluster | **test** |
 | Preview | Vercel preview per PR | (shared staging API) | Atlas `book_selling_staging` | **test** |
-| Staging | `staging.<domain>` | Render `book-selling-api-staging` | Atlas `book_selling_staging` | **test** |
-| Production | `<domain>` | Render `book-selling-api` → `api.<domain>` | Atlas `book_selling` (dedicated cluster) | **live** |
+| Staging | `staging.<domain>` | Railway `book-selling-api-staging` | Atlas `book_selling_staging` | **test** |
+| Production | `<domain>` | Railway `book-selling-api` → `api.<domain>` | Atlas `book_selling` (dedicated cluster) | **live** |
 
 Rules:
-- **Live payment keys exist only in the production Render service.** Never in `.env` files, never on
+- **Live payment keys exist only in the production Railway service.** Never in `.env` files, never on
   staging, never in Vercel.
 - Staging mirrors production configuration with test keys. Every money-path change is exercised on
   staging with real provider test cards before release.
@@ -82,31 +82,74 @@ Tests don't need either: they use `mongodb-memory-server`.
   (`src/lib/backend-url.ts`), so we never ship a storefront pointing at localhost.
 - Domains: `<domain>` (primary) and `www.<domain>` → redirect to the primary.
 
-## 4. API on Render
+## 4. API on Railway
 
-- Defined by the `render.yaml` Blueprint at the repo root (root dir `backend`, `npm ci --include=dev
-  && npm run build`, pre-deploy `npm run migrate:up`, `npm run start:prod`, health check `/health`).
-  `--include=dev` matters: with `NODE_ENV=production` set, a plain `npm ci` skips the build tools and
-  the build fails.
-- Every `sync: false` variable is set in the Render dashboard. **The list in `render.yaml` must
-  match `backend/src/common/config/env.validation.ts`**: a missing required variable stops the API
-  booting, and the Render deploy fails the health check instead of serving errors.
-- Plan: at least Starter (no sleeping) for production. Webhooks and the reconciliation jobs need an
-  always-on instance.
-- Custom domain `api.<domain>`. `CORS_ORIGINS` = the storefront origin(s).
-- Scheduled jobs run inside the API process with lease locks, so scaling to more than one instance is
-  safe.
+Chosen over Render by the owner (BS-24). The browser never calls the API directly: Vercel's `/api`
+rewrite proxies it, so cookies stay first-party.
+
+**Setup (dashboard, once per environment):**
+1. Railway → New Project → **Deploy from GitHub repo** → this repository. In the service's
+   Settings: **Root Directory `backend`**, and **Config-as-code path `/backend/railway.json`**
+   (Railway doesn't look for it inside the root directory). It defines: build
+   `npm ci --include=dev && npm run build` (`--include=dev` because `NODE_ENV=production` would
+   otherwise skip the build tools), **pre-deploy `npm run migrate:up`**, start
+   `npm run start:prod`, health check `/health`, restart on failure. Node 24 comes from
+   `engines` in `package.json`.
+2. Settings → Networking → **Generate Domain** (later a custom domain `api.<domain>`). That URL is
+   the frontend's `API_URL` and the base of every provider webhook.
+3. Variables → **Raw Editor**: paste the production variables (table below; locally, a filled
+   `backend/.env.railway` is gitignored). Railway sets `PORT` itself.
+4. Deploys follow `main`: merging a PR is the release. A failing migration or health check stops
+   the deploy and the previous version keeps serving.
+
+**Production variables** (the list must match `backend/src/common/config/env.validation.ts`; a
+missing required one stops the API booting, and the deploy fails its health check instead of
+serving errors):
+
+| Variable | Production value |
+|---|---|
+| `NODE_ENV` | `production` |
+| `TRUST_PROXY_HOPS` | `2` (Vercel's rewrite + Railway's edge; otherwise every visitor shares one rate limit) |
+| `MONGODB_URI` | Atlas `mongodb+srv://…/book_selling?retryWrites=true&w=majority` (§7) |
+| `CORS_ORIGINS`, `FRONTEND_URL` | the storefront's origin, e.g. `https://<project>.vercel.app` |
+| `JWT_ACCESS_SECRET` | new, ≥32 random bytes, per environment (§9) |
+| `TWO_FACTOR_ENCRYPTION_KEY` | new, exactly 32 bytes base64, per environment; **back it up** (§9) |
+| `BCRYPT_COST` | `12` |
+| `FRONTEND_REVALIDATE_SECRET` | 16+ random characters; the **same** value as Vercel's `REVALIDATE_SECRET` |
+| `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` | from Cloudinary (§4a) |
+| `CLOUDINARY_FOLDER` | `book-selling/production` (`book-selling/staging` on staging) |
+| `IMAGE_MAX_MB` | `10` |
+| `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET` | from Cloudflare R2 (§4b) |
+| `R2_FOLDER` | `book-selling/production` (`book-selling/staging` on staging) |
+| `R2_STORAGE_LIMIT_MB` | unset in production; e.g. `2048` while testing on a personal account |
+| `MANUSCRIPT_MAX_MB` | `200` (keep the instance's RAM at 4× this) |
+| `PREVIEW_MAX_PERCENT` | `15` |
+| `BRAND_NAME`, `SUPPORT_EMAIL`, `BUSINESS_POSTAL_ADDRESS` | the store's name, support inbox, postal address |
+| `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`, `MAIL_FROM`, `MAIL_REPLY_TO` | §5 |
+| `OWNER_ALERT_EMAIL` | the owner's own inbox |
+| `PAYMENTS_MODE` | `live` in production only; `test` everywhere else (§6) |
+| `PAYSTACK_SECRET_KEY`, `FLUTTERWAVE_SECRET_KEY`, `FLUTTERWAVE_WEBHOOK_HASH` | from each dashboard (§6) |
+| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_COUNTRIES` | only where the business may use Stripe (§6) |
+| `PAYSTACK_CURRENCIES`, `FLUTTERWAVE_CURRENCIES` | what each account accepts, e.g. `NGN` and `NGN,USD,GBP,EUR` |
+
+- **Plan and memory**: Railway Hobby ($5/month including $5 of usage, then usage-based) runs an
+  always-on service; webhooks and the background jobs need one. Building a preview or a buyer's
+  copy holds the whole PDF in memory, so allow about 4× `MANUSCRIPT_MAX_MB` (Railway scales memory
+  per service up to the plan's limit).
+- Scheduled jobs run inside the API process with lease locks, so more than one replica is safe.
 - **First deploy of each environment**: register the lecturer's account on the site, then run
-  `npm run seed:owner -- <their email>` once (Render Shell, or locally with that environment's
+  `npm run seed:owner -- <their email>` once (Railway shell, or locally with that environment's
   `MONGODB_URI`). The owner must then turn on two-step verification before any store management
   page opens. Admins are added by the owner from the admin area; the owner role is never granted
   through the API.
+- **After the first deploy**, check the real-IP setting: sign in on the site and open Account →
+  Security; the session must show your own IP address, not a Vercel or Railway one.
 
 ## 4a. Cloudinary (images)
 
 1. One Cloudinary account; the **free plan** is enough (25 credits a month, images up to 10MB). Book
    PDFs are not stored here (§4b).
-2. Render env: `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` (required in
+2. Railway variables: `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` (required in
    production; the API will not boot without them) and `CLOUDINARY_FOLDER`: a different folder per
    environment (`book-selling/production`, `book-selling/staging`, locally
    `book-selling/development`). The abandoned-upload cleanup only ever touches its own folder.
@@ -114,7 +157,7 @@ Tests don't need either: they use `mongodb-memory-server`.
 3. Cloudinary console → Settings → Security: keep **"Strict transformations"** off (the storefront
    requests sizes on the fly).
 4. **Memory for book PDFs**: attaching a book PDF and building its preview load the whole file
-   (BS-6, BS-20). Give the Render instance about 4× the largest book in RAM: Standard (2GB) suits
+   (BS-6, BS-20). Give the API service about 4× the largest book in RAM: 2GB suits
    the default `MANUSCRIPT_MAX_MB=200`; Starter (512MB) only books up to about 100MB (set
    `MANUSCRIPT_MAX_MB=100`). A build that runs out of memory restarts the instance and is retried.
 
@@ -142,7 +185,7 @@ Tests don't need either: they use `mongodb-memory-server`.
 4. R2 → **Manage API tokens** → Create API token: permission **Object Read & Write**, applied to
    **that bucket only**. Copy the Access Key ID and Secret Access Key (shown once) and the Account
    ID (R2 overview page).
-5. Render env: `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET` (required
+5. Railway variables: `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET` (required
    in production) and `R2_FOLDER` (`book-selling/production`). Locally the same five go in
    `backend/.env` with the development bucket; without them, book PDF uploads answer 503.
    When developing on **your own** Cloudflare account, also set `R2_STORAGE_LIMIT_MB=2048`: book
@@ -161,7 +204,7 @@ Tests don't need either: they use `mongodb-memory-server`.
 1. Add the sending domain (e.g. `mail.<domain>`) in Resend and create the **SPF, DKIM and DMARC**
    DNS records it lists. Start DMARC with `p=none; rua=…`, then move to `quarantine` once reports
    are clean.
-2. Render env: `RESEND_API_KEY` (a sending-only key), `MAIL_FROM` =
+2. Railway variables: `RESEND_API_KEY` (a sending-only key), `MAIL_FROM` =
    `"<Author Name> Books <books@mail.<domain>>"`, `MAIL_REPLY_TO` / `SUPPORT_EMAIL` = the support
    inbox, `OWNER_ALERT_EMAIL` = the owner's own inbox (**not** on the sending domain, so alerts
    still arrive if that domain has a problem), `BRAND_NAME`, and `BUSINESS_POSTAL_ADDRESS`.
@@ -182,7 +225,7 @@ For **each** provider:
 - [ ] Business account verified (KYC complete). *From the reference project: an unverified Paystack
       "starter business" can collect payments but is blocked from some APIs. Check the account
       tier before launch, not after.*
-- [ ] `PAYMENTS_MODE=live` and the live secret key set in production Render only;
+- [ ] `PAYMENTS_MODE=live` and the live secret key set in production Railway only;
       `PAYMENTS_MODE=test` and test keys on staging. The API refuses to boot if a key doesn't match
       the mode, so live keys can't end up on staging or a laptop.
 - [ ] To switch a provider off (for example Stripe until there is a supported company), leave its
@@ -220,12 +263,13 @@ For **each** provider:
 
 - Production: a dedicated cluster (M10+) for **continuous backups with point-in-time restore**. Free
   or shared tiers have no PITR, which is unacceptable for payment records.
-- Network access: Render's outbound IPs only (or Atlas private endpoints), never `0.0.0.0/0` in
-  production.
+- Network access: Railway has no fixed outbound IPs on the Hobby plan, so Atlas must allow
+  `0.0.0.0/0` there, protected by a long random password for a database user limited to this one
+  database. For production, use Railway's static outbound IPs (Pro) and allow only those.
 - A database user per environment with least privilege (`readWrite` on its own database).
 - Indexes are created on boot (`autoIndex: true`). Watch the first deploy after an index change on a
   large collection.
-- Migrations (`migrate-mongo`, from BS-5) run automatically as Render's **pre-deploy command**
+- Migrations (`migrate-mongo`, from BS-5) run automatically as Railway's **pre-deploy command**
   (`npm run migrate:up`), after the build and before the new version takes traffic; a failing
   migration stops the deploy and the old version keeps serving. A lock stops two deploys migrating
   at once. Migrations must be backward-compatible with the running version (add, backfill, then
@@ -235,12 +279,12 @@ For **each** provider:
 ## 8. Release procedure
 
 1. The PR is merged to `main` (CI green).
-2. Vercel and Render auto-deploy from `main`.
-3. Watch Render logs for boot and `/health`, and Vercel for the build.
+2. Vercel and Railway auto-deploy from `main`.
+3. Watch Railway's deploy logs for the migration, boot and `/health`, and Vercel for the build.
 4. Smoke test: home page, a book page, the preview reader, add to cart, and (on staging, for money
    changes) a full test-card purchase. After catalogue changes: edit a book in the admin and
    confirm the store shows it within seconds (revalidation works).
-5. Rollback: Render "Rollback to previous deploy" / Vercel "Promote previous deployment". A
+5. Rollback: Railway "Redeploy" of the previous deployment / Vercel "Promote previous deployment". A
    migration that isn't backward-compatible must ship its `down` script tested.
 
 ## 9. Secrets

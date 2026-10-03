@@ -48,6 +48,17 @@ describe('envValidationSchema', () => {
     expect(envValidationSchema.validate(env).error).toBeDefined();
   });
 
+  it('trusts one proxy by default, and the configured number behind Vercel + Railway (BS-24)', () => {
+    expect(envValidationSchema.validate(valid).value.TRUST_PROXY_HOPS).toBe(1);
+    expect(
+      envValidationSchema.validate({ ...valid, TRUST_PROXY_HOPS: '2' }).value
+        .TRUST_PROXY_HOPS,
+    ).toBe(2);
+    expect(
+      envValidationSchema.validate({ ...valid, TRUST_PROXY_HOPS: 'all' }).error,
+    ).toBeDefined();
+  });
+
   it('rejects a non-mongodb connection string', () => {
     const { error } = envValidationSchema.validate({
       ...valid,

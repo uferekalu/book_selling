@@ -14,7 +14,7 @@ quick reference for working inside `backend/`.
 - **oxlint** (`npm run lint`, type-aware), not ESLint. Prettier formats (`npx prettier --write src
   test`).
 - Env is validated with Joi at boot (`src/common/config/env.validation.ts`). A new var goes there,
-  in `.env.example` and in `../render.yaml` in the same change.
+  in `.env.example` and in the production table in `../docs/DEPLOYMENT.md` §4 in the same change.
 - Logging: `nestjs-pino`. Use Nest's `Logger`, never `console.log`. Silent in `NODE_ENV=test`.
 - `setupApp()` (`src/setup-app.ts`) applies helmet, cookies, CORS, `ValidationPipe`
   (`whitelist` + `forbidNonWhitelisted` + `transform`), `AllExceptionsFilter` and `trust proxy 1`.
@@ -111,7 +111,7 @@ filters, decorators, `money/`, `utils/`). The module map and ticket per module a
   (`npm run seed:demo`); `tsx` doesn't emit decorator metadata, so injected services come out
   `undefined`. `tsx` is fine for scripts without DI (`seed:owner`). The demo seed refuses to run
   in production; `npm run seed:demo -- --remove` deletes it.
-- **Migrations**: `npm run migrate:create -- <name>` → `migrations/`; Render runs `migrate:up` before
+- **Migrations**: `npm run migrate:create -- <name>` → `migrations/`; Railway runs `migrate:up` before
   each deploy. Keep them backward-compatible with the running version.
 
 ## Commerce (BS-7)

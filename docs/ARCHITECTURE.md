@@ -18,12 +18,12 @@ production). Where we deliberately differ, the section says so and why.
 
 ```
 book_selling/
-├── backend/            NestJS 12 API (ESM, Vitest, oxlint)         → Render
+├── backend/            NestJS 12 API (ESM, Vitest, oxlint)         → Railway
 ├── frontend/           Next.js 16 App Router, Tailwind v4          → Vercel
 ├── docs/               this folder
 ├── .claude/skills/     project skills for Claude Code sessions
 ├── .github/workflows/  CI (required status checks on `main`)
-└── render.yaml         Render Blueprint for the API
+└── backend/railway.json  Railway build/deploy config for the API
 ```
 
 Two independent apps with their own `package.json` and lockfile, and no workspace tooling. They
@@ -42,7 +42,7 @@ response shapes. A contract change updates both sides in the same PR.
 | Database | MongoDB (Atlas in prod) via Mongoose 9 | Replica set required: transactions are used for money paths |
 | Validation | `class-validator` DTOs + global `ValidationPipe` (`whitelist`, `forbidNonWhitelisted`, `transform`) | Env validated with Joi at boot |
 | Logging | `nestjs-pino`; JSON in prod, pretty in dev, silent in test | Auth headers, cookies and provider signatures are redacted |
-| Rate limiting | `@nestjs/throttler` global 100/min + tighter per-route limits | `trust proxy = 1` (one hop, Render) |
+| Rate limiting | `@nestjs/throttler` global 100/min + tighter per-route limits | `trust proxy = TRUST_PROXY_HOPS` (2 in production: Vercel rewrite + Railway edge; BS-24) |
 | Docs | Swagger at `/api/docs` | |
 | Health | Terminus `GET /health` (MongoDB ping) | Extended as dependencies are added |
 | Payments | Stripe, Paystack, Flutterwave behind one adapter interface | §9 |
@@ -1019,7 +1019,7 @@ the database: an image or file a book still references is kept, and its bookkeep
   edition" email (BS-9).
 - **Size and memory**: `MANUSCRIPT_MAX_MB` (default 200) is bounded by the API's memory, not by
   storage: attaching and building a preview hold the whole PDF in memory several times over, so
-  the Render instance needs about 4× the largest book (DEPLOYMENT §4a).
+  the API service needs about 4× the largest book (DEPLOYMENT §4a).
 
 **The admin "Add a book" flow** (BS-5 + BS-6), as built: **one page with every section stacked**
 (not a wizard), each section saving on its own with an "Unsaved" badge, a "Discard changes"
@@ -1329,7 +1329,7 @@ and reported to the owner. It is never silently lost, and never sent twice for t
 - Structured JSON logs with a request ID; every money event logs `orderId`, `paymentReference` and
   `provider`.
 - Sentry (optional env, both apps) from BS-14.
-- Health endpoint used by Render.
+- Health endpoint used by Railway's deploy health check.
 - The admin "Needs attention" queue (orders with `attention.required`, payments with
   `reconciliationRequired`, dead emails) is the operational dashboard for money problems.
 

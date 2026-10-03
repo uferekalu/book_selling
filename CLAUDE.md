@@ -9,13 +9,13 @@ This file is the summary. Read the relevant doc before working in an unfamiliar 
 - `docs/PRODUCT_RULES.md`: what the product must do (preview, checkout, payment, email, messaging rules)
 - `docs/ARCHITECTURE.md`: data model, money safety (§8), payments (§9), preview reader (§10), email (§11), design system (§6)
 - `docs/ENGINEERING_RULES.md`: git workflow, definition of done, money rules, testing rules
-- `docs/DEPLOYMENT.md`: environments, Vercel/Render/Atlas/Resend, provider go-live checklist
+- `docs/DEPLOYMENT.md`: environments, Vercel/Railway/Atlas/Resend, provider go-live checklist
 - `docs/ROADMAP.md`: ticket order, **next ticket number**, and the record of what shipped
 
 ## Stack
 
 - **Backend** (`backend/`): NestJS 12 (**ESM**: relative imports end in `.js`), TypeScript strict,
-  MongoDB via Mongoose 9, Vitest, oxlint. Deployed to **Render**. See `backend/CLAUDE.md`.
+  MongoDB via Mongoose 9, Vitest, oxlint. Deployed to **Railway**. See `backend/CLAUDE.md`.
 - **Frontend** (`frontend/`): Next.js 16 App Router, React 19, Tailwind v4 (CSS-first tokens),
   hand-built UI kit, Redux Toolkit + RTK Query, react-hook-form + Zod. Deployed to **Vercel**. See
   `frontend/CLAUDE.md`.
@@ -44,8 +44,9 @@ component.
    skill before merging anything touching payments, orders, checkout, coupons or the library.
 3. **Locked book pages never reach the browser before purchase.** The preview is a separate
    server-generated PDF.
-4. **No secrets committed.** Real values live in `.env` (gitignored) or Vercel/Render settings. New
-   env vars go into Joi validation, `.env.example` and `render.yaml` together.
+4. **No secrets committed.** Real values live in `.env` (gitignored) or Vercel/Railway settings.
+   New env vars go into Joi validation, `.env.example` and the production table in
+   `docs/DEPLOYMENT.md` §4 together.
 5. **Every endpoint validates with a DTO; every form validates with Zod.** Guards are default-deny
    (`@Public()` to open a route); staff routes need `@Roles()` plus a two-step-verified session;
    ownership is checked in services.
