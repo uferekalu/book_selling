@@ -3,6 +3,7 @@ import { Container } from "@/components/ui";
 import { BRAND_NAME } from "@/lib/site";
 
 const LEGAL_LINKS = [
+  { href: "/contact", label: "Contact" },
   { href: "/legal/terms", label: "Terms of Sale" },
   { href: "/legal/privacy", label: "Privacy Policy" },
 ];

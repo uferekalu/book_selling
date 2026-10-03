@@ -11,6 +11,9 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  // Live updates connect straight to the API (Vercel rewrites can't carry WebSockets); the token,
+  // not a cookie, authenticates them (docs/ARCHITECTURE.md §12).
+  env: { NEXT_PUBLIC_REALTIME_URL: getBackendUrl() },
   images: {
     // Book covers and author photos come from Cloudinary, which resizes and picks AVIF/WebP itself
     // (src/lib/cloudinary-loader.ts), so no Next image optimisation server is needed.

@@ -9,6 +9,7 @@ import { cn } from "@/lib/cn";
 import { useAppSelector } from "@/lib/redux/hooks";
 import { ACCOUNT_NAV, MAIN_NAV } from "@/lib/site";
 import { CartButton, CartDrawer } from "@/features/cart/cart-drawer";
+import { NotificationBell } from "@/features/notifications/notification-bell";
 import { AccountLinks, AccountMenu } from "./account-menu";
 import { CurrencySwitcher } from "./currency-switcher";
 import { Logo } from "./logo";
@@ -74,6 +75,7 @@ export function SiteHeader() {
             <CurrencySwitcher />
             <ThemeToggle />
           </div>
+          <NotificationBell />
           <CartButton />
           <div className="hidden lg:block">
             <AccountMenu />

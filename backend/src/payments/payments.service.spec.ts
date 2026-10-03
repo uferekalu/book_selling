@@ -22,6 +22,8 @@ import { Entitlement } from '../commerce/schemas/entitlement.schema.js';
 import { Order, type OrderDocument } from '../commerce/schemas/order.schema.js';
 import { ShippingService } from '../commerce/shipping.service.js';
 import { MailService } from '../mail/mail.service.js';
+import { NotificationsModule } from '../notifications/notifications.module.js';
+import { RealtimeModule } from '../realtime/realtime.module.js';
 import { CloudinaryService } from '../uploads/cloudinary.service.js';
 import { User } from '../users/schemas/user.schema.js';
 import {
@@ -172,6 +174,8 @@ describe('Payments (settlement, webhooks, reconciliation, refunds)', () => {
         }),
         MongooseModule.forRoot(mongod.getUri()),
         AuditModule,
+        RealtimeModule,
+        NotificationsModule,
         (await import('./payments.module.js')).PaymentsModule,
       ],
     })
@@ -636,6 +640,18 @@ describe('Payments (settlement, webhooks, reconciliation, refunds)', () => {
       ]);
       expect(receipt.data?.libraryUrl).toMatch(/\/account\/library$/);
       expect(mail.count('order.new-sale')).toBe(1);
+      // The buyer's bell gets the payment, committed with it (BS-10).
+      expect(
+        await models.book.db
+          .collection('notifications')
+          .find({ userId: order.userId })
+          .toArray(),
+      ).toEqual([
+        expect.objectContaining({
+          type: 'order_paid',
+          link: `/account/orders/${order.orderNumber}`,
+        }),
+      ]);
       expect(claimLinks).toEqual([order.email]);
       // The guest's cart no longer holds what they just bought.
       expect(await cart.items(guestCart)).toHaveLength(0);

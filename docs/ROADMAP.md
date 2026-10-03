@@ -1,6 +1,6 @@
 # Roadmap
 
-**Next planned ticket: BS-10** · **Next reactive ticket: BS-26**
+**Next planned ticket: BS-11** · **Next reactive ticket: BS-26**
 
 Each ticket is one branch (`feature/BS-<n>-<suffix>`) and one squash-merged PR. The order is
 deliberate: each ticket builds only on merged work. When a ticket finishes, its row is rewritten
@@ -19,7 +19,7 @@ so planned numbers never shift; they get a new row at the end of the table.
 | BS-7 | `cart-checkout-orders` | See detail below | ✅ Done |
 | BS-8 | `payments` | See detail below | ✅ Done |
 | BS-9 | `library-fulfillment` | See detail below | ✅ Done |
-| BS-10 | `messaging` | Socket.IO gateway (handshake auth, rooms, rejoin on reconnect), conversations and messages, staff inbox, "Ask the author" and order-linked threads, read receipts and unread counts, offline email fallback via delayed outbox, contact form (Turnstile/honeypot), in-app notifications bell | ⏳ Planned |
+| BS-10 | `messaging` | Conversations ("Ask the author", "Question about this order", general), staff inbox with filters, live updates over Socket.IO, read receipts and unread counts, 10-minute email fallback, contact form, notifications bell. See detail below | ✅ Done |
 | BS-11 | `reviews-wishlist-coupons` | Verified-buyer reviews with rating aggregation, wishlist, coupons admin UI | ⏳ Planned |
 | BS-12 | `admin-dashboard` | Revenue per currency, orders, preview → purchase conversion per book, best sellers, low stock, **Needs attention** queue (reconciliation, attention orders, dead emails), customers, audit log viewer, settings (currencies, provider switches, preview cap, refund threshold) | ⏳ Planned |
 | BS-13 | `storefront-polish-seo-legal` | Landing-page art direction and motion polish, OG images, sitemap and robots, performance budget pass (LCP/INP/CLS), accessibility audit, legal pages (terms, refunds, privacy, shipping), data export and account deletion, cookie notice; **decide EU/UK digital VAT** (PRODUCT_RULES §9) | ⏳ Planned |
@@ -281,6 +281,52 @@ checklist is reviewed whenever a ticket is planned, so nothing important is forg
      empty-state padding tightened on phones.
   7. Script robustness: the responsive check now rejects Git Bash–mangled paths and sanitises `?`
      in screenshot names.
+
+## BS-10: Messaging, live updates, contact form and the bell (✅ Done, 2026-10-03)
+
+- **Customers**: Account → Messages lists conversations (unread marked). They start one there,
+  from a book page ("Ask the author", through sign-in for visitors, with the book kept), or from
+  an order ("Question about this order"; a second question joins the order's open conversation).
+  The thread shows "Sent" / "Seen" and the owner's reply-time line.
+- **Staff**: Store admin → Messages, with Conversations (Open / Unread / About an order / Closed /
+  All, paged, filters in the URL) and Contact form tabs with counts. Reply, close or reopen. The
+  owner sets the reply-time line there.
+- **Live updates**: Socket.IO gateway authenticated by the access token at handshake. The server
+  joins its rooms, so clients send nothing. It disconnects the socket when the token expires, and
+  the client renews and reconnects, which rejoins the rooms. Events carry ids only, and the client
+  refetches. The browser connects straight to the API, since Vercel can't proxy WebSockets.
+- **Email fallback**: one "you have a new message" email per unread streak, sent after 10
+  minutes and cancelled when read (outbox `sendAfter` + `cancel`). Customer replies alert
+  `OWNER_ALERT_EMAIL`.
+- **Contact page** (`/contact`, linked in the footer and sitemap):
+  - Bots are turned away by a honeypot, a 2.5 s minimum fill time and 5 per hour per IP; they get
+    the same "received" answer a person does.
+  - Each address gets at most 3 acknowledgements a day.
+  - The owner gets an email alert and staff get a bell entry.
+- **Bell**: covers new messages and replies, contact messages, payment received, new sale, shipped,
+  delivered and refund. The money and shipment entries are written inside those transactions.
+- **Deviations from the plan**:
+  - No conversation rooms: `user:<id>` and `staff` rooms cover every event with nothing to
+    authorise per subscription.
+  - Contact-form replies go by email and are not converted into account conversations, because
+    the form's email is unverified.
+  - Turnstile is not added; the honeypot, fill time and rate limit come first.
+  - No message attachments yet.
+  - Order-status events go to the bell rather than a dedicated socket event.
+- **Incident during the build**: `withTransaction` retried the first write on a fresh collection
+  and created a second message id. The reminder `dedupeKey` then didn't match the one stored on
+  the conversation. Ids are now created before the transaction; a unit test caught it.
+- **Tests**:
+  - Backend unit (16): streaks, read receipts and cancellation, ownership, order and book rules,
+    8 parallel sends keeping the counter exact, paging, inbox filters, contact bot rules, ack cap
+    and replies. The payments spec also asserts the bell entry.
+  - Backend e2e (6): auth and validation, the staff-only inbox, an HTTP round trip, a **real
+    socket** (no token or a forged one refused; the reply reaches only the right customer; read
+    receipt pushed), and the contact rate limit.
+  - Frontend: schemas, token expiry, time formatting, Ask-the-author redirect.
+  - A browser run against the local API (customer asks → staff with 2FA reply → customer sees
+    "Seen" and the reply live, no reload; bell; no sideways scroll at 375px). Its test data was
+    deleted afterwards.
 
 ## BS-25: First deploy fixes (✅ Done, 2026-10-03)
 

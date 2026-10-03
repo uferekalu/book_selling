@@ -16,6 +16,12 @@ import { DatabaseModule } from './database/database.module.js';
 import { HealthModule } from './health/health.module.js';
 import { JobsModule } from './jobs/jobs.module.js';
 import { MailModule } from './mail/mail.module.js';
+import { MessagingModule } from './messaging/messaging.module.js';
+import { NotificationsModule } from './notifications/notifications.module.js';
+import {
+  RealtimeGatewayModule,
+  RealtimeModule,
+} from './realtime/realtime.module.js';
 import { UsersModule } from './users/users.module.js';
 
 @Module({
@@ -71,10 +77,14 @@ import { UsersModule } from './users/users.module.js';
     MailModule,
     UsersModule,
     AuthModule,
+    RealtimeModule,
+    RealtimeGatewayModule,
+    NotificationsModule,
     CatalogModule,
     CommerceModule,
     PaymentsModule,
     LibraryModule,
+    MessagingModule,
   ],
   // Order matters: rate limit first, then authentication (default-deny), then roles.
   providers: [

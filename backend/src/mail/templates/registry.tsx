@@ -41,6 +41,16 @@ import {
   type OrderReceiptData,
   type PaymentAttentionData,
 } from './orders.js';
+import {
+  ContactNew,
+  ContactReceived,
+  ContactReply,
+  UnreadMessage,
+  type ContactNewData,
+  type ContactReceivedData,
+  type ContactReplyData,
+  type UnreadMessageData,
+} from './messaging.js';
 import type { EmailBrand } from './theme.js';
 
 export interface TemplateDefinition<D> {
@@ -282,6 +292,60 @@ export const EMAIL_TEMPLATES = {
       template: 'auth.verify-email',
       attempts: 8,
       lastError: 'Resend validation_error: Invalid `to` field',
+    },
+  }),
+  'messaging.unread-message': define<UnreadMessageData>({
+    subject: (data) => `New message from ${data.from}: ${data.subject}`,
+    render: (data, brand) => <UnreadMessage data={data} brand={brand} />,
+    category: 'notification',
+    sensitive: false,
+    sample: {
+      name: 'Ada',
+      from: 'Dr. Okafor',
+      subject: 'Question about order BS-2026-000123',
+      preview:
+        'Thank you for your order. The print copy leaves Enugu tomorrow; I will add the tracking number then.',
+      conversationUrl:
+        'https://example.com/account/messages/66f9c0ffee0000000000abcd',
+    },
+  }),
+  'messaging.contact-received': define<ContactReceivedData>({
+    subject: (_, brand) => `We received your message to ${brand.name}`,
+    render: (data, brand) => <ContactReceived data={data} brand={brand} />,
+    category: 'notification',
+    sensitive: false,
+    sample: {
+      name: 'Chidi',
+      subject: 'Bulk order for my department',
+      replyTime: 'Usually replies within a day',
+    },
+  }),
+  'messaging.contact-new': define<ContactNewData>({
+    subject: (data) => `Contact form: ${data.subject}`,
+    render: (data, brand) => <ContactNew data={data} brand={brand} />,
+    category: 'notification',
+    sensitive: false,
+    sample: {
+      from: 'Chidi Eze (chidi@example.com)',
+      subject: 'Bulk order for my department',
+      body: 'Good day. Our foundry laboratory would like 30 print copies of Principles of Foundry Technology.\nCan you quote a price with delivery to Nsukka?',
+      inboxUrl:
+        'https://example.com/admin/messages/contact/66f9c0ffee0000000000abcd',
+    },
+  }),
+  'messaging.contact-reply': define<ContactReplyData>({
+    subject: (data) => `Re: ${data.subject}`,
+    render: (data, brand) => <ContactReply data={data} brand={brand} />,
+    category: 'notification',
+    sensitive: false,
+    sample: {
+      name: 'Chidi',
+      subject: 'Bulk order for my department',
+      reply:
+        'Thank you for asking. For 30 copies the price is ₦18,000 each, delivered to Nsukka within a week.',
+      from: 'Dr. Okafor',
+      original: 'Our foundry laboratory would like 30 print copies.',
+      contactUrl: 'https://example.com/contact',
     },
   }),
 };

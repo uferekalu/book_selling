@@ -9,6 +9,8 @@ import type { AccessTokenPayload } from '../auth/interfaces/auth.types.js';
 import { randomToken } from '../common/crypto/tokens.js';
 import { Book } from '../catalog/schemas/book.schema.js';
 import { MailService } from '../mail/mail.service.js';
+import { NotificationsModule } from '../notifications/notifications.module.js';
+import { RealtimeModule } from '../realtime/realtime.module.js';
 import { CloudinaryService } from '../uploads/cloudinary.service.js';
 import { User } from '../users/schemas/user.schema.js';
 import { CartService } from './cart.service.js';
@@ -74,6 +76,8 @@ describe('Orders (placement, holds, idempotency, expiry)', () => {
         }),
         MongooseModule.forRoot(mongod.getUri()),
         AuditModule,
+        RealtimeModule,
+        NotificationsModule,
         CommerceModule,
       ],
     })

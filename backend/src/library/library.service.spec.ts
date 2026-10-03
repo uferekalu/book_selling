@@ -12,6 +12,8 @@ import { Book } from '../catalog/schemas/book.schema.js';
 import { Entitlement } from '../commerce/schemas/entitlement.schema.js';
 import { Order } from '../commerce/schemas/order.schema.js';
 import { MailService } from '../mail/mail.service.js';
+import { NotificationsModule } from '../notifications/notifications.module.js';
+import { RealtimeModule } from '../realtime/realtime.module.js';
 import { BookFilesService } from '../uploads/book-files.service.js';
 import { CloudinaryService } from '../uploads/cloudinary.service.js';
 import { User } from '../users/schemas/user.schema.js';
@@ -77,6 +79,8 @@ describe('Library (owned ebooks, personal copies, reading and downloads)', () =>
         }),
         MongooseModule.forRoot(mongod.getUri()),
         AuditModule,
+        RealtimeModule,
+        NotificationsModule,
         LibraryModule,
       ],
     })

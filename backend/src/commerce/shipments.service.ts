@@ -12,6 +12,7 @@ import type { ClientSession, Connection, Model } from 'mongoose';
 import { AuditService } from '../audit/audit.module.js';
 import type { AccessTokenPayload } from '../auth/interfaces/auth.types.js';
 import { MailService } from '../mail/mail.service.js';
+import { NotificationsService } from '../notifications/notifications.service.js';
 import { countryName } from '../payments/countries.js';
 import { nextStatus } from './order-state-machine.js';
 import {
@@ -59,6 +60,7 @@ export class ShipmentsService {
     @InjectModel(Order.name) private readonly orders: Model<Order>,
     @InjectConnection() private readonly connection: Connection,
     private readonly mail: MailService,
+    private readonly notifications: NotificationsService,
     private readonly audit: AuditService,
     config: ConfigService,
   ) {
@@ -215,6 +217,19 @@ export class ShipmentsService {
       },
       session,
     );
+    await this.notifications.notify(
+      order.userId,
+      {
+        type: 'order_shipped',
+        title: `Order ${order.orderNumber} has shipped`,
+        body: order.shipment.trackingNumber
+          ? `Tracking number ${order.shipment.trackingNumber}`
+          : '',
+        link: `/account/orders/${order.orderNumber}`,
+        dedupeKey: `order-shipped:${order._id.toString()}`,
+      },
+      session,
+    );
   }
 
   private async emailDelivered(order: OrderDocument, session: ClientSession) {
@@ -229,6 +244,16 @@ export class ShipmentsService {
           items: this.printItems(order),
           orderUrl: `${this.frontendUrl}/account/orders/${order.orderNumber}`,
         },
+      },
+      session,
+    );
+    await this.notifications.notify(
+      order.userId,
+      {
+        type: 'order_delivered',
+        title: `Order ${order.orderNumber} was delivered`,
+        link: `/account/orders/${order.orderNumber}`,
+        dedupeKey: `order-delivered:${order._id.toString()}`,
       },
       session,
     );
