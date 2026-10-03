@@ -10,7 +10,12 @@ const DEV_FALLBACK = "http://localhost:4000";
  */
 export function getBackendUrl(env: NodeJS.ProcessEnv = process.env): string {
   const raw = env.API_URL?.trim();
-  if (raw) return raw.replace(/\/+$/, "");
+  if (raw) {
+    if (!/^https?:\/\/[^\s/]+/.test(raw)) {
+      throw new Error(`API_URL must be the API's address, e.g. https://your-api.up.railway.app (got "${raw}")`);
+    }
+    return raw.replace(/\/+$/, "");
+  }
   if (env.NODE_ENV === "production" && env.CI !== "true") {
     throw new Error("API_URL must be set in production");
   }

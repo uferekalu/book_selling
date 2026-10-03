@@ -24,3 +24,10 @@ describe("getBackendUrl", () => {
     expect(() => getBackendUrl(env({ NODE_ENV: "production" }))).toThrow(/API_URL/);
   });
 });
+
+describe("getBackendUrl with a bad value (BS-25)", () => {
+  it("refuses something that isn't an address, with a clear message", () => {
+    expect(() => getBackendUrl({ NODE_ENV: "production", API_URL: "FILL_ME_RAILWAY_URL" } as NodeJS.ProcessEnv)).toThrow(/API_URL must be the API's address/);
+    expect(getBackendUrl({ NODE_ENV: "production", API_URL: " https://api.up.railway.app/ " } as NodeJS.ProcessEnv)).toBe("https://api.up.railway.app");
+  });
+});
