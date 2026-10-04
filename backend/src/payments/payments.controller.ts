@@ -113,6 +113,18 @@ class RefundDto {
   reason: string;
 }
 
+class ResolveRefundDto {
+  @ApiProperty({ enum: ['succeeded', 'failed'] })
+  @IsIn(['succeeded', 'failed'])
+  outcome: 'succeeded' | 'failed';
+  @ApiProperty({ description: 'What the provider dashboard shows' })
+  @Transform(trim)
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(500)
+  note: string;
+}
+
 class ResolveDto {
   @ApiProperty()
   @Transform(trim)
@@ -185,8 +197,8 @@ export class PaymentsController {
 
 /**
  * Provider webhooks (ARCHITECTURE §9.3). Signature checked against the exact raw body first; a bad
- * one is 401. Once verified, always 2xx (providers disable endpoints that keep failing); processing
- * errors are recorded and reconciliation picks them up.
+ * one is 401. Once verified, always 2xx (providers disable endpoints that keep failing); a delivery
+ * whose processing fails is stored and processed again by reconciliation (BS-26).
  */
 @ApiExcludeController()
 @Controller('payments/webhooks')
@@ -247,6 +259,29 @@ export class AdminPaymentsController {
       orderNumber,
       amount: dto.amount,
       reason: dto.reason,
+      actor,
+    });
+  }
+
+  /**
+   * The owner records what the provider dashboard shows for a refund we couldn't confirm (BS-26):
+   * it went through (completes it) or it didn't (frees the amount to refund again). Audited.
+   */
+  @Roles('owner')
+  @Post(':orderNumber/refunds/:refundId/resolve')
+  @HttpCode(HttpStatus.OK)
+  @Throttle(perMinute(10))
+  resolveRefund(
+    @Param('orderNumber') orderNumber: string,
+    @Param('refundId') refundId: string,
+    @Body() dto: ResolveRefundDto,
+    @CurrentUser() actor: AccessTokenPayload,
+  ) {
+    return this.payments.resolveRefund({
+      orderNumber,
+      refundId,
+      outcome: dto.outcome,
+      note: dto.note,
       actor,
     });
   }

@@ -281,6 +281,11 @@ export const commerceApi = api.injectEndpoints({
       query: ({ orderNumber, ...body }) => ({ url: `/admin/orders/${orderNumber}/refunds`, method: "POST", body }),
       invalidatesTags: (_r, _e, { orderNumber }) => [{ type: "AdminOrders", id: orderNumber }, "AdminOrders"],
     }),
+    /** The owner records what the provider dashboard shows for an unconfirmed refund (BS-26). */
+    resolveRefund: builder.mutation<AdminPayment[], { orderNumber: string; refundId: string; outcome: "succeeded" | "failed"; note: string }>({
+      query: ({ orderNumber, refundId, ...body }) => ({ url: `/admin/orders/${orderNumber}/refunds/${refundId}/resolve`, method: "POST", body }),
+      invalidatesTags: (_r, _e, { orderNumber }) => [{ type: "AdminOrders", id: orderNumber }, "AdminOrders"],
+    }),
     resolveAttention: builder.mutation<OrderView, { orderNumber: string; note: string }>({
       query: ({ orderNumber, note }) => ({ url: `/admin/orders/${orderNumber}/resolve-attention`, method: "POST", body: { note } }),
       invalidatesTags: (_r, _e, { orderNumber }) => [{ type: "AdminOrders", id: orderNumber }, "AdminOrders"],
@@ -335,6 +340,7 @@ export const {
   useAdminOrderQuery,
   useAdminOrderPaymentsQuery,
   useRefundOrderMutation,
+  useResolveRefundMutation,
   useResolveAttentionMutation,
   useUpdateShipmentMutation,
   useReleaseOrderMutation,

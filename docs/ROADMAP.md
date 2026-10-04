@@ -1,6 +1,6 @@
 # Roadmap
 
-**Next planned ticket: BS-11** · **Next reactive ticket: BS-26**
+**Next planned ticket: BS-11** · **Next reactive ticket: BS-27**
 
 Each ticket is one branch (`feature/BS-<n>-<suffix>`) and one squash-merged PR. The order is
 deliberate: each ticket builds only on merged work. When a ticket finishes, its row is rewritten
@@ -35,6 +35,7 @@ so planned numbers never shift; they get a new row at the end of the table.
 | BS-23 | `payment-reliability` | See detail below | ✅ Done |
 | BS-24 | `railway-vercel-deploy` | See detail below | ✅ Done |
 | BS-25 | `deploy-fixes` | See detail below | ✅ Done |
+| BS-26 | `payment-audit` | See detail below | ✅ Done |
 
 **Launch line.** BS-1 to BS-14 are the launch. The store goes live after BS-14 with the complete
 buying, reading, email, messaging and admin experience. BS-15 to BS-18 are growth features shipped
@@ -281,6 +282,42 @@ checklist is reviewed whenever a ticket is planned, so nothing important is forg
      empty-state padding tightened on phones.
   7. Script robustness: the responsive check now rejects Git Bash–mangled paths and sanitises `?`
      in screenshot names.
+
+## BS-26: Payment system audit (✅ Done, 2026-10-04)
+
+The owner asked for a line-by-line review of every payment path. The core held up: exact amount
+and currency matching in `settle()`, atomic claims, transactions, idempotent webhooks, and
+two-phase refunds. Eight gaps were fixed, each with a test.
+
+1. **Lost success after a "failed" attempt**: Paystack lets a buyer try another card on the same
+   page, so a "failed" attempt can still be paid. Reconciliation now re-checks `failed` and
+   `abandoned` attempts every 30 minutes for 48 hours. It skips attempts whose page never opened
+   (`started: false`).
+2. **Webhooks that failed to process were lost**: we always answer 2xx, so providers never
+   redeliver, and refund or dispute events had no other route back in. The verified envelope is now
+   stored and retried up to 5 times; the owner is alerted after the last try.
+3. **Flutterwave refunds stayed "pending" forever**: no Flutterwave refund webhook is handled. Pending
+   refunds are now polled for all providers (`refundStatus`), so they complete or fail. A failed one
+   frees its amount and alerts the owner.
+4. **Unconfirmed refunds could never be closed**: an `outcome_unknown` refund locked its amount for
+   good. The owner can now record what the dashboard shows ("Record the outcome" on the order page;
+   owner-only, audited).
+5. **A released order could still be paid on an old Stripe tab**: release now expires open Stripe
+   Checkout Sessions first. If a session completed in the meantime, it is settled and the release
+   refused.
+6. **Double print purchases went unnoticed**: a second paid order for the same print book within 24
+   hours is flagged before shipping.
+7. **Cancelled returns showed "Confirming… don't pay again"** for about two minutes: they now show
+   "Payment not completed" with "Try again" after one check.
+8. The webhook controller comment claimed reconciliation picks up processing errors; that is now
+   true.
+
+- **Tests**:
+  - Payments service: 12 new tests (failed→paid rescue, never-opened attempts skipped, webhook retry
+    exactly once, 5-try alert, refund polling succeeded / failed / unreachable, owner resolution both
+    ways, release closes the page, paid meanwhile, can't close, duplicate print).
+  - Adapters: refund status for all three providers, and Stripe session expiry.
+  - e2e: the resolve route is owner-only.
 
 ## BS-10: Messaging, live updates, contact form and the bell (✅ Done, 2026-10-03)
 

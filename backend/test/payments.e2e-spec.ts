@@ -212,5 +212,15 @@ describe('Payments over HTTP (e2e)', () => {
       .post('/admin/orders/BS-2026-000001/refunds')
       .send({ amount: 100, reason: 'x' })
       .expect(401);
+    // Recording what the dashboard shows for an unconfirmed refund is owner-only too (BS-26).
+    await http()
+      .post('/admin/orders/BS-2026-000001/refunds/RF-1/resolve')
+      .set('Authorization', `Bearer ${reg.body.accessToken as string}`)
+      .send({ outcome: 'succeeded', note: 'x' })
+      .expect(403);
+    await http()
+      .post('/admin/orders/BS-2026-000001/refunds/RF-1/resolve')
+      .send({ outcome: 'succeeded', note: 'x' })
+      .expect(401);
   });
 });

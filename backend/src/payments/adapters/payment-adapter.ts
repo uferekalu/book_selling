@@ -90,7 +90,25 @@ export interface PaymentAdapter {
     headers: Record<string, string | string[] | undefined>,
   ): Promise<WebhookEnvelope | null>;
   refund(params: RefundParams): Promise<RefundResult>;
+  /**
+   * Where a refund we started stands now, by the provider's refund id (BS-26). Lets reconciliation
+   * finish refunds whose webhook never came (Flutterwave sends none we use). Throws when the
+   * provider can't be reached; the next run asks again.
+   */
+  refundStatus(providerRefundId: string): Promise<RefundStatus>;
+  /**
+   * Closes the provider's payment page for an attempt, where the provider supports it (Stripe), so
+   * a released order can't be paid on an old tab. `completed`: it was already paid (settle it);
+   * `unsupported`: the provider keeps the page open (a late payment is still honoured).
+   */
+  cancel(
+    reference: string,
+    providerTransactionId: string | null,
+  ): Promise<CancelResult>;
 }
+
+export type RefundStatus = 'succeeded' | 'pending' | 'failed';
+export type CancelResult = 'cancelled' | 'completed' | 'unsupported';
 
 /** The provider rejected the request in a way the buyer can act on ("amount below minimum"). */
 export class ProviderRejectedError extends Error {}

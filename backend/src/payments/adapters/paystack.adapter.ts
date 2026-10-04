@@ -12,7 +12,9 @@ import {
   type PaymentAdapter,
   type ProviderResult,
   type RefundParams,
+  type CancelResult,
   type RefundResult,
+  type RefundStatus,
   type WebhookEnvelope,
 } from './payment-adapter.js';
 
@@ -200,6 +202,25 @@ export class PaystackAdapter implements PaymentAdapter {
       status: body.data?.status === 'processed' ? 'succeeded' : 'pending',
       providerRefundId: body.data?.id ? String(body.data.id) : null,
     };
+  }
+
+  /** GET /refund//:id: processed, failed, or still on its way (pending, processing, needs-attention). */
+  async refundStatus(providerRefundId: string): Promise<RefundStatus> {
+    const { status, body } = await requestJson<
+      PaystackResponse<{ status?: string }>
+    >(
+      this.fetchImpl,
+      `${BASE}/refund/${encodeURIComponent(providerRefundId)}`,
+      { method: 'GET', headers: this.headers() },
+    );
+    if (status >= 400 || !body.status || !body.data) return 'pending';
+    if (body.data.status === 'processed') return 'succeeded';
+    return body.data.status === 'failed' ? 'failed' : 'pending';
+  }
+
+  /** Paystack keeps an initialized page payable; a late payment is honoured by settle(). */
+  cancel(): Promise<CancelResult> {
+    return Promise.resolve('unsupported');
   }
 }
 

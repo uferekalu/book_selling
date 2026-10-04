@@ -12,7 +12,9 @@ import {
   type PaymentAdapter,
   type ProviderResult,
   type RefundParams,
+  type CancelResult,
   type RefundResult,
+  type RefundStatus,
   type WebhookEnvelope,
 } from './payment-adapter.js';
 
@@ -172,6 +174,30 @@ export class FlutterwaveAdapter implements PaymentAdapter {
       status: body.data?.status === 'completed' ? 'succeeded' : 'pending',
       providerRefundId: body.data?.id ? String(body.data.id) : null,
     };
+  }
+
+  /**
+   * GET /refunds/:id. Flutterwave sends no refund webhook we rely on, so this is how a refund it
+   * accepted as pending is ever confirmed (BS-26).
+   */
+  async refundStatus(providerRefundId: string): Promise<RefundStatus> {
+    const { status, body } = await requestJson<
+      FlwResponse<{ status?: string }>
+    >(
+      this.fetchImpl,
+      `${BASE}/refunds/${encodeURIComponent(providerRefundId)}`,
+      { method: 'GET', headers: this.headers() },
+    );
+    if (status >= 400 || body.status !== 'success' || !body.data)
+      return 'pending';
+    const state = body.data.status?.toLowerCase();
+    if (state === 'completed' || state === 'successful') return 'succeeded';
+    return state === 'failed' ? 'failed' : 'pending';
+  }
+
+  /** Flutterwave keeps a payment link payable; a late payment is honoured by settle(). */
+  cancel(): Promise<CancelResult> {
+    return Promise.resolve('unsupported');
   }
 }
 

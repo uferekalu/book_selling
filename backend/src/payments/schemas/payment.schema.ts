@@ -43,6 +43,8 @@ export class Refund {
   @Prop({ type: Date, required: true }) createdAt: Date;
   @Prop({ type: Date, default: null }) resolvedAt: Date | null;
   @Prop({ type: String, default: null }) failureReason: string | null;
+  /** Last time reconciliation asked the provider about this pending refund (BS-26). */
+  @Prop({ type: Date, default: null }) lastCheckedAt: Date | null;
 }
 const RefundSchema = SchemaFactory.createForClass(Refund);
 
@@ -74,6 +76,11 @@ export class Payment {
   @Prop({ type: Date, default: null }) lastVerifiedAt: Date | null;
   @Prop({ type: String, default: null }) failureReason: string | null;
   @Prop({ type: Date, default: null }) succeededAt: Date | null;
+  /**
+   * False when the provider never opened a payment page (starting it failed). Such an attempt can
+   * never be paid, so reconciliation skips it. Missing on older rows: treated as started (BS-26).
+   */
+  @Prop({ type: Boolean, default: true }) started: boolean;
 }
 export type PaymentDocument = HydratedDocument<Payment>;
 export const PaymentSchema = SchemaFactory.createForClass(Payment);
@@ -116,10 +123,24 @@ export class WebhookEvent {
   })
   outcome: 'processed' | 'ignored' | 'failed' | null;
   @Prop({ type: String, default: null }) error: string | null;
+  /**
+   * The verified, parsed event (never the raw body or a signature), so a delivery whose processing
+   * failed can be processed again by reconciliation instead of being lost (BS-26).
+   */
+  @Prop({ type: Object, default: null }) envelope: Record<
+    string,
+    unknown
+  > | null;
+  /** Processing attempts, for the retry limit. */
+  @Prop({ type: Number, default: 0 }) attempts: number;
 }
 export type WebhookEventDocument = HydratedDocument<WebhookEvent>;
 export const WebhookEventSchema = SchemaFactory.createForClass(WebhookEvent);
 WebhookEventSchema.index({ provider: 1, eventId: 1 }, { unique: true });
+WebhookEventSchema.index(
+  { outcome: 1, processedAt: 1 },
+  { partialFilterExpression: { outcome: 'failed' } },
+);
 WebhookEventSchema.index(
   { receivedAt: 1 },
   { expireAfterSeconds: 400 * 24 * 3600 },

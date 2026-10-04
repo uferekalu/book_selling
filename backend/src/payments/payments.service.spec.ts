@@ -32,10 +32,16 @@ import {
   type InitiateParams,
   type PaymentAdapter,
   type ProviderResult,
+  type CancelResult,
   type RefundResult,
+  type RefundStatus,
   type WebhookEnvelope,
 } from './adapters/payment-adapter.js';
-import { PAYMENT_ADAPTERS, PaymentsService } from './payments.service.js';
+import {
+  PAYMENT_ADAPTERS,
+  PaymentsService,
+  WEBHOOK_MAX_ATTEMPTS,
+} from './payments.service.js';
 import {
   Payment,
   WebhookEvent,
@@ -62,6 +68,10 @@ class FakeAdapter implements PaymentAdapter {
     providerRefundId: 're_1',
   };
   initiated: InitiateParams[] = [];
+  /** What refundStatus answers per provider refund id (default: pending). */
+  refundStates = new Map<string, RefundStatus | Error>();
+  cancelResult: CancelResult | Error = 'unsupported';
+  cancelled: string[] = [];
   refunds: Array<{ amount: number; idempotencyKey: string }> = [];
   constructor(readonly provider: Provider) {}
   initiate(params: InitiateParams) {
@@ -91,6 +101,18 @@ class FakeAdapter implements PaymentAdapter {
   ): Promise<WebhookEnvelope | null> {
     if (headers.sig !== 'ok') return Promise.resolve(null);
     return Promise.resolve(JSON.parse(rawBody.toString()) as WebhookEnvelope);
+  }
+  refundStatus(providerRefundId: string): Promise<RefundStatus> {
+    const state = this.refundStates.get(providerRefundId) ?? 'pending';
+    return state instanceof Error
+      ? Promise.reject(state)
+      : Promise.resolve(state);
+  }
+  cancel(reference: string): Promise<CancelResult> {
+    this.cancelled.push(reference);
+    return this.cancelResult instanceof Error
+      ? Promise.reject(this.cancelResult)
+      : Promise.resolve(this.cancelResult);
   }
   refund(p: {
     amount: { amount: number };
@@ -250,6 +272,9 @@ describe('Payments (settlement, webhooks, reconciliation, refunds)', () => {
         initiated: [],
         refunds: [],
         refundResult: { status: 'succeeded', providerRefundId: 're_1' },
+        refundStates: new Map(),
+        cancelResult: 'unsupported',
+        cancelled: [],
       });
     }
   });
@@ -1373,6 +1398,358 @@ describe('Payments (settlement, webhooks, reconciliation, refunds)', () => {
           actor: owner,
         }),
       ).rejects.toThrow(/No paid order/);
+    });
+  });
+  // ---------------------------------------------------------------- BS-26 audit
+
+  describe('payment audit fixes (BS-26)', () => {
+    const later = (minutes: number) => new Date(Date.now() + minutes * 60_000);
+
+    it('a failed attempt that later succeeds (another card on the same page) is settled by reconciliation', async () => {
+      const { order, checkoutKey } = await placeOrder();
+      const reference = await startPayment(order, checkoutKey);
+      await payments.settle(
+        'paystack',
+        {
+          ...paid(reference, order.total),
+          status: 'failed',
+          amount: null,
+          failureReason: 'Declined',
+        },
+        'webhook',
+      );
+      expect((await models.payment.findOne({ reference }).lean())!.status).toBe(
+        'failed',
+      );
+      // The buyer pays with another card; that webhook is lost. Rechecked after 30 minutes.
+      paystack.verifyResults.set(reference, paid(reference, order.total));
+      await payments.reconcile(later(15));
+      expect((await freshOrder(order._id)).status).toBe('pending_payment');
+      await payments.reconcile(later(31));
+      expect((await freshOrder(order._id)).status).toBe('paid');
+      expect(mail.count('order.receipt')).toBe(1);
+    });
+
+    it('never asks the provider about an attempt whose page never opened', async () => {
+      const { order, checkoutKey } = await placeOrder();
+      paystack.initiateError = new ProviderRejectedError(
+        'Currency not supported',
+      );
+      await expect(startPayment(order, checkoutKey)).rejects.toThrow();
+      const attempt = (await models.payment
+        .findOne({ orderId: order._id })
+        .lean())!;
+      expect(attempt).toMatchObject({ status: 'failed', started: false });
+      const verify = vi.spyOn(paystack, 'verify');
+      await payments.reconcile(later(40));
+      expect(verify).not.toHaveBeenCalled();
+      verify.mockRestore();
+    });
+
+    it('a webhook whose processing failed is processed again by reconciliation, exactly once', async () => {
+      const { order, bookId, checkoutKey } = await placeOrder();
+      const reference = await startPayment(order, checkoutKey);
+      const settle = vi
+        .spyOn(payments, 'settle')
+        .mockRejectedValueOnce(new Error('database hiccup'));
+      await webhook({
+        kind: 'payment',
+        eventId: 'evt-lost',
+        type: 'charge.success',
+        result: paid(reference, order.total),
+      });
+      settle.mockRestore();
+      expect((await freshOrder(order._id)).status).toBe('pending_payment');
+      await payments.retryFailedWebhooks(later(1)); // too soon
+      expect((await freshOrder(order._id)).status).toBe('pending_payment');
+      expect(await payments.retryFailedWebhooks(later(6))).toBe(1);
+      expect((await freshOrder(order._id)).status).toBe('paid');
+      expect(
+        await models.webhook.findOne({ eventId: 'evt-lost' }).lean(),
+      ).toMatchObject({ outcome: 'processed', attempts: 2 });
+      expect(await payments.retryFailedWebhooks(later(20))).toBe(0);
+      expect(await printStock(bookId)).toMatchObject({
+        stockOnHand: 4,
+        stockReserved: 0,
+      });
+      expect(mail.count('order.receipt')).toBe(1);
+    });
+
+    it('a refund event that keeps failing is retried 5 times, then put in front of the owner', async () => {
+      const placed = await placeOrder({ ebookOnly: true });
+      const reference = await startPayment(placed.order, placed.checkoutKey);
+      await payments.settle(
+        'paystack',
+        paid(reference, placed.order.total),
+        'webhook',
+      );
+      const apply = vi
+        .spyOn(
+          payments as unknown as { applyProviderRefund: () => Promise<void> },
+          'applyProviderRefund',
+        )
+        .mockRejectedValue(new Error('database down'));
+      await webhook({
+        kind: 'refund',
+        eventId: 'evt-refund',
+        type: 'refund.processed',
+        reference,
+        providerTransactionId: null,
+        providerRefundId: 'r-9',
+        amount: money(placed.order.total, 'NGN'),
+        cumulative: false,
+        status: 'succeeded',
+      });
+      for (let i = 1; i <= 8; i++)
+        await payments.retryFailedWebhooks(later(6 * i));
+      apply.mockRestore();
+      expect(
+        (await models.webhook.findOne({ eventId: 'evt-refund' }).lean())!
+          .attempts,
+      ).toBe(WEBHOOK_MAX_ATTEMPTS);
+      const payment = (await models.payment.findOne({ reference }).lean())!;
+      expect(payment.reconciliationRequired).toBe(true);
+      expect(payment.reconciliationReason).toMatch(
+        /could not be applied after 5 tries/,
+      );
+      expect(mail.count('order.payment-attention')).toBe(1);
+    });
+
+    describe('refunds the provider never confirmed by webhook', () => {
+      async function refundPending(providerRefundId: string) {
+        const placed = await placeOrder({ ebookOnly: true });
+        const reference = await startPayment(placed.order, placed.checkoutKey);
+        await payments.settle(
+          'paystack',
+          paid(reference, placed.order.total),
+          'webhook',
+        );
+        paystack.refundResult = { status: 'pending', providerRefundId };
+        const result = await payments.refund({
+          orderNumber: placed.order.orderNumber,
+          amount: placed.order.total,
+          reason: 'Damaged file',
+          actor: owner,
+        });
+        expect(result.status).toBe('pending');
+        return { ...placed, reference };
+      }
+
+      it('are completed by reconciliation: order refunded, ebook removed, buyer emailed', async () => {
+        const { order, reference } = await refundPending('re_wait');
+        paystack.refundStates.set('re_wait', 'succeeded');
+        expect(await payments.reconcileRefunds(later(5))).toBe(0); // too new
+        expect(await payments.reconcileRefunds(later(11))).toBe(1);
+        expect((await freshOrder(order._id)).status).toBe('refunded');
+        expect(
+          (await models.payment.findOne({ reference }).lean())!.status,
+        ).toBe('refunded');
+        expect(
+          await models.entitlement.findOne({ orderId: order._id }).lean(),
+        ).toMatchObject({ revokedAt: expect.any(Date) });
+        expect(mail.count('order.refund-issued')).toBe(1);
+        // Checked again later: nothing more happens.
+        expect(await payments.reconcileRefunds(later(60))).toBe(0);
+        expect(mail.count('order.refund-issued')).toBe(1);
+      });
+
+      it('one that failed at the provider frees its amount and alerts the owner', async () => {
+        const { order, reference } = await refundPending('re_bad');
+        paystack.refundStates.set('re_bad', 'failed');
+        await payments.reconcileRefunds(later(11));
+        const payment = (await models.payment.findOne({ reference }).lean())!;
+        expect(payment.refunds[0].status).toBe('failed');
+        expect(payment.reconciliationReason).toMatch(/failed at Paystack/);
+        expect((await freshOrder(order._id)).status).toBe('paid');
+        // The full amount can be refunded again.
+        paystack.refundResult = {
+          status: 'succeeded',
+          providerRefundId: 're_2',
+        };
+        await payments.refund({
+          orderNumber: order.orderNumber,
+          amount: order.total,
+          reason: 'again',
+          actor: owner,
+        });
+        expect((await freshOrder(order._id)).status).toBe('refunded');
+      });
+
+      it('a provider that can’t be reached is asked again next time', async () => {
+        const { order } = await refundPending('re_slow');
+        paystack.refundStates.set(
+          're_slow',
+          new OutcomeUnknownError('timeout'),
+        );
+        await payments.reconcileRefunds(later(11));
+        expect((await freshOrder(order._id)).status).toBe('paid');
+        paystack.refundStates.set('re_slow', 'succeeded');
+        await payments.reconcileRefunds(later(12));
+        expect((await freshOrder(order._id)).status).toBe('refunded');
+      });
+    });
+
+    describe('the owner resolves an unconfirmed refund', () => {
+      async function unknownRefund() {
+        const placed = await placeOrder({ ebookOnly: true });
+        const reference = await startPayment(placed.order, placed.checkoutKey);
+        await payments.settle(
+          'paystack',
+          paid(reference, placed.order.total),
+          'webhook',
+        );
+        paystack.refundResult = new OutcomeUnknownError('timeout');
+        const { refundId } = await payments.refund({
+          orderNumber: placed.order.orderNumber,
+          amount: placed.order.total,
+          reason: 'x',
+          actor: owner,
+        });
+        return { ...placed, reference, refundId };
+      }
+
+      it('it went through: completed like a provider confirmation, and audited', async () => {
+        const { order, refundId } = await unknownRefund();
+        await payments.resolveRefund({
+          orderNumber: order.orderNumber,
+          refundId,
+          outcome: 'succeeded',
+          note: 'Paystack dashboard shows it processed',
+          actor: owner,
+        });
+        expect((await freshOrder(order._id)).status).toBe('refunded');
+        expect(mail.count('order.refund-issued')).toBe(1);
+        expect(
+          await models.audit.countDocuments({ action: 'refund.resolved' }),
+        ).toBe(1);
+        await expect(
+          payments.resolveRefund({
+            orderNumber: order.orderNumber,
+            refundId,
+            outcome: 'failed',
+            note: 'x',
+            actor: owner,
+          }),
+        ).rejects.toThrow(/already confirmed or closed/);
+      });
+
+      it('it didn’t: the amount can be refunded again', async () => {
+        const { order, refundId } = await unknownRefund();
+        await payments.resolveRefund({
+          orderNumber: order.orderNumber,
+          refundId,
+          outcome: 'failed',
+          note: 'Not in the dashboard',
+          actor: owner,
+        });
+        expect((await freshOrder(order._id)).status).toBe('paid');
+        paystack.refundResult = {
+          status: 'succeeded',
+          providerRefundId: 're_3',
+        };
+        await payments.refund({
+          orderNumber: order.orderNumber,
+          amount: order.total,
+          reason: 'retry',
+          actor: owner,
+        });
+        expect((await freshOrder(order._id)).status).toBe('refunded');
+        expect(mail.count('order.refund-issued')).toBe(1);
+      });
+    });
+
+    describe('release closes the provider page first', () => {
+      it('closes it where the provider can (Stripe), then releases', async () => {
+        const { order, checkoutKey } = await placeOrder();
+        const reference = await startPayment(order, checkoutKey);
+        paystack.cancelResult = 'cancelled';
+        const released = await payments.release({
+          orderNumber: order.orderNumber,
+          actor: null,
+          checkoutKey,
+        });
+        expect(released.status).toBe('cancelled');
+        expect(paystack.cancelled).toEqual([reference]);
+      });
+
+      it('a page paid in the meantime is settled and the release refused', async () => {
+        const { order, checkoutKey } = await placeOrder();
+        const reference = await startPayment(order, checkoutKey);
+        paystack.cancelResult = 'completed';
+        paystack.verifyResults.set(reference, paid(reference, order.total));
+        await expect(
+          payments.release({
+            orderNumber: order.orderNumber,
+            actor: null,
+            checkoutKey,
+          }),
+        ).rejects.toThrow(/has just gone through/);
+        expect((await freshOrder(order._id)).status).toBe('paid');
+      });
+
+      it('releases nothing when the page can’t be closed', async () => {
+        const { order, checkoutKey } = await placeOrder();
+        await startPayment(order, checkoutKey);
+        paystack.cancelResult = new OutcomeUnknownError(
+          'Stripe did not answer',
+        );
+        await expect(
+          payments.release({
+            orderNumber: order.orderNumber,
+            actor: null,
+            checkoutKey,
+          }),
+        ).rejects.toThrow(/couldn.t confirm/);
+        expect((await freshOrder(order._id)).status).toBe('pending_payment');
+      });
+    });
+
+    it('flags a second paid order for the same print book within 24 hours (an old tab paid too)', async () => {
+      const bookId = await book(5);
+      const placeFor = async () => {
+        const guestId = cart.newGuestId();
+        const buyerCart = { userId: null, guestId };
+        await cart.add(
+          buyerCart,
+          { bookId, format: 'print', quantity: 1 },
+          'NGN',
+        );
+        const checkoutKey = randomToken(24);
+        const { order } = await orders.place({
+          owner: buyerCart,
+          actor: null,
+          checkoutKey,
+          currency: 'NGN',
+          email: 'twice@example.com',
+          name: 'Ada Obi',
+          shippingAddress: address,
+        });
+        return { order, checkoutKey };
+      };
+      const first = await placeFor();
+      const firstRef = await startPayment(first.order, first.checkoutKey);
+      await payments.settle(
+        'paystack',
+        paid(firstRef, first.order.total),
+        'webhook',
+      );
+      expect((await freshOrder(first.order._id)).attention.required).toBe(
+        false,
+      );
+
+      const second = await placeFor();
+      const secondRef = await startPayment(second.order, second.checkoutKey);
+      await payments.settle(
+        'paystack',
+        paid(secondRef, second.order.total),
+        'webhook',
+      );
+      const flagged = await freshOrder(second.order._id);
+      expect(flagged.status).toBe('paid');
+      expect(flagged.attention.required).toBe(true);
+      expect(flagged.attention.reason).toContain(
+        `also paid order ${first.order.orderNumber}`,
+      );
     });
   });
 });

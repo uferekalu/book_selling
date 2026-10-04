@@ -9,6 +9,7 @@ import {
   useAdminOrderPaymentsQuery,
   useAdminOrderQuery,
   useRefundOrderMutation,
+  useResolveRefundMutation,
   useResolveAttentionMutation,
   type AdminOrderView,
   type AdminPayment,
@@ -46,6 +47,7 @@ export function OrderAdminDetail({ orderNumber }: { orderNumber: string }) {
   const payments = useAdminOrderPaymentsQuery(orderNumber);
   const isOwner = useAppSelector((state) => state.session.user?.role === "owner");
   const [refunding, setRefunding] = useState(false);
+  const [resolving, setResolving] = useState<{ payment: AdminPayment; refund: AdminPayment["refunds"][number] } | null>(null);
 
   if (order.error) return <AdminQueryError error={order.error} onRetry={() => void order.refetch()} />;
   if (!order.data) return <Skeleton className="h-96 w-full rounded-2xl" />;
@@ -117,6 +119,11 @@ export function OrderAdminDetail({ orderNumber }: { orderNumber: string }) {
                         </Badge>
                         <span className="text-text-muted">{r.reason}</span>
                         {r.failureReason && <span className="text-danger">{r.failureReason}</span>}
+                        {isOwner && (r.status === "outcome_unknown" || r.status === "pending") && (
+                          <Button size="sm" variant="outline" onClick={() => setResolving({ payment: p, refund: r })}>
+                            Record the outcome
+                          </Button>
+                        )}
                       </li>
                     ))}
                   </ul>
@@ -130,6 +137,10 @@ export function OrderAdminDetail({ orderNumber }: { orderNumber: string }) {
       <EbookUsagePanel usage={data.ebookUsage ?? []} />
 
       <OrderDetail order={data} staff />
+
+      {resolving && (
+        <ResolveRefundDialog orderNumber={data.orderNumber} payment={resolving.payment} refund={resolving.refund} onClose={() => setResolving(null)} />
+      )}
 
       {refunding && settled && (
         <RefundDialog orderNumber={data.orderNumber} payment={settled} refundable={refundable} onClose={() => setRefunding(false)} />
@@ -166,6 +177,70 @@ function AttentionBanner({ order }: { order: AdminOrderView }) {
         </Button>
       </div>
     </Alert>
+  );
+}
+
+/**
+ * A refund we couldn't confirm (no answer from the provider, or still pending): the owner checks
+ * the provider's dashboard and records what it shows (BS-26). "It went through" completes it
+ * (order status, ebooks, the buyer's email); "It didn't" frees the amount to refund again.
+ */
+function ResolveRefundDialog({
+  orderNumber,
+  payment,
+  refund,
+  onClose,
+}: {
+  orderNumber: string;
+  payment: AdminPayment;
+  refund: AdminPayment["refunds"][number];
+  onClose: () => void;
+}) {
+  const [note, setNote] = useState("");
+  const [resolve, state] = useResolveRefundMutation();
+  const [choice, setChoice] = useState<"succeeded" | "failed" | null>(null);
+  const { toast } = useToast();
+  const amount = formatMoney({ amount: refund.amount, currency: payment.currency });
+  const submit = async (outcome: "succeeded" | "failed") => {
+    setChoice(outcome);
+    try {
+      await resolve({ orderNumber, refundId: refund.refundId, outcome, note: note.trim() }).unwrap();
+      toast({ title: outcome === "succeeded" ? `Recorded: ${amount} refunded` : "Recorded: not refunded. You can refund again.", tone: "success" });
+      onClose();
+    } catch (e) {
+      toast({ title: errorMessage(e), tone: "danger" });
+    }
+  };
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title="Record the refund outcome"
+      description={`Open the ${PROVIDER_NAME[payment.provider]} dashboard and find the refund of ${amount} for payment ${payment.reference}.`}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button variant="outline" disabled={!note.trim()} isLoading={state.isLoading && choice === "failed"} onClick={() => void submit("failed")}>
+            It didn’t go through
+          </Button>
+          <Button disabled={!note.trim()} isLoading={state.isLoading && choice === "succeeded"} onClick={() => void submit("succeeded")}>
+            It went through
+          </Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-4">
+        <Alert tone="info" title="What each choice does">
+          “It went through” marks the order refunded (a full refund also removes the ebooks) and emails the buyer. “It didn’t go through” frees{" "}
+          {amount} so you can refund again.
+        </Alert>
+        <FormField label="What the dashboard shows" required hint="Saved with the refund and the audit log.">
+          <Textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} />
+        </FormField>
+      </div>
+    </Modal>
   );
 }
 
