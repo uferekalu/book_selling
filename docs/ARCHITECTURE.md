@@ -832,9 +832,18 @@ and "receipt sent but not paid" are both impossible.
 
 ### 8.6 Reconciliation and expiry jobs
 
-- **Every 5 minutes**: payments still `initiated` for more than 10 minutes and less than 48 hours
-  are checked with `adapter.verify()` and passed to `settle()`. This rescues payments whose webhook
-  never arrived.
+- **Every 5 minutes** (`PaymentsService.reconcile`):
+  - payments still `initiated` for more than 10 minutes and less than 48 hours are checked with
+    `adapter.verify()` and passed to `settle()`. This rescues payments whose webhook never arrived;
+  - `failed` and `abandoned` attempts from the same window are checked again every 30 minutes
+    (BS-26): Paystack lets the buyer try another card on the same page, and a released order's
+    page can stay open, so a "failed" attempt can still be paid. Attempts whose page never opened
+    (`started: false`) are skipped;
+  - refunds the provider accepted as `pending` (10 minutes to 30 days old) are checked with
+    `adapter.refundStatus()` every 30 minutes and completed or failed (BS-26). This is the only
+    confirmation for Flutterwave refunds;
+  - webhook events whose processing failed are processed again from their stored, verified
+    envelope (5 minutes apart, at most 5 tries, then the owner is alerted).
 - **Every minute**: orders in `pending_payment` past `expiresAt`, **with no payment in `initiated`
   state younger than 15 minutes**, move to `expired`, releasing stock and the coupon. The 15-minute
   grace stops us expiring an order while its buyer is on the provider's page.
@@ -849,9 +858,13 @@ and "receipt sent but not paid" are both impossible.
   still sufficient), call `adapter.refund()` with a refund idempotency key, then record the result.
   - A confirmed provider rejection removes the claim.
   - An **ambiguous outcome** (timeout, 5xx) sets the refund to `outcome_unknown` and
-    `reconciliationRequired`, and is **never retried automatically**. An admin checks the provider
-    dashboard and resolves it.
-  - Provider refund webhooks confirm `pending` refunds.
+    `reconciliationRequired`, and is **never retried automatically**. The owner checks the provider
+    dashboard and records the outcome on the order page (`POST /admin/orders/:n/refunds/:id/resolve`,
+    BS-26): "it went through" completes it exactly as a provider confirmation would; "it didn't"
+    frees the amount to refund again. Audited.
+  - Provider refund webhooks confirm `pending` refunds; reconciliation asks the provider about
+    any still pending (§8.6). A refund that fails at the provider frees its amount and alerts the
+    owner.
 - A full refund revokes ebook entitlements; print restocking is an explicit admin choice.
 - Refunds or disputes made **outside** the app (in a provider dashboard, or a chargeback) are
   detected from webhooks and recorded, and flag the order for attention.
@@ -918,13 +931,23 @@ Paystack. Please try again or choose another payment method.") instead of a gene
 | Our reference goes in | `client_reference_id` + `metadata.reference` | `reference` | `tx_ref` |
 | Amount unit sent | minor | minor (kobo) | **major** (the adapter converts, with tests) |
 | Webhook signature | `stripe-signature`, `constructEvent` with `STRIPE_WEBHOOK_SECRET`, 5-min tolerance | `x-paystack-signature` = HMAC-SHA512(raw body, secret key), compared with `timingSafeEqual` | `verif-hash` header equals `FLUTTERWAVE_WEBHOOK_HASH` (timing-safe); **the event is then re-verified with `GET /transactions/:id/verify`** because the hash only proves the sender knows a shared secret |
-| Events acted on | `checkout.session.completed`, `checkout.session.async_payment_*`, `charge.refunded`, `charge.dispute.created` | `charge.success`, `refund.processed`, `refund.failed` | `charge.completed`, refund events |
+| Events acted on | `checkout.session.completed`, `checkout.session.async_payment_*`, `charge.refunded`, `charge.dispute.created` | `charge.success`, `refund.processed`, `refund.failed`, `charge.dispute.create` | `charge.completed` (refunds are confirmed by polling `GET /refunds/:id`) |
 | Verify call | `checkout.sessions.retrieve` (+ PaymentIntent) | `GET /transaction/verify/:reference` | `GET /transactions/verify_by_reference?tx_ref=` |
 
 Webhook routes: `POST /payments/webhooks/{stripe|paystack|flutterwave}`, all `@Public()`, excluded
 from throttling, read from `req.rawBody`. They **always return 2xx** once the signature is checked,
-even for ignored events: providers disable endpoints that keep returning 5xx. Processing failures
-are recorded in `webhook_events` and picked up by reconciliation.
+even for ignored events: providers disable endpoints that keep returning 5xx. Because they then
+never redeliver, each accepted event's verified envelope (never the raw body or signature) is
+stored in `webhook_events`; a processing failure is retried from it by reconciliation (§8.6).
+
+**Releasing an order** (pay in another currency, BS-23) first closes the provider's page where the
+provider allows it (`adapter.cancel()`: Stripe expires the Checkout Session; Paystack and
+Flutterwave keep theirs open, and a late payment is still honoured), then verifies, so a released
+order can't be paid on an old Stripe tab (BS-26).
+
+**Duplicate print purchases**: settlement flags an order when the same buyer paid another order
+for the same print book in the last 24 hours (an old tab paid after a newer order), so it isn't
+shipped twice unnoticed (BS-26). Ebooks bought twice were already flagged.
 
 **Adapter errors**: a provider's own error message about the transaction ("amount below minimum") is
 passed to the buyer as a 400. Anything else is a generic message with full details in the logs.

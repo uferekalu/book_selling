@@ -10,7 +10,9 @@ import {
   type PaymentAdapter,
   type ProviderResult,
   type RefundParams,
+  type CancelResult,
   type RefundResult,
+  type RefundStatus,
   type WebhookEnvelope,
 } from './payment-adapter.js';
 
@@ -29,12 +31,20 @@ export interface StripeClient {
       ): Promise<
         Stripe.Checkout.Session | Stripe.Response<Stripe.Checkout.Session>
       >;
+      expire(
+        id: string,
+      ): Promise<
+        Stripe.Checkout.Session | Stripe.Response<Stripe.Checkout.Session>
+      >;
     };
   };
   refunds: {
     create(
       params: Stripe.RefundCreateParams,
       options?: Stripe.RequestOptions,
+    ): Promise<Stripe.Refund | Stripe.Response<Stripe.Refund>>;
+    retrieve(
+      id: string,
     ): Promise<Stripe.Refund | Stripe.Response<Stripe.Refund>>;
   };
   webhooks: {
@@ -240,6 +250,47 @@ export class StripeAdapter implements PaymentAdapter {
         return { status: 'rejected', message: translated.message };
       }
       throw translated;
+    }
+  }
+
+  async refundStatus(providerRefundId: string): Promise<RefundStatus> {
+    let refund: Stripe.Refund;
+    try {
+      refund = await this.stripe().refunds.retrieve(providerRefundId);
+    } catch (error) {
+      throw translate(error);
+    }
+    if (refund.status === 'succeeded') return 'succeeded';
+    return refund.status === 'failed' || refund.status === 'canceled'
+      ? 'failed'
+      : 'pending';
+  }
+
+  /**
+   * Expires the Checkout Session if it is still open, so a released order can't be paid on an old
+   * tab. A session that completed in the meantime is reported, so the caller settles it.
+   */
+  async cancel(
+    _reference: string,
+    providerTransactionId: string | null,
+  ): Promise<CancelResult> {
+    if (!providerTransactionId) return 'cancelled'; // no page was ever opened
+    try {
+      const session = await this.stripe().checkout.sessions.retrieve(
+        providerTransactionId,
+      );
+      if (session.status === 'complete') return 'completed';
+      if (session.status === 'expired') return 'cancelled';
+      await this.stripe().checkout.sessions.expire(providerTransactionId);
+      return 'cancelled';
+    } catch (error) {
+      // Paid between our two calls: Stripe refuses to expire a completed session.
+      const after = await this.stripe()
+        .checkout.sessions.retrieve(providerTransactionId)
+        .catch(() => null);
+      if (after?.status === 'complete') return 'completed';
+      if (after?.status === 'expired') return 'cancelled';
+      throw translate(error);
     }
   }
 }

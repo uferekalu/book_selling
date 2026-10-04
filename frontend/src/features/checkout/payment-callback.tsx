@@ -37,7 +37,8 @@ export function PaymentCallback() {
         if (stopped) return;
         setResult(next);
         setUnreachable(false);
-        if (next.status === "pending") {
+        // A cancelled return is answered after one check: no polling for a payment that was abandoned.
+        if (next.status === "pending" && !cancelled) {
           setPolls((n) => {
             if (n + 1 < MAX_POLLS) timer.current = window.setTimeout(() => void check(), POLL_MS);
             return n + 1;
@@ -54,7 +55,7 @@ export function PaymentCallback() {
       stopped = true;
       if (timer.current) window.clearTimeout(timer.current);
     };
-  }, [reference, valid, verify]);
+  }, [reference, valid, verify, cancelled]);
 
   const orderHref = result ? (signedIn ? `/account/orders/${result.orderNumber}` : `/checkout/order/${result.orderNumber}`) : "/account/orders";
 
@@ -81,6 +82,16 @@ export function PaymentCallback() {
           primary={result.returnPath ? { href: result.returnPath, label: "Continue reading", icon: BookOpen } : { href: orderHref, label: "View your order" }}
           secondary={result.returnPath ? { href: orderHref, label: "View your order" } : { href: "/books", label: "Keep browsing" }}
         />
+      </State>
+    );
+  } else if (result.status === "pending" && cancelled) {
+    // The buyer left the provider's page without paying (BS-26). If they did pay meanwhile, the
+    // server settles it and a later visit to the order shows it paid; there's nothing to wait for.
+    body = (
+      <State icon={XCircle} tone="danger" title="Payment not completed">
+        You left the payment page before paying, so nothing was charged. Your books are still held for a little while: try again
+        whenever you&rsquo;re ready, with the same method or another one.
+        <Actions primary={{ href: orderHref, label: "Try again" }} secondary={{ href: "/books", label: "Keep browsing" }} />
       </State>
     );
   } else if (result.status === "pending") {

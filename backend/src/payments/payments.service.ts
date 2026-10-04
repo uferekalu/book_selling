@@ -38,6 +38,7 @@ import {
   ProviderRejectedError,
   type PaymentAdapter,
   type ProviderResult,
+  type RefundStatus,
   type WebhookEnvelope,
 } from './adapters/payment-adapter.js';
 import {
@@ -58,6 +59,8 @@ import {
 export const PAYMENT_ADAPTERS = Symbol('PAYMENT_ADAPTERS');
 const DUPLICATE_KEY = 11000;
 const MAX_ATTEMPTS_PER_ORDER = 10;
+/** Tries for a webhook event whose processing failed, before the owner is alerted (BS-26). */
+export const WEBHOOK_MAX_ATTEMPTS = 5;
 
 export type PublicPaymentStatus = 'paid' | 'pending' | 'failed';
 
@@ -236,7 +239,12 @@ export class PaymentsService {
         .updateOne(
           { _id: payment._id, status: 'initiated' },
           {
-            $set: { status: 'failed', failureReason: (error as Error).message },
+            $set: {
+              status: 'failed',
+              failureReason: (error as Error).message,
+              // No payment page was opened, so this attempt can never be paid (BS-26).
+              started: false,
+            },
           },
         )
         .exec();
@@ -283,6 +291,17 @@ export class PaymentsService {
     for (const payment of open) {
       let result: ProviderResult;
       try {
+        // First close the provider's page where possible (Stripe), so after the check below the
+        // released order can't be paid on an old tab (BS-26).
+        const closed = await this.adapter(payment.provider).cancel(
+          payment.reference,
+          payment.providerTransactionId,
+        );
+        if (closed === 'completed') {
+          this.logger.log(
+            `Release of ${order.orderNumber}: ${payment.reference} was already paid`,
+          );
+        }
         result = await this.adapter(payment.provider).verify(
           payment.reference,
           payment.providerTransactionId,
@@ -398,6 +417,8 @@ export class PaymentsService {
         type: envelope.type,
         reference,
         receivedAt: new Date(),
+        // Kept so a failed processing is retried by reconciliation, not lost (BS-26).
+        envelope: envelope as unknown as Record<string, unknown>,
       });
     } catch (error) {
       if ((error as { code?: number }).code !== DUPLICATE_KEY) throw error;
@@ -430,42 +451,138 @@ export class PaymentsService {
       if (!event) return true;
     }
 
+    await this.processEvent(provider, event._id, envelope, 'webhook');
+    return true;
+  }
+
+  /**
+   * Applies one verified event and records the outcome. A failure is recorded with the attempt
+   * count; `retryFailedWebhooks` processes it again later, because providers don't redeliver an
+   * event we acknowledged (we always answer 2xx after the signature check).
+   */
+  private async processEvent(
+    provider: Provider,
+    eventId: Types.ObjectId,
+    envelope: WebhookEnvelope,
+    source: string,
+  ): Promise<boolean> {
     try {
       if (envelope.kind === 'payment')
-        await this.settle(provider, envelope.result, 'webhook');
+        await this.settle(provider, envelope.result, source);
       else if (envelope.kind === 'refund')
         await this.applyProviderRefund(provider, envelope);
       else if (envelope.kind === 'dispute')
         await this.flagDispute(provider, envelope);
       await this.webhookEvents
         .updateOne(
-          { _id: event._id },
+          { _id: eventId },
           {
             $set: {
               processedAt: new Date(),
               outcome: envelope.kind === 'ignored' ? 'ignored' : 'processed',
+              error: null,
             },
+            $inc: { attempts: 1 },
           },
         )
         .exec();
+      return true;
     } catch (error) {
       this.logger.error(
-        `${provider} webhook ${envelope.eventId} failed: ${(error as Error).message}`,
+        `${provider} event ${envelope.eventId} failed (${source}): ${(error as Error).message}`,
       );
       await this.webhookEvents
         .updateOne(
-          { _id: event._id },
+          { _id: eventId },
           {
             $set: {
               processedAt: new Date(),
               outcome: 'failed',
               error: (error as Error).message,
             },
+            $inc: { attempts: 1 },
           },
         )
         .exec();
+      return false;
     }
-    return true;
+  }
+
+  /**
+   * Webhook events whose processing failed (a database hiccup, a provider timeout while
+   * re-verifying) are processed again: every reconciliation run, at least 5 minutes after the last
+   * try, up to `WEBHOOK_MAX_ATTEMPTS`. The last failure alerts the owner. Settlement and refund
+   * handling are idempotent, so a retry never applies anything twice.
+   */
+  async retryFailedWebhooks(
+    now: Date = new Date(),
+    limit = 20,
+  ): Promise<number> {
+    const due = await this.webhookEvents
+      .find({
+        outcome: 'failed',
+        envelope: { $ne: null },
+        attempts: { $lt: WEBHOOK_MAX_ATTEMPTS },
+        processedAt: { $lt: new Date(now.getTime() - 5 * 60_000) },
+      })
+      .sort({ processedAt: 1 })
+      .limit(limit)
+      .exec();
+    let recovered = 0;
+    for (const row of due) {
+      // Claim it, so two API instances never process the same event at once.
+      const claimed = await this.webhookEvents
+        .findOneAndUpdate(
+          { _id: row._id, outcome: 'failed', attempts: row.attempts },
+          { $set: { outcome: null } },
+        )
+        .exec();
+      if (!claimed) continue;
+      const envelope = row.envelope as unknown as WebhookEnvelope;
+      if (
+        await this.processEvent(
+          row.provider,
+          row._id,
+          envelope,
+          'webhook-retry',
+        )
+      ) {
+        recovered += 1;
+      } else if (row.attempts + 1 >= WEBHOOK_MAX_ATTEMPTS) {
+        await this.alertFailedEvent(row.provider, envelope, row.error);
+      }
+    }
+    return recovered;
+  }
+
+  /** An event we could not apply after every retry: put it in front of the owner. */
+  private async alertFailedEvent(
+    provider: Provider,
+    envelope: WebhookEnvelope,
+    error: string | null,
+  ) {
+    const reference =
+      envelope.kind === 'payment'
+        ? envelope.result.reference
+        : envelope.kind === 'ignored'
+          ? null
+          : envelope.reference;
+    const transactionId =
+      envelope.kind === 'refund' || envelope.kind === 'dispute'
+        ? envelope.providerTransactionId
+        : null;
+    const payment = await this.findPayment(provider, reference, transactionId);
+    if (!payment) {
+      this.logger.error(
+        `${provider} event ${envelope.eventId} (${envelope.type}) could not be applied and matches no payment`,
+      );
+      return;
+    }
+    await this.flagPayment(
+      payment,
+      `A ${PROVIDER_LABEL[provider]} notification (${envelope.type}) could not be applied after ${WEBHOOK_MAX_ATTEMPTS} tries${error ? ` (${error})` : ''}. Check this payment in the ${PROVIDER_LABEL[provider]} dashboard.`,
+      null,
+    );
   }
 
   // ---------------------------------------------------------------- settlement
@@ -609,6 +726,9 @@ export class PaymentsService {
         );
         await this.redeemCoupon(before, heldStock, session);
         attentionReasons.push(...(await this.grantEbooks(before, session)));
+        attentionReasons.push(
+          ...(await this.duplicatePrintPurchase(before, session)),
+        );
         await this.clearPurchasedFromCart(before, session);
         if (attentionReasons.length) {
           await this.orders
@@ -819,6 +939,42 @@ export class PaymentsService {
     return problems;
   }
 
+  /**
+   * The same buyer paid another order for the same print book in the last 24 hours: usually an
+   * old checkout tab paid after a newer order (BS-26). Ebooks are caught by `grantEbooks`; a print
+   * copy would otherwise be shipped twice without anyone noticing.
+   */
+  private async duplicatePrintPurchase(
+    order: OrderDocument,
+    session: ClientSession,
+  ): Promise<string[]> {
+    const printIds = order.items
+      .filter((i) => i.format === 'print')
+      .map((i) => i.bookId);
+    if (!printIds.length) return [];
+    const other = await this.orders
+      .findOne(
+        {
+          _id: { $ne: order._id },
+          userId: order.userId,
+          status: { $in: ['paid', 'fulfilled', 'partially_refunded'] },
+          'payment.paidAt': { $gte: new Date(Date.now() - 24 * 3_600_000) },
+          items: {
+            $elemMatch: { format: 'print', bookId: { $in: printIds } },
+          },
+        },
+        { orderNumber: 1 },
+      )
+      .session(session)
+      .lean()
+      .exec();
+    return other
+      ? [
+          `The buyer also paid order ${other.orderNumber} for the same print book in the last 24 hours: check it isn't a double payment before shipping both.`,
+        ]
+      : [];
+  }
+
   /** Removes what was bought from the buyer's account cart and from the guest cart it came from. */
   private async clearPurchasedFromCart(
     order: OrderDocument,
@@ -1025,21 +1181,39 @@ export class PaymentsService {
    * provider and settled (rescues a lost webhook). Older ones are closed as abandoned.
    */
   async reconcile(now: Date = new Date(), limit = 50): Promise<number> {
-    const due = await this.payments
+    const window = {
+      $lt: new Date(now.getTime() - 10 * 60_000),
+      $gt: new Date(now.getTime() - 48 * 3_600_000),
+    };
+    const open = await this.payments
       .find({
         status: 'initiated',
         // A flagged payment (amount mismatch, second payment) waits for the owner, not for us.
         reconciliationRequired: { $ne: true },
-        createdAt: {
-          $lt: new Date(now.getTime() - 10 * 60_000),
-          $gt: new Date(now.getTime() - 48 * 3_600_000),
-        },
+        createdAt: window,
       })
       .sort({ createdAt: 1 })
       .limit(limit)
       .exec();
+    // A "failed" or "abandoned" attempt can still be paid: Paystack lets the buyer try another card
+    // on the same page, and a released order's page may stay open. If that success's webhook is
+    // lost, only this check applies the money (BS-26). Checked every 30 minutes, not every run.
+    const closed = await this.payments
+      .find({
+        status: { $in: ['failed', 'abandoned'] },
+        started: { $ne: false },
+        reconciliationRequired: { $ne: true },
+        createdAt: window,
+        $or: [
+          { lastVerifiedAt: null },
+          { lastVerifiedAt: { $lt: new Date(now.getTime() - 30 * 60_000) } },
+        ],
+      })
+      .sort({ lastVerifiedAt: 1 })
+      .limit(Math.ceil(limit / 2))
+      .exec();
     let checked = 0;
-    for (const payment of due) {
+    for (const payment of [...open, ...closed]) {
       const adapter = this.adapters.get(payment.provider);
       if (!adapter?.enabled) continue;
       try {
@@ -1073,7 +1247,171 @@ export class PaymentsService {
         },
       )
       .exec();
+    await this.reconcileRefunds(now);
+    await this.retryFailedWebhooks(now);
     return checked;
+  }
+
+  /**
+   * Refunds the provider accepted as pending are asked about again (at least 10 minutes old, then
+   * every 30 minutes, for 30 days), so one whose webhook never comes is still completed: the
+   * order shows the refund, and a full refund removes the ebooks (BS-26). A refund the provider
+   * failed releases its amount and alerts the owner.
+   */
+  async reconcileRefunds(now: Date = new Date(), limit = 20): Promise<number> {
+    const due = await this.payments
+      .find({
+        refunds: {
+          $elemMatch: {
+            status: 'pending',
+            providerRefundId: { $type: 'string' },
+            createdAt: {
+              $lt: new Date(now.getTime() - 10 * 60_000),
+              $gt: new Date(now.getTime() - 30 * 24 * 3_600_000),
+            },
+            $or: [
+              { lastCheckedAt: null },
+              { lastCheckedAt: { $exists: false } },
+              {
+                lastCheckedAt: { $lt: new Date(now.getTime() - 30 * 60_000) },
+              },
+            ],
+          },
+        },
+      })
+      .limit(limit)
+      .exec();
+    let settled = 0;
+    for (const payment of due) {
+      const adapter = this.adapters.get(payment.provider);
+      if (!adapter?.enabled) continue;
+      for (const refund of payment.refunds.filter(
+        (r) => r.status === 'pending' && r.providerRefundId,
+      )) {
+        let state: RefundStatus;
+        try {
+          state = await adapter.refundStatus(refund.providerRefundId!);
+        } catch (error) {
+          this.logger.warn(
+            `Refund ${refund.refundId} check inconclusive: ${(error as Error).message}`,
+          );
+          continue;
+        }
+        await this.setRefund(payment._id, refund.refundId, {
+          lastCheckedAt: now,
+        });
+        if (state === 'succeeded') {
+          await this.finalizeRefund(
+            payment._id,
+            refund.refundId,
+            refund.providerRefundId,
+          );
+          settled += 1;
+        } else if (state === 'failed') {
+          const failed = await this.payments
+            .updateOne(
+              {
+                _id: payment._id,
+                refunds: {
+                  $elemMatch: { refundId: refund.refundId, status: 'pending' },
+                },
+              },
+              {
+                $set: {
+                  'refunds.$.status': 'failed',
+                  'refunds.$.failureReason': 'Failed at the provider',
+                  'refunds.$.resolvedAt': now,
+                },
+              },
+            )
+            .exec();
+          if (failed.modifiedCount === 1) {
+            await this.flagPayment(
+              payment,
+              `Refund ${refund.refundId} of ${formatMoney(money(refund.amount, payment.currency))} failed at ${PROVIDER_LABEL[payment.provider]}: the buyer has not been paid back. Try the refund again or pay them another way.`,
+              null,
+            );
+          }
+        }
+      }
+    }
+    return settled;
+  }
+
+  /**
+   * The owner records what the provider's dashboard shows for a refund we could not confirm
+   * ("outcome unknown", or still pending). `succeeded` completes it exactly as a provider
+   * confirmation would; `failed` releases its amount so it can be refunded again (BS-26).
+   */
+  async resolveRefund(input: {
+    orderNumber: string;
+    refundId: string;
+    outcome: 'succeeded' | 'failed';
+    note: string;
+    actor: AccessTokenPayload;
+  }) {
+    const order = await this.orders
+      .findOne({ orderNumber: input.orderNumber })
+      .exec();
+    if (!order?.payment)
+      throw new NotFoundException('No paid order with that number');
+    const payment = await this.payments
+      .findOne({
+        _id: order.payment.paymentId,
+        refunds: {
+          $elemMatch: {
+            refundId: input.refundId,
+            status: { $in: ['pending', 'outcome_unknown'] },
+          },
+        },
+      })
+      .exec();
+    if (!payment) {
+      throw new ConflictException(
+        'That refund is already confirmed or closed; reload the order.',
+      );
+    }
+    if (input.outcome === 'succeeded') {
+      await this.finalizeRefund(payment._id, input.refundId, null);
+    } else {
+      const done = await this.payments
+        .updateOne(
+          {
+            _id: payment._id,
+            refunds: {
+              $elemMatch: {
+                refundId: input.refundId,
+                status: { $in: ['pending', 'outcome_unknown'] },
+              },
+            },
+          },
+          {
+            $set: {
+              'refunds.$.status': 'failed',
+              'refunds.$.failureReason': `Not refunded (checked by the owner): ${input.note}`,
+              'refunds.$.resolvedAt': new Date(),
+            },
+          },
+        )
+        .exec();
+      if (done.modifiedCount !== 1) {
+        throw new ConflictException(
+          'That refund is already confirmed or closed; reload the order.',
+        );
+      }
+    }
+    await this.audit.record({
+      actor: { id: input.actor.sub, role: input.actor.role },
+      action: 'refund.resolved',
+      entityType: 'order',
+      entityId: order._id.toString(),
+      changes: {
+        refundId: input.refundId,
+        outcome: input.outcome,
+        note: input.note,
+      },
+    });
+    return this.forOrder(order._id);
   }
 
   // ---------------------------------------------------------------- refunds

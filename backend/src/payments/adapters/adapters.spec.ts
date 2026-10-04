@@ -257,6 +257,34 @@ describe('PaystackAdapter', () => {
       }),
     ).rejects.toBeInstanceOf(OutcomeUnknownError);
   });
+
+  it('reads a refund status (BS-26)', async () => {
+    const state = (body: unknown, status = 200) =>
+      new PaystackAdapter(
+        secret,
+        fakeFetch({ status, body }).impl,
+      ).refundStatus('55');
+    expect(await state({ status: true, data: { status: 'processed' } })).toBe(
+      'succeeded',
+    );
+    expect(await state({ status: true, data: { status: 'processing' } })).toBe(
+      'pending',
+    );
+    expect(
+      await state({ status: true, data: { status: 'needs-attention' } }),
+    ).toBe('pending');
+    expect(await state({ status: true, data: { status: 'failed' } })).toBe(
+      'failed',
+    );
+    expect(await state({ status: false }, 404)).toBe('pending');
+    const f = fakeFetch({
+      status: 200,
+      body: { status: true, data: { status: 'processed' } },
+    });
+    await new PaystackAdapter(secret, f.impl).refundStatus('55');
+    expect(f.calls[0].url).toBe('https://api.paystack.co/refund/55');
+    expect(await new PaystackAdapter(secret).cancel()).toBe('unsupported');
+  });
 });
 
 describe('FlutterwaveAdapter', () => {
@@ -383,6 +411,36 @@ describe('FlutterwaveAdapter', () => {
     expect(new FlutterwaveAdapter(secret, undefined).enabled).toBe(false);
     expect(new FlutterwaveAdapter(secret, hash).enabled).toBe(true);
   });
+
+  it('reads a refund status, the only way its refunds are confirmed (BS-26)', async () => {
+    const state = (body: unknown, status = 200) =>
+      new FlutterwaveAdapter(
+        secret,
+        hash,
+        fakeFetch({ status, body }).impl,
+      ).refundStatus('77');
+    expect(
+      await state({ status: 'success', data: { status: 'completed' } }),
+    ).toBe('succeeded');
+    expect(
+      await state({ status: 'success', data: { status: 'pending' } }),
+    ).toBe('pending');
+    expect(await state({ status: 'success', data: { status: 'failed' } })).toBe(
+      'failed',
+    );
+    expect(await state({ status: 'error', message: 'not found' }, 404)).toBe(
+      'pending',
+    );
+    const f = fakeFetch({
+      status: 200,
+      body: { status: 'success', data: { status: 'completed' } },
+    });
+    await new FlutterwaveAdapter(secret, hash, f.impl).refundStatus('77');
+    expect(f.calls[0].url).toBe('https://api.flutterwave.com/v3/refunds/77');
+    expect(await new FlutterwaveAdapter(secret, hash).cancel()).toBe(
+      'unsupported',
+    );
+  });
 });
 
 describe('StripeAdapter', () => {
@@ -393,6 +451,7 @@ describe('StripeAdapter', () => {
     overrides: Partial<{
       session: Partial<Stripe.Checkout.Session>;
       refund: Partial<Stripe.Refund> | Error;
+      expireError: Error;
     }> = {},
   ) {
     const created: unknown[] = [];
@@ -418,6 +477,15 @@ describe('StripeAdapter', () => {
               payment_intent: 'pi_1',
               ...overrides.session,
             } as Stripe.Checkout.Session),
+          expire: (id) => {
+            created.push({ expired: id });
+            return overrides.expireError
+              ? Promise.reject(overrides.expireError)
+              : Promise.resolve({
+                  id,
+                  status: 'expired',
+                } as Stripe.Checkout.Session);
+          },
         },
       },
       refunds: {
@@ -431,6 +499,12 @@ describe('StripeAdapter', () => {
             ...overrides.refund,
           } as Stripe.Refund);
         },
+        retrieve: (id) =>
+          Promise.resolve({
+            id,
+            status: 'succeeded',
+            ...(overrides.refund instanceof Error ? {} : overrides.refund),
+          } as Stripe.Refund),
       },
       webhooks: real.webhooks as unknown as StripeClient['webhooks'],
     };
@@ -673,6 +747,37 @@ describe('StripeAdapter', () => {
         reason: 'x',
       }),
     ).rejects.toBeInstanceOf(OutcomeUnknownError);
+  });
+
+  it('closes an open Checkout page on release, and reports one paid meanwhile (BS-26)', async () => {
+    const open = fakeClient({
+      session: { status: 'open', payment_status: 'unpaid' },
+    });
+    const adapter = new StripeAdapter('sk_test_x', webhookSecret, open.client);
+    expect(await adapter.cancel('BSP_abc123', 'cs_test_1')).toBe('cancelled');
+    expect(open.created).toContainEqual({ expired: 'cs_test_1' });
+
+    const paid = fakeClient({ session: { status: 'complete' } });
+    const done = new StripeAdapter('sk_test_x', webhookSecret, paid.client);
+    expect(await done.cancel('BSP_abc123', 'cs_test_1')).toBe('completed');
+    expect(paid.created).not.toContainEqual({ expired: 'cs_test_1' });
+
+    expect(await done.cancel('BSP_abc123', null)).toBe('cancelled');
+  });
+
+  it('reads a refund status (BS-26)', async () => {
+    const states = async (status: string) =>
+      new StripeAdapter(
+        'sk_test_x',
+        webhookSecret,
+        fakeClient({ refund: { status: status as Stripe.Refund['status'] } })
+          .client,
+      ).refundStatus('re_1');
+    expect(await states('succeeded')).toBe('succeeded');
+    expect(await states('pending')).toBe('pending');
+    expect(await states('requires_action')).toBe('pending');
+    expect(await states('failed')).toBe('failed');
+    expect(await states('canceled')).toBe('failed');
   });
 });
 
