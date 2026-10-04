@@ -1,6 +1,6 @@
 # Roadmap
 
-**Next planned ticket: BS-11** · **Next reactive ticket: BS-27**
+**Next planned ticket: BS-11** · **Next reactive ticket: BS-28**
 
 Each ticket is one branch (`feature/BS-<n>-<suffix>`) and one squash-merged PR. The order is
 deliberate: each ticket builds only on merged work. When a ticket finishes, its row is rewritten
@@ -36,6 +36,7 @@ so planned numbers never shift; they get a new row at the end of the table.
 | BS-24 | `railway-vercel-deploy` | See detail below | ✅ Done |
 | BS-25 | `deploy-fixes` | See detail below | ✅ Done |
 | BS-26 | `payment-audit` | See detail below | ✅ Done |
+| BS-27 | `demo-showcase` | See detail below | ✅ Done |
 
 **Launch line.** BS-1 to BS-14 are the launch. The store goes live after BS-14 with the complete
 buying, reading, email, messaging and admin experience. BS-15 to BS-18 are growth features shipped
@@ -282,6 +283,28 @@ checklist is reviewed whenever a ticket is planned, so nothing important is forg
      empty-state padding tightened on phones.
   7. Script robustness: the responsive check now rejects Git Bash–mangled paths and sanitises `?`
      in screenshot names.
+
+## BS-27: Showcase catalogue for the lecturer demo, favicon, faster preview (✅ Done, 2026-10-04)
+
+- **Asked for**: about 10 rich foundry and heat-treatment textbooks on the live site for a demo,
+  and the header's book logo as the favicon instead of Next.js's.
+- **Showcase books**: `npm run seed:demo` now has 12 titles, 4 of them new: *Gating and Risering
+  Design*, *Cast Irons*, *Surface Hardening of Steels*, *Investment Casting*. Prices are in all four
+  currencies; stock shows in-stock, low and sold-out states. Changes to the script:
+  - `--live` allows a hosted site; production is still refused without it.
+  - With R2 configured, it **uploads each full book**, so a demo purchase can be read and
+    downloaded; older demo books with a placeholder file are upgraded.
+  - It stops every background job before the first tick, so a run against a hosted database never
+    sends that site's emails from a laptop.
+  - It never adds a title that already exists, and `--remove` also deletes uploaded files.
+- **Run on the live site** (Atlas, R2 `book-selling/staging`): 11 books added. The 12th title
+  duplicated a book the owner had added, which has a cover, a file and an order; only the demo copy
+  was removed and the cache refreshed.
+- **Favicon**: `icon.svg`, `apple-icon.png` (180 px) and a real `favicon.ico` (16/32/48), drawn
+  from the header tile (espresso brown, open book).
+- **Preview speed**: on the owner's connection the first page took about 13 s, a chain of five
+  downloads. The book page now prefetches pdf.js and its worker when idle (skipped on save-data or
+  2G). The preview file downloads in parallel with pdf.js instead of after it.
 
 ## BS-26: Payment system audit (✅ Done, 2026-10-04)
 
