@@ -1,6 +1,6 @@
 # Roadmap
 
-**Next planned ticket: BS-11** · **Next reactive ticket: BS-28**
+**Next planned ticket: BS-11** · **Next reactive ticket: BS-29**
 
 Each ticket is one branch (`feature/BS-<n>-<suffix>`) and one squash-merged PR. The order is
 deliberate: each ticket builds only on merged work. When a ticket finishes, its row is rewritten
@@ -37,6 +37,7 @@ so planned numbers never shift; they get a new row at the end of the table.
 | BS-25 | `deploy-fixes` | See detail below | ✅ Done |
 | BS-26 | `payment-audit` | See detail below | ✅ Done |
 | BS-27 | `demo-showcase` | See detail below | ✅ Done |
+| BS-28 | `reader-warmup` | Book pages start the PDF engine (pdf.js + its worker) when idle, so the preview opens fast. BS-27 prefetched the raw worker file, but the bundler serves the worker as its own 374 KB chunk; measured on the live site at 18 s after the click. Skipped on save-data and 2G | ✅ Done |
 
 **Launch line.** BS-1 to BS-14 are the launch. The store goes live after BS-14 with the complete
 buying, reading, email, messaging and admin experience. BS-15 to BS-18 are growth features shipped
