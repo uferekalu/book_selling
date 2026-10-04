@@ -158,6 +158,20 @@ serving errors):
 - **After the first deploy**, check the real-IP setting: sign in on the site and open Account →
   Security; the session must show your own IP address, not a Vercel or Railway one.
 
+### Showcase catalogue on a hosted site (BS-27)
+
+For a demo, `seed:demo` can fill a hosted site with 12 foundry and heat-treatment titles (tagged
+`demo`, removable with `--remove`). Run it from a machine with the repository, pointing at that
+site's database and R2 folder, with `--live`:
+
+```
+cd backend && npm run seed:demo -- --live    # with MONGODB_URI, R2_FOLDER, FRONTEND_URL and
+                                             # FRONTEND_REVALIDATE_SECRET set to the site's values
+```
+
+It uploads the full books, so demo purchases can be read, and stops background jobs at once.
+Remove the demo books (`npm run seed:demo -- --remove --live`) before real launch.
+
 ## 4a. Cloudinary (images)
 
 1. One Cloudinary account; the **free plan** is enough (25 credits a month, images up to 10MB). Book

@@ -2,13 +2,14 @@
 
 import { BookOpen, CheckCircle2, Download, ShoppingBag, Truck } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Badge, Button, ButtonLink, Icon, PriceTag, RadioGroup, useToast } from "@/components/ui";
 import { useAddToCartMutation } from "@/lib/api/commerce-api";
 import { errorMessage, errorStatus } from "@/lib/api/errors";
 import type { FormatType, PublicFormat } from "@/lib/catalog-types";
 import { useOwnedBooksQuery } from "@/lib/api/library-api";
 import { useCurrency } from "@/lib/client-currency";
+import { prefetchPdfJs } from "@/features/reader/pdf";
 import { useAppDispatch, useAppSelector } from "@/lib/redux/hooks";
 import { cartOpened } from "@/lib/redux/slices/cart-ui-slice";
 
@@ -58,6 +59,14 @@ export function FormatPicker({
   const ownsEbook = refusedAsOwned || Boolean(ownedBooks?.some((b) => b.bookId === bookId));
   const owned = ownsEbook && current?.type === "ebook";
   const router = useRouter();
+  // Once the page is idle, fetch the reader's PDF engine so "Read the introduction" opens fast.
+  useEffect(() => {
+    if (!hasPreview || !showPreviewButton) return;
+    const idle = window.requestIdleCallback ?? ((run: () => void) => window.setTimeout(run, 1500));
+    const cancel = window.cancelIdleCallback ?? window.clearTimeout;
+    const handle = idle(() => prefetchPdfJs());
+    return () => cancel(handle);
+  }, [hasPreview, showPreviewButton]);
   const dispatch = useAppDispatch();
   const { toast } = useToast();
 

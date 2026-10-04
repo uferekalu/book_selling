@@ -11,7 +11,9 @@
  * production preview builder, so the reader can be tried locally. Ratings are left empty: no fake
  * reviews, ever.
  */
+import { randomBytes } from 'node:crypto';
 import { NestFactory } from '@nestjs/core';
+import { SchedulerRegistry } from '@nestjs/schedule';
 import { getModelToken } from '@nestjs/mongoose';
 import type { Model } from 'mongoose';
 import { AppModule } from '../src/app.module.js';
@@ -25,10 +27,19 @@ import { Category } from '../src/catalog/schemas/category.schema.js';
 import { buildPreview } from '../src/preview/preview-builder.js';
 import { renderTeasers } from '../src/preview/page-teaser.js';
 import { PreviewStorage } from '../src/preview/preview-storage.js';
+import { BookFilesService } from '../src/uploads/book-files.service.js';
 import { demoManuscript } from './demo-manuscript.js';
 
-if (process.env.NODE_ENV === 'production') {
-  console.error('Refusing to seed demo data into production.');
+/**
+ * `--live`: the owner asked for a showcase catalogue on a hosted site (BS-27). Without it the
+ * script refuses to touch production, as before. In live mode the full books are uploaded to R2
+ * (R2 must be configured), so a demo purchase can be read and downloaded like a real one.
+ */
+const live = process.argv.includes('--live');
+if (process.env.NODE_ENV === 'production' && !live) {
+  console.error(
+    'Refusing to seed demo data into production (pass --live for a showcase on a hosted site).',
+  );
   process.exit(1);
 }
 
@@ -284,12 +295,116 @@ const BOOKS: DemoBook[] = [
     stock: 15,
     tags: ['metallurgy', 'solidification', 'microstructure'],
   },
+  {
+    title: 'Gating and Risering Design',
+    subtitle: 'Calculations for sound castings',
+    edition: '2nd edition',
+    categories: ['Metal Casting', 'Foundry Technology'],
+    featured: true,
+    pages: 284,
+    abstract:
+      'A calculation-led guide to designing the metal path into a mould and feeding the casting as it solidifies. Covers pouring time, choke area and gating ratios, Chvorinov’s rule and the modulus method, riser size and placement, feeding distance, chills and exothermic sleeves, all with fully worked examples for steel, grey iron and aluminium castings.',
+    description:
+      'Turns gating and risering from rules of thumb into calculations you can check and defend.\n\n**You will learn to:**\n\n- Choose between pressurised and unpressurised gating systems\n- Size the sprue, runner and ingates from the choke area\n- Apply the modulus method to place and size risers\n- Use chills and insulating sleeves to extend feeding distance\n- Check a design against yield and soundness targets\n\nEvery chapter closes with problems graded from routine to final-year project level.',
+    toc: [
+      'Fluid flow in moulds',
+      'Pouring time and choke design',
+      'Gating ratios and systems',
+      'Solidification time and modulus',
+      'Riser design',
+      'Feeding distance',
+      'Chills and sleeves',
+      'Computer simulation of filling',
+      'Design case studies',
+    ],
+    ebook: [14000, 2299, 1899, 2099],
+    print: [24000, 3799, 3099, 3499],
+    stock: 30,
+    tags: ['gating', 'risering', 'feeding', 'calculations'],
+  },
+  {
+    title: 'Cast Irons',
+    subtitle: 'Grey, ductile, malleable and white iron',
+    edition: '1st edition',
+    categories: ['Physical Metallurgy', 'Metal Casting'],
+    pages: 262,
+    abstract:
+      'The metallurgy and foundry practice of the cast iron family. Explains graphite formation and the effect of carbon equivalent, inoculation and nodularising treatments, and how section size and cooling rate set the structure. Compares grey, ductile, compacted graphite, malleable and white irons by properties and typical applications.',
+    description:
+      'For foundry engineers and students who need to specify, melt and treat cast irons with confidence.\n\n- Carbon equivalent and the eutectic\n- Inoculation and fade\n- Magnesium treatment for ductile iron\n- Heat treatment of ductile iron, including austempering (ADI)\n- Standards and test bars',
+    toc: [
+      'The cast iron family',
+      'Graphite and carbon equivalent',
+      'Grey iron',
+      'Ductile iron',
+      'Compacted graphite iron',
+      'Malleable and white irons',
+      'Heat treatment of cast irons',
+      'Testing and standards',
+    ],
+    ebook: [13000, 2199, 1799, 1999],
+    print: [22000, 3499, 2899, 3199],
+    stock: 18,
+    tags: ['cast iron', 'ductile iron', 'grey iron', 'inoculation'],
+  },
+  {
+    title: 'Surface Hardening of Steels',
+    subtitle: 'Carburising, nitriding and induction hardening',
+    edition: '1st edition',
+    categories: ['Heat Treatment'],
+    pages: 216,
+    abstract:
+      'How to give a component a hard, wear-resistant surface over a tough core. Covers pack, gas and vacuum carburising, carbonitriding, gas and plasma nitriding, and flame and induction hardening, with case-depth calculations, process control and the testing of hardened cases.',
+    description:
+      'Practical and process-focused, with worked case-depth problems and checklists for specifying surface treatments on drawings.',
+    toc: [
+      'Why surface hardening',
+      'Carburising',
+      'Carbonitriding',
+      'Nitriding and nitrocarburising',
+      'Flame hardening',
+      'Induction hardening',
+      'Measuring case depth',
+    ],
+    ebook: [11000, 1899, 1499, 1699],
+    print: [19000, 2999, 2499, 2799],
+    stock: 4,
+    tags: ['case hardening', 'carburising', 'nitriding', 'induction'],
+  },
+  {
+    title: 'Investment Casting',
+    subtitle: 'Precision castings from wax patterns',
+    edition: '1st edition',
+    categories: ['Metal Casting'],
+    pages: 198,
+    abstract:
+      'The lost-wax process from start to finish: wax pattern injection and assembly, ceramic shell building, dewaxing and firing, melting and pouring, and knockout and finishing. Explains how to hold tight tolerances and fine surface finish, and when investment casting beats machining or other casting routes.',
+    description:
+      'Clear and illustrated, for students meeting precision casting for the first time and engineers choosing a process for complex parts.',
+    toc: [
+      'The lost-wax process',
+      'Pattern waxes and dies',
+      'Shell building',
+      'Dewaxing and firing',
+      'Casting and finishing',
+      'Tolerances and design rules',
+    ],
+    ebook: [10000, 1699, 1399, 1599],
+    tags: ['investment casting', 'lost wax', 'precision'],
+  },
 ];
 
 const remove = process.argv.includes('--remove');
 const app = await NestFactory.createApplicationContext(AppModule, {
   logger: ['error', 'warn'],
 });
+// This script only writes the catalogue. Stop every background job straight away (before the
+// first tick), so running it against a hosted database never sends that site's queued emails or
+// runs its reconciliation from this machine.
+const scheduler = app.get(SchedulerRegistry);
+for (const name of scheduler.getIntervals()) scheduler.deleteInterval(name);
+for (const name of scheduler.getTimeouts()) scheduler.deleteTimeout(name);
+for (const job of scheduler.getCronJobs().keys()) scheduler.deleteCronJob(job);
 try {
   const bookModel = app.get<Model<Book>>(getModelToken(Book.name));
   const authorModel = app.get<Model<Author>>(getModelToken(Author.name));
@@ -297,10 +412,13 @@ try {
 
   if (remove) {
     const storage = app.get(PreviewStorage);
+    const files = app.get(BookFilesService);
     for (const book of await bookModel
-      .find({ tags: 'demo' }, { preview: 1 })
+      .find({ tags: 'demo' }, { preview: 1, manuscript: 1 })
       .lean()) {
       if (book.preview?.fileId) await storage.remove(book.preview.fileId);
+      const key = book.manuscript?.key;
+      if (key && !key.startsWith('demo/')) await files.delete(key);
     }
     const removed = await bookModel.deleteMany({ tags: 'demo' });
     const demoAuthor = await authorModel.deleteMany({
@@ -346,7 +464,8 @@ try {
 
     let created = 0;
     for (const [index, demo] of BOOKS.entries()) {
-      if (await bookModel.exists({ title: demo.title, tags: 'demo' })) continue;
+      // Any book with this title, not just a demo one: never duplicate a book the owner added.
+      if (await bookModel.exists({ title: demo.title })) continue;
       const book = await books.create(demo.title, system);
       const id = book._id.toString();
       await books.update(
@@ -401,11 +520,25 @@ try {
       created += 1;
     }
     // Previews for every demo book that doesn't have one yet (also upgrades older demo data).
+    // With R2 configured, the full book is uploaded too, so purchases can be read and downloaded;
+    // demo books made before that (placeholder `demo/` key) are rebuilt with a real file.
     const storage = app.get(PreviewStorage);
+    const files = app.get(BookFilesService);
+    if (live && !files.configured) {
+      throw new Error(
+        '--live needs Cloudflare R2 configured (R2_* variables): buyers must be able to open what they buy.',
+      );
+    }
     let previews = 0;
+    let uploaded = 0;
     for (const demo of BOOKS) {
       const book = await bookModel.findOne({ title: demo.title, tags: 'demo' });
-      if (!book || book.preview?.fileId) continue;
+      if (!book) continue;
+      const needsFile =
+        files.configured &&
+        (!book.manuscript?.key || book.manuscript.key.startsWith('demo/'));
+      if (book.preview?.fileId && !needsFile) continue;
+      if (book.preview?.fileId) await storage.remove(book.preview.fileId);
       const manuscript = await demoManuscript({
         title: demo.title,
         subtitle: demo.subtitle,
@@ -429,6 +562,13 @@ try {
         maxPercent: 15,
       });
       const size = manuscript.bytes.length;
+      let manuscriptKey = `demo/${book.slug}.pdf`;
+      if (files.configured) {
+        manuscriptKey = `${files.manuscriptPrefix(book._id.toString())}${randomBytes(16).toString('hex')}.pdf`;
+        // A copy: rendering the teasers below takes ownership of the original bytes.
+        await files.put(manuscriptKey, manuscript.bytes.slice());
+        uploaded += 1;
+      }
       const lastFree = manuscript.introduction.toPage;
       // Last use of the manuscript bytes: rendering takes ownership of them.
       const teasers = (
@@ -453,9 +593,9 @@ try {
               children: [],
             })),
             pageCount: manuscript.pages,
-            // A placeholder key: the demo manuscript is never uploaded (the preview is built here).
+            // Without R2 a placeholder key (local design work); with R2 the uploaded full book.
             manuscript: {
-              key: `demo/${book.slug}.pdf`,
+              key: manuscriptKey,
               bytes: size,
               pages: manuscript.pages,
               checksum,
@@ -488,7 +628,7 @@ try {
       previews += 1;
     }
     console.log(
-      `Demo catalogue ready: ${created} new book(s), ${BOOKS.length - created} already present, ${previews} preview(s) built.`,
+      `Demo catalogue ready: ${created} new book(s), ${BOOKS.length - created} already present, ${previews} preview(s) built, ${uploaded} full book(s) uploaded.`,
     );
   }
 } finally {
