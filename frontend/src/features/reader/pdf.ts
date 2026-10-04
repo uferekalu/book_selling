@@ -23,21 +23,18 @@ export function loadPdfJs(): Promise<PdfJs> {
 }
 
 /**
- * Downloads pdf.js and its worker into the browser cache without starting anything, so a reader
- * opened next skips those round trips (BS-27: on a slow link they were most of the 13 s to the
- * first page). Skipped when the visitor asked to save data or is on a very slow connection.
+ * Starts pdf.js and its worker ahead of time, so a reader opened next (an in-app navigation keeps
+ * them running) only has to fetch the PDF itself. BS-27: on a slow link the engine's downloads
+ * were most of the 13–18 s to the first preview page; the bundler wraps the worker in its own
+ * chunk, so only creating the worker the real way fetches the right files. Skipped when the
+ * visitor asked to save data or is on a very slow connection.
  */
 export function prefetchPdfJs(): void {
   const connection = (navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string } }).connection;
   if (connection?.saveData || connection?.effectiveType === "slow-2g" || connection?.effectiveType === "2g") return;
-  void import("pdfjs-dist").catch(() => undefined);
-  const worker = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).href;
-  if (!document.querySelector(`link[rel="prefetch"][href="${worker}"]`)) {
-    const link = document.createElement("link");
-    link.rel = "prefetch";
-    link.href = worker;
-    document.head.appendChild(link);
-  }
+  void loadPdfJs().catch(() => {
+    loading = null; // a failed warm-up must not stop the reader from trying again
+  });
 }
 
 /**
