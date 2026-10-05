@@ -418,7 +418,11 @@ describe('Email outbox (MailService + OutboxWorker)', () => {
       await worker.processDue();
       expect(await mail.requeue(row._id.toString())).toBe(true);
       await worker.processDue();
-      expect(await load('k1')).toMatchObject({ status: 'sent' });
+      expect(await load('k1')).toMatchObject({ status: 'sent', resends: 1 });
+      // A deliberate resend uses a fresh provider key: Resend remembers a key for 24 hours and
+      // would otherwise answer with the first attempt's failure (BS-30).
+      const keys = transport.sent.map((e) => e.idempotencyKey);
+      expect(keys.at(-1)).toBe(`outbox-${row._id.toString()}-r1`);
     });
   });
 

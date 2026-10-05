@@ -1320,6 +1320,22 @@ and reported to the owner. It is never silently lost, and never sent twice for t
     alerts.
   - Messaging: new message (sent with `sendAfter` 10 min, cancelled if read first).
   - Owner: new sale, reconciliation needed, low stock.
+- **Undelivered email (BS-30)**:
+  - **Store admin → Emails** lists every email that didn't reach its recipient: never sent (`dead`
+    after all retries), or bounced, failed or reported as spam after sending (Resend webhooks).
+    Each row gives the reason in plain words and its one action:
+    - **Send again** (never sent, content still there);
+    - **Allow emails to this address again** (the address was paused after a bounce or spam
+      report);
+    - **Mark as handled**.
+    Every action is audited.
+  - A **buyer-facing** email that bounces or fails (receipt, set-your-password link, shipping
+    notices, refund, replies) emails the owner once (`ops.email-bounced`), never about their own
+    alert emails.
+  - A deliberate resend gets a **fresh provider idempotency key** (`outbox-<id>-r<n>`, field
+    `resends`): Resend remembers a key for 24 hours and would otherwise return the first attempt's
+    failure. Automatic retries keep the original key, so they still can't deliver twice.
+  - Templates have plain-language names for the owner (`mail/template-labels.ts`).
   - Marketing (BS-13+) only with explicit opt-in, plus `List-Unsubscribe` one-click headers
     (RFC 8058) and a preference centre.
 - **Admin visibility** (BS-12): dead or suppressed emails appear in the "Needs attention" queue with

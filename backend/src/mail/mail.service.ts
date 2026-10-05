@@ -116,7 +116,10 @@ export class MailService {
             nextAttemptAt: new Date(),
             lastError: null,
             expireAt: null,
+            reviewedAt: null,
           },
+          // A fresh provider idempotency key for this deliberate resend (OutboxWorker).
+          $inc: { resends: 1 },
         },
       )
       .exec();
