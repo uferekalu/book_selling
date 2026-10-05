@@ -92,6 +92,14 @@ export class EmailOutbox {
   })
   attachments: Array<{ kind: string; ref: string }>;
 
+  /** Times the owner sent it again (BS-30); each resend uses a fresh provider idempotency key. */
+  @Prop({ type: Number, default: 0 })
+  resends: number;
+
+  /** When a staff member marked this delivery problem as dealt with (the Emails page, BS-30). */
+  @Prop({ type: Date, default: null })
+  reviewedAt: Date | null;
+
   /** Set when the row reaches a final state; a TTL index removes it 180 days later. */
   @Prop({ type: Date, default: null })
   expireAt: Date | null;
@@ -103,3 +111,16 @@ export const EmailOutboxSchema = SchemaFactory.createForClass(EmailOutbox);
 // The worker's claim query: due rows in a claimable state, oldest first.
 EmailOutboxSchema.index({ status: 1, nextAttemptAt: 1 });
 EmailOutboxSchema.index({ expireAt: 1 }, { expireAfterSeconds: 0 });
+// The admin Emails page: undelivered emails, newest first (BS-30).
+EmailOutboxSchema.index(
+  { createdAt: -1 },
+  {
+    name: 'delivery_problems',
+    partialFilterExpression: {
+      $or: [
+        { status: 'dead' },
+        { deliveryStatus: { $in: ['bounced', 'failed', 'complained'] } },
+      ],
+    },
+  },
+);

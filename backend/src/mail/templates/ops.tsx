@@ -11,6 +11,8 @@ import type { EmailBrand } from './theme.js';
 
 export interface EmailDeadLetterData {
   outboxId: string;
+  /** Store admin → Emails (absent on alerts queued before BS-30). */
+  adminUrl?: string;
   recipient: string;
   template: string;
   attempts: number;
@@ -49,9 +51,11 @@ export function EmailDeadLetter({
       </Note>
       <Paragraph muted>
         Check the email provider dashboard and the address. Once the cause is
-        fixed, the email can be queued again from the admin “Needs attention”
-        list.
+        fixed, send it again from Store admin → Emails.
       </Paragraph>
+      {data.adminUrl && (
+        <ActionButton href={data.adminUrl}>Open Emails</ActionButton>
+      )}
     </EmailLayout>
   );
 }
@@ -143,6 +147,60 @@ export function CopyFailed({
         automatically when the customer next opens the book.
       </Paragraph>
       <ActionButton href={data.adminUrl}>Open the order</ActionButton>
+    </EmailLayout>
+  );
+}
+
+export interface EmailBouncedData {
+  recipient: string;
+  /** What the email was, in plain words (`templateLabel`). */
+  email: string;
+  reason: string;
+  orderNumber: string | null;
+  adminUrl: string;
+}
+
+/**
+ * Owner alert: an email a buyer relies on (receipt, set-your-password link, shipping notice,
+ * a reply) was refused by their mail server after sending (BS-30). They won't know, so the owner
+ * reaches them another way.
+ */
+export function EmailBounced({
+  brand,
+  data,
+}: {
+  brand: EmailBrand;
+  data: EmailBouncedData;
+}) {
+  return (
+    <EmailLayout
+      brand={brand}
+      preview={`${data.email} to ${data.recipient} bounced.`}
+      footerReason={`Operational alert for the owner of ${brand.name}.`}
+    >
+      <Title>A customer email bounced</Title>
+      <Paragraph>
+        The customer&rsquo;s mail server refused this email, so they have not
+        received it. The address may be mistyped or no longer in use.
+      </Paragraph>
+      <DetailList
+        rows={[
+          ['Recipient', data.recipient],
+          ['Email', data.email],
+          ...(data.orderNumber
+            ? ([['Order', data.orderNumber]] as Array<[string, string]>)
+            : []),
+        ]}
+      />
+      <Note tone="danger">
+        Reason: <Mono>{data.reason}</Mono>
+      </Note>
+      <Paragraph muted>
+        Contact the customer another way (the order has their phone number when
+        a print copy was shipped). Further emails to this address are paused
+        until you allow it again on the Emails page.
+      </Paragraph>
+      <ActionButton href={data.adminUrl}>Open Emails</ActionButton>
     </EmailLayout>
   );
 }

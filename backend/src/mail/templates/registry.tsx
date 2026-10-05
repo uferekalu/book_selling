@@ -26,9 +26,11 @@ import {
 import {
   CopyFailed,
   DownloadAbuse,
+  EmailBounced,
   EmailDeadLetter,
   type CopyFailedData,
   type DownloadAbuseData,
+  type EmailBouncedData,
   type EmailDeadLetterData,
 } from './ops.js';
 import {
@@ -292,6 +294,20 @@ export const EMAIL_TEMPLATES = {
       template: 'auth.verify-email',
       attempts: 8,
       lastError: 'Resend validation_error: Invalid `to` field',
+      adminUrl: 'https://example.com/admin/emails',
+    },
+  }),
+  'ops.email-bounced': define<EmailBouncedData>({
+    subject: (data) => `Email bounced: ${data.email} to ${data.recipient}`,
+    render: (data, brand) => <EmailBounced data={data} brand={brand} />,
+    category: 'critical',
+    sensitive: false,
+    sample: {
+      recipient: 'ada@exmaple.com',
+      email: 'Payment receipt',
+      reason: 'The email account that you tried to reach does not exist.',
+      orderNumber: 'BS-2026-000123',
+      adminUrl: 'https://example.com/admin/emails',
     },
   }),
   'messaging.unread-message': define<UnreadMessageData>({

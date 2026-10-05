@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { JobsModule } from '../jobs/jobs.module.js';
+import { AdminEmailsController } from './admin-emails.controller.js';
+import { AdminEmailsService } from './admin-emails.service.js';
 import { MailWebhooksController } from './mail-webhooks.controller.js';
 import { MailWebhooksService } from './mail-webhooks.service.js';
 import { AttachmentRegistry } from './attachments.js';
@@ -28,12 +30,13 @@ import { ResendTransport } from './transports/resend.transport.js';
       { name: EmailSuppression.name, schema: EmailSuppressionSchema },
     ]),
   ],
-  controllers: [MailWebhooksController],
+  controllers: [MailWebhooksController, AdminEmailsController],
   providers: [
     MailService,
     AttachmentRegistry,
     OutboxWorker,
     MailWebhooksService,
+    AdminEmailsService,
     TemplateRendererService,
     {
       provide: EMAIL_TRANSPORT,

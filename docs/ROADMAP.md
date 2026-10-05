@@ -1,6 +1,6 @@
 # Roadmap
 
-**Next planned ticket: BS-11** · **Next reactive ticket: BS-30**
+**Next planned ticket: BS-11** · **Next reactive ticket: BS-31**
 
 Each ticket is one branch (`feature/BS-<n>-<suffix>`) and one squash-merged PR. The order is
 deliberate: each ticket builds only on merged work. When a ticket finishes, its row is rewritten
@@ -39,6 +39,7 @@ so planned numbers never shift; they get a new row at the end of the table.
 | BS-27 | `demo-showcase` | See detail below | ✅ Done |
 | BS-28 | `reader-warmup` | Book pages start the PDF engine (pdf.js + its worker) when idle, so the preview opens fast. BS-27 prefetched the raw worker file, but the bundler serves the worker as its own 374 KB chunk; measured on the live site at 18 s after the click. Skipped on save-data and 2G | ✅ Done |
 | BS-29 | `sales-reports` | See detail below | ✅ Done |
+| BS-30 | `storage-email-audit` | See detail below | ✅ Done |
 
 **Launch line.** BS-1 to BS-14 are the launch. The store goes live after BS-14 with the complete
 buying, reading, email, messaging and admin experience. BS-15 to BS-18 are growth features shipped
@@ -285,6 +286,36 @@ checklist is reviewed whenever a ticket is planned, so nothing important is forg
      empty-state padding tightened on phones.
   7. Script robustness: the responsive check now rejects Git Bash–mangled paths and sanitises `?`
      in screenshot names.
+
+## BS-30: Email, R2 and Cloudinary audit (✅ Done, 2026-10-05)
+
+The owner asked for the email, storage (Cloudflare R2) and image (Cloudinary) systems to be
+reviewed as thoroughly as payments.
+
+- **Held up**:
+  - Email: the outbox claims rows atomically under a lease, sends with the outbox id as an
+    idempotency key, and keeps backoff (about 15–18 hours in all) inside Resend's 24-hour key
+    lifetime. One-time links are erased after sending, and failed alerts never loop.
+  - R2: signed part URLs; the server checks every part's size before joining; private files with
+    short-lived links; the storage cap reads R2 itself; abandoned uploads are cleaned up; replaced
+    drafts' files are deleted. Published books keep earlier editions on purpose.
+  - Cloudinary: every upload is verified with Cloudinary (folder, format, size, dimensions)
+    before it is trusted; replaced images are deleted with CDN invalidation.
+- **Fixed**:
+  1. **The "email could not be delivered" alert pointed to an admin page that didn't exist**, and
+     the resend function was never wired up. There is now a Store admin → Emails page (list,
+     plain-language reasons, Send again, Allow address again, Mark as handled; audited).
+  2. **A bounced receipt, set-your-password link or shipping notice went unnoticed**: the bounce
+     was recorded but nobody was told. The owner is now emailed once per bounced buyer email.
+  3. **"Send again" could have been a no-op**: reusing the idempotency key within 24 hours returns
+     Resend's stored answer. Owner resends now use a fresh key.
+- **Not changed (noted)**: a best-effort Cloudinary delete that fails leaves an orphan image (it is
+  logged); earlier editions of published books are kept (a record of what buyers got).
+- **Tests**:
+  - 4 e2e: bounce alert once with order number, address paused and shown; no alerts for
+    non-buyer emails or the owner's own; resend with a fresh key and mark handled; staff-only and
+    validation.
+  - The outbox spec asserts the resend key, and the render test covers the new template.
 
 ## BS-29: Sales and earnings reports (✅ Done, 2026-10-05)
 

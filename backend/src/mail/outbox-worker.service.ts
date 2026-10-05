@@ -45,6 +45,7 @@ export class OutboxWorker {
   private readonly from: string;
   private readonly replyTo: string | undefined;
   private readonly ownerAlertEmail: string | undefined;
+  private readonly frontendUrl: string;
   private readonly enabled: boolean;
 
   constructor(
@@ -64,6 +65,10 @@ export class OutboxWorker {
       config.get<string>('SUPPORT_EMAIL') ||
       undefined;
     this.ownerAlertEmail = config.get<string>('OWNER_ALERT_EMAIL') || undefined;
+    this.frontendUrl = (config.get<string>('FRONTEND_URL') ?? '').replace(
+      /\/+$/,
+      '',
+    );
     // Tests drive `processDue()` directly with a controlled clock instead of the timer.
     this.enabled = config.get<string>('NODE_ENV') !== 'test';
   }
@@ -189,7 +194,10 @@ export class OutboxWorker {
         subject: rendered.subject,
         html: rendered.html,
         text: rendered.text,
-        idempotencyKey: `outbox-${id}`,
+        // A deliberate resend by the owner gets a fresh key: Resend remembers a key for 24 hours.
+        idempotencyKey: row.resends
+          ? `outbox-${id}-r${row.resends}`
+          : `outbox-${id}`,
         tags: { template: row.template, category: row.category },
         ...(attachments.length ? { attachments } : {}),
       });
@@ -288,6 +296,7 @@ export class OutboxWorker {
         template: row.template,
         attempts: row.attempts,
         lastError: lastError.slice(0, 500),
+        adminUrl: `${this.frontendUrl}/admin/emails`,
       },
     });
   }
