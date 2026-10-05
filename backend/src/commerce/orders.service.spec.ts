@@ -426,7 +426,9 @@ describe('Orders (placement, holds, idempotency, expiry)', () => {
       }),
     ).rejects.toMatchObject({
       response: {
-        problems: [expect.stringMatching(/can't ship print copies to JP/)],
+        problems: [
+          expect.stringMatching(/don't deliver print copies to Japan/),
+        ],
       },
     });
 

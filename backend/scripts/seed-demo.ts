@@ -28,6 +28,7 @@ import { buildPreview } from '../src/preview/preview-builder.js';
 import { renderTeasers } from '../src/preview/page-teaser.js';
 import { PreviewStorage } from '../src/preview/preview-storage.js';
 import { BookFilesService } from '../src/uploads/book-files.service.js';
+import { ShippingService } from '../src/commerce/shipping.service.js';
 import { demoManuscript } from './demo-manuscript.js';
 
 /**
@@ -394,6 +395,65 @@ const BOOKS: DemoBook[] = [
   },
 ];
 
+/** Starter delivery rates in minor units: first copy, then each additional copy. */
+const rate = (
+  currency: 'NGN' | 'USD' | 'GBP' | 'EUR',
+  firstItem: number,
+  additionalItem: number,
+) => ({ currency, firstItem, additionalItem });
+const STARTER_ZONES = [
+  {
+    name: 'Nigeria',
+    countries: ['NG'],
+    estimatedDays: { min: 2, max: 5 },
+    active: true,
+    rates: [
+      rate('NGN', 250_000, 100_000),
+      rate('USD', 300, 100),
+      rate('GBP', 250, 100),
+      rate('EUR', 300, 100),
+    ],
+  },
+  {
+    name: 'West Africa',
+    countries: [
+      'GH',
+      'BJ',
+      'TG',
+      'SN',
+      'CI',
+      'CM',
+      'SL',
+      'LR',
+      'GM',
+      'NE',
+      'BF',
+      'ML',
+      'GN',
+    ],
+    estimatedDays: { min: 7, max: 14 },
+    active: true,
+    rates: [
+      rate('NGN', 1_500_000, 500_000),
+      rate('USD', 1800, 600),
+      rate('GBP', 1500, 500),
+      rate('EUR', 1700, 500),
+    ],
+  },
+  {
+    name: 'Rest of the world',
+    countries: ['*'],
+    estimatedDays: { min: 10, max: 21 },
+    active: true,
+    rates: [
+      rate('NGN', 3_500_000, 1_000_000),
+      rate('USD', 3500, 1000),
+      rate('GBP', 2800, 800),
+      rate('EUR', 3200, 900),
+    ],
+  },
+];
+
 const remove = process.argv.includes('--remove');
 const app = await NestFactory.createApplicationContext(AppModule, {
   logger: ['error', 'warn'],
@@ -451,6 +511,15 @@ try {
         system,
       ));
 
+    // Print copies can't be ordered anywhere without a shipping zone (BS-31: the live store had
+    // none). A store with no zones gets these starter rates, editable in Store admin → Shipping.
+    const shipping = app.get(ShippingService);
+    if ((await shipping.list()).length === 0) {
+      for (const zone of STARTER_ZONES) await shipping.create(zone, system);
+      console.log(
+        `Added ${STARTER_ZONES.length} starter shipping zones (edit them in Store admin → Shipping).`,
+      );
+    }
     const categoryIds = new Map<string, string>();
     for (const category of CATEGORIES) {
       const existing = await categoryModel.findOne({ name: category.name });

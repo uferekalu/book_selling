@@ -9,6 +9,7 @@ import {
 } from '../common/money/money.js';
 import type { FormatType } from '../catalog/schemas/book.schema.js';
 import { evaluateCoupon, type CouponLike } from './coupon-rules.js';
+import { countryName } from '../payments/countries.js';
 
 /**
  * Prices a cart from the catalogue (ARCHITECTURE §8.2). Pure: the cart, the checkout quote and
@@ -254,9 +255,19 @@ export function priceCart(input: PricingInput): Quote {
       problems.push('Choose where to ship your print copy');
     } else {
       const rate = input.zone?.rates.find((r) => r.currency === currency);
-      if (!input.zone || !rate) {
+      const place = countryName(input.shippingCountry);
+      if (!input.zone) {
+        // No zone covers this country (and there is no "rest of the world" zone).
         problems.push(
-          `We can't ship print copies to ${input.shippingCountry} in ${currency} yet`,
+          `We don't deliver print copies to ${place} yet. Choose the ebook, or contact us about delivery.`,
+        );
+      } else if (!rate) {
+        // The zone exists but has no price in this currency: say which currencies work.
+        const others = input.zone.rates.map((r) => r.currency);
+        problems.push(
+          others.length
+            ? `Delivery to ${place} isn't priced in ${currency}. Switch the currency to ${others.join(' or ')} to order the print copy.`
+            : `We don't deliver print copies to ${place} yet. Choose the ebook, or contact us about delivery.`,
         );
       } else {
         shippingTotal = add(

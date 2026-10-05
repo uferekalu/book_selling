@@ -230,12 +230,24 @@ describe('priceCart', () => {
     expect(
       priceCart(input({ items, shippingCountry: 'JP', zone: null }))
         .problems[0],
-    ).toMatch(/can't ship print copies to JP/);
+    ).toBe(
+      "We don't deliver print copies to Japan yet. Choose the ebook, or contact us about delivery.",
+    );
     expect(
       priceCart(
-        input({ currency: 'EUR', items, shippingCountry: 'NG', zone }),
-      ).problems.some((p) => /EUR/.test(p)),
-    ).toBe(true);
+        input({
+          currency: 'USD',
+          items,
+          shippingCountry: 'NG',
+          zone: {
+            ...zone,
+            rates: zone.rates.filter((r) => r.currency === 'NGN'),
+          },
+        }),
+      ).problems,
+    ).toEqual([
+      "Delivery to Nigeria isn't priced in USD. Switch the currency to NGN to order the print copy.",
+    ]);
   });
 
   it('never needs shipping for an ebook-only order', () => {

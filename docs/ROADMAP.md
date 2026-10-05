@@ -1,6 +1,6 @@
 # Roadmap
 
-**Next planned ticket: BS-11** · **Next reactive ticket: BS-31**
+**Next planned ticket: BS-11** · **Next reactive ticket: BS-32**
 
 Each ticket is one branch (`feature/BS-<n>-<suffix>`) and one squash-merged PR. The order is
 deliberate: each ticket builds only on merged work. When a ticket finishes, its row is rewritten
@@ -40,6 +40,7 @@ so planned numbers never shift; they get a new row at the end of the table.
 | BS-28 | `reader-warmup` | Book pages start the PDF engine (pdf.js + its worker) when idle, so the preview opens fast. BS-27 prefetched the raw worker file, but the bundler serves the worker as its own 374 KB chunk; measured on the live site at 18 s after the click. Skipped on save-data and 2G | ✅ Done |
 | BS-29 | `sales-reports` | See detail below | ✅ Done |
 | BS-30 | `storage-email-audit` | See detail below | ✅ Done |
+| BS-31 | `shipping-safeguards` | Reported: every print order on the live site was refused ("can't ship print copies to US in NGN"). Cause: the live store had **no shipping zones** (the demo seed made none). Fixed live at once with three starter zones (Nigeria, West Africa, Rest of the world; all four currencies; editable in Store admin → Shipping). Then: the checkout names the country and, when a zone lacks the currency, which currencies work; the Shipping and Books admin pages warn when buyers can't order print copies (no zone, no Rest of the world, a missing currency); `seed:demo` adds the starter zones to a store with none | ✅ Done |
 
 **Launch line.** BS-1 to BS-14 are the launch. The store goes live after BS-14 with the complete
 buying, reading, email, messaging and admin experience. BS-15 to BS-18 are growth features shipped
