@@ -87,6 +87,7 @@ infrastructure only (config, filters, decorators, money utilities), never domain
 | `notifications` | in-app notifications | BS-10 |
 | `realtime` | Socket.IO gateway | BS-10 |
 | `reviews`, `wishlist` | reviews, wishlists | BS-11 |
+| `reports` | sales and earnings reports, CSV export | BS-29 |
 | `admin` | analytics, "needs attention" queue, audit log reads | BS-12 |
 
 Dependency direction: `payments → orders → catalog`. `library` and `mail` are called from order
@@ -1380,6 +1381,36 @@ and reported to the owner. It is never silently lost, and never sent twice for t
   Turnstile can be added later if spam gets past these.
 - **Reply time**: the owner sets the line shown next to every message box ("Usually replies within
   a day") in Store admin → Messages (`messaging_settings`).
+
+## 12a. Sales and earnings reports (built in BS-29)
+
+Store admin → Reports, for the owner and admins (two-step verified). Read-only over `orders`.
+
+- **A sale** = an order that was paid (`paid`, `fulfilled`, `partially_refunded`, `refunded`),
+  counted on `payment.paidAt` (indexed). Dates and periods are in the owner's time zone,
+  `Africa/Lagos`: a range is whole local days, and 23:30 UTC on the last day of a month falls in the
+  next month there.
+- **Money**: integer minor units, computed in plain tested functions (`reports/sales-report.ts`).
+  Totals are **per currency** and never added across currencies (no exchange rates).
+  Per currency:
+  - book sales = Σ subtotal;
+  - received = Σ total (book sales − discounts + shipping + tax);
+  - refunds = Σ refundedTotal on those orders, whenever made;
+  - net = received − refunds, before provider fees.
+- **Sales tab**: one row per book per order (date, order, book, format, copies × price, the line's
+  share of the order discount, paid for the book, buyer, country and city, delivery status with
+  carrier and tracking, provider, coupon). It has filters (currency, format, delivery, country,
+  search), per-currency sums of all matching rows, and a **CSV download**:
+  - UTF-8 with BOM, so Excel shows ₦;
+  - amounts in major units beside their currency;
+  - cells that would start a formula are prefixed with `'` against CSV injection.
+- **Earnings tab**: a summary card per currency, then tables by period (day / week / month), by
+  book, by country and by payment method. It has a "How these figures are worked out" section in
+  plain words.
+- **Discount shares**: an order's discount is split across its lines in proportion to their value
+  with the largest-remainder method, so the shares add up to the discount exactly. Shipping stays an
+  order-level figure.
+- Limits: a report reads at most 20,000 orders (above that it asks for a shorter range).
 
 ## 13. Security
 

@@ -1,6 +1,6 @@
 # Roadmap
 
-**Next planned ticket: BS-11** · **Next reactive ticket: BS-29**
+**Next planned ticket: BS-11** · **Next reactive ticket: BS-30**
 
 Each ticket is one branch (`feature/BS-<n>-<suffix>`) and one squash-merged PR. The order is
 deliberate: each ticket builds only on merged work. When a ticket finishes, its row is rewritten
@@ -38,6 +38,7 @@ so planned numbers never shift; they get a new row at the end of the table.
 | BS-26 | `payment-audit` | See detail below | ✅ Done |
 | BS-27 | `demo-showcase` | See detail below | ✅ Done |
 | BS-28 | `reader-warmup` | Book pages start the PDF engine (pdf.js + its worker) when idle, so the preview opens fast. BS-27 prefetched the raw worker file, but the bundler serves the worker as its own 374 KB chunk; measured on the live site at 18 s after the click. Skipped on save-data and 2G | ✅ Done |
+| BS-29 | `sales-reports` | See detail below | ✅ Done |
 
 **Launch line.** BS-1 to BS-14 are the launch. The store goes live after BS-14 with the complete
 buying, reading, email, messaging and admin experience. BS-15 to BS-18 are growth features shipped
@@ -284,6 +285,38 @@ checklist is reviewed whenever a ticket is planned, so nothing important is forg
      empty-state padding tightened on phones.
   7. Script robustness: the responsive check now rejects Git Bash–mangled paths and sanitises `?`
      in screenshot names.
+
+## BS-29: Sales and earnings reports (✅ Done, 2026-10-05)
+
+- **Asked for**: a sales report and an earnings report detailing every transaction (the book sold,
+  the amount, the buyer, ebook or print, whether it shipped, the country), clear enough for the
+  owner to understand everything about the sales.
+- **Shipped**: Store admin → **Reports**. Both tabs use a period picker (this month, last month, last
+  30 days, this year, last year, custom dates) kept in the URL.
+  - **Earnings**:
+    - per-currency cards (net earnings first, then book sales, discounts, shipping, received,
+      refunds, average order);
+    - plain-language definitions;
+    - tables by day / week / month, by book, by country and by payment method.
+  - **Sales**:
+    - every book sold, with the line's share of any discount, the buyer, country and city, delivery
+      status with carrier, tracking and dates, and the provider;
+    - filters and per-currency totals;
+    - a **spreadsheet download**.
+  - Phones get one card per sale; larger screens get the table.
+  - The UI kit gained a `Table` (named, keyboard-scrollable, numeric alignment).
+- **Correctness**:
+  - integer minor units and per-currency totals, never summed across currencies;
+  - discount shares by largest remainder, adding up exactly;
+  - days in Nigeria time;
+  - CSV cells defused against formula injection;
+  - impossible dates (31 February) refused with a 400, not a 500.
+- **Tests**: 10 unit (allocation, rows, totals, periods across time zones, CSV) · 5 e2e (staff
+  only, validation, only paid sales in range, figures, CSV) · 5 frontend (presets, URL, labels) +
+  the Table's keyboard test · a browser check at 375 and 1280 px with temporary data, which was
+  removed afterwards. It caught one overflow, now fixed.
+- **Not yet**: provider fees (each provider's dashboard shows them); conversion between currencies;
+  charts. The BS-12 dashboard builds on these figures.
 
 ## BS-27: Showcase catalogue for the lecturer demo, favicon, faster preview (✅ Done, 2026-10-04)
 

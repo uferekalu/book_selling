@@ -163,6 +163,11 @@ export class Order {
 export type OrderDocument = HydratedDocument<Order>;
 export const OrderSchema = SchemaFactory.createForClass(Order);
 OrderSchema.index({ userId: 1, createdAt: -1 });
+// Sales and earnings reports read paid orders by payment date (BS-29).
+OrderSchema.index(
+  { 'payment.paidAt': -1 },
+  { partialFilterExpression: { 'payment.paidAt': { $type: 'date' } } },
+);
 OrderSchema.index(
   { status: 1, expiresAt: 1 },
   { partialFilterExpression: { status: 'pending_payment' } },
