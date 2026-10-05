@@ -230,11 +230,15 @@ describe('priceCart', () => {
     expect(
       priceCart(input({ items, shippingCountry: 'JP', zone: null }))
         .problems[0],
-    ).toMatch(/can't ship print copies to JP/);
+    ).toBe(
+      "We don't deliver print copies to Japan yet. Choose the ebook, or contact us about delivery.",
+    );
     expect(
       priceCart(
         input({ currency: 'EUR', items, shippingCountry: 'NG', zone }),
-      ).problems.some((p) => /EUR/.test(p)),
+      ).problems.some((p) =>
+        /Delivery to Nigeria isn't priced in EUR. Switch the currency to NGN/.test(p),
+      ),
     ).toBe(true);
   });
 

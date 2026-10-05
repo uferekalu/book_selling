@@ -31,6 +31,7 @@ import { errorMessage } from "@/lib/api/errors";
 import { countryName } from "@/lib/countries";
 import { CURRENCIES, formatMoney, type Currency } from "@/lib/money";
 import { AdminQueryError } from "./admin-query-error";
+import { ShippingCoverageAlert } from "./shipping-coverage";
 
 const REST = "*";
 
@@ -50,6 +51,7 @@ export function ShippingManager() {
           Add zone
         </Button>
       </div>
+      <ShippingCoverageAlert linkToShipping={false} />
       {isLoading ? (
         <Skeleton className="h-40 w-full rounded-2xl" />
       ) : !data?.length ? (

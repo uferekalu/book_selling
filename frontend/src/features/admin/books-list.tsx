@@ -21,6 +21,7 @@ import {
 import { useAdminBooksQuery, useCreateBookMutation, type AdminBookRow, type BookStatus } from "@/lib/api/catalog-admin-api";
 import { errorMessage } from "@/lib/api/errors";
 import { AdminQueryError } from "./admin-query-error";
+import { ShippingCoverageAlert } from "./shipping-coverage";
 
 type StatusTab = "all" | BookStatus;
 
@@ -71,6 +72,7 @@ export function BooksList() {
 
   return (
     <div className="flex flex-col gap-5">
+      <ShippingCoverageAlert />
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
         <FormField label="Search books" hideLabel className="flex-1">
           <Input
