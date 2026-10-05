@@ -235,11 +235,19 @@ describe('priceCart', () => {
     );
     expect(
       priceCart(
-        input({ currency: 'EUR', items, shippingCountry: 'NG', zone }),
-      ).problems.some((p) =>
-        /Delivery to Nigeria isn't priced in EUR. Switch the currency to NGN/.test(p),
-      ),
-    ).toBe(true);
+        input({
+          currency: 'USD',
+          items,
+          shippingCountry: 'NG',
+          zone: {
+            ...zone,
+            rates: zone.rates.filter((r) => r.currency === 'NGN'),
+          },
+        }),
+      ).problems,
+    ).toEqual([
+      "Delivery to Nigeria isn't priced in USD. Switch the currency to NGN to order the print copy.",
+    ]);
   });
 
   it('never needs shipping for an ebook-only order', () => {
