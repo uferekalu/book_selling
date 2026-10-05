@@ -11,6 +11,7 @@ import { CatalogModule } from './catalog/catalog.module.js';
 import { CommerceModule } from './commerce/commerce.module.js';
 import { LibraryModule } from './library/library.module.js';
 import { PaymentsModule } from './payments/payments.module.js';
+import { ReportsModule } from './reports/reports.module.js';
 import { envValidationSchema } from './common/config/env.validation.js';
 import { DatabaseModule } from './database/database.module.js';
 import { HealthModule } from './health/health.module.js';
@@ -85,6 +86,7 @@ import { UsersModule } from './users/users.module.js';
     PaymentsModule,
     LibraryModule,
     MessagingModule,
+    ReportsModule,
   ],
   // Order matters: rate limit first, then authentication (default-deny), then roles.
   providers: [

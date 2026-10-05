@@ -47,6 +47,7 @@ export { Rating, RatingInput, type RatingInputProps, type RatingProps } from "./
 export { Select, type SelectOption, type SelectProps } from "./select";
 export { Spinner, type SpinnerProps } from "./spinner";
 export { Switch, type SwitchProps } from "./switch";
+export { TBody, TFoot, THead, Table, Td, Th, Tr, type TableProps } from "./table";
 export { Tabs, type TabItem, type TabsProps } from "./tabs";
 export { ThemeToggle } from "./theme-toggle";
 export { ToastProvider, useToast, type ToastOptions } from "./toast";

@@ -16,13 +16,17 @@ export const filesApi = api.injectEndpoints({
     guestInvoice: builder.mutation<string, { orderNumber: string; checkoutKey: string }>({
       query: (body) => ({ url: "/guest-orders/invoice", method: "POST", body, responseHandler: asObjectUrl }),
     }),
+    /** The sales report as a spreadsheet (BS-29). */
+    salesCsv: builder.mutation<string, Record<string, string | number>>({
+      query: (params) => ({ url: "/admin/reports/sales.csv", params, responseHandler: asObjectUrl }),
+    }),
     adminInvoice: builder.mutation<string, string>({
       query: (orderNumber) => ({ url: `/admin/orders/${orderNumber}/invoice`, responseHandler: asObjectUrl }),
     }),
   }),
 });
 
-export const { useInvoiceMutation, useGuestInvoiceMutation, useAdminInvoiceMutation } = filesApi;
+export const { useInvoiceMutation, useGuestInvoiceMutation, useAdminInvoiceMutation, useSalesCsvMutation } = filesApi;
 
 /** Saves an object URL as a file, then releases it. */
 export function saveObjectUrl(url: string, filename: string): void {

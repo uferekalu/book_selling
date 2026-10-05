@@ -40,6 +40,12 @@ import {
   Kbd,
   Modal,
   Pagination,
+  TBody,
+  THead,
+  Table,
+  Td,
+  Th,
+  Tr,
   PasswordInput,
   PriceTag,
   ProgressBar,
@@ -444,6 +450,30 @@ export function DesignSystemShowcase() {
           </DemoSection>
 
           <DemoSection id="data" title="Data display">
+            <Table caption="Sales by book (table, scrolls sideways on phones)" showCaption className="mb-5">
+              <THead>
+                <Tr>
+                  <Th>Book</Th>
+                  <Th numeric>Ebooks</Th>
+                  <Th numeric>Print</Th>
+                  <Th numeric>Net</Th>
+                </Tr>
+              </THead>
+              <TBody>
+                <Tr>
+                  <Td>Gating and Risering Design</Td>
+                  <Td numeric>12</Td>
+                  <Td numeric>4</Td>
+                  <Td numeric>₦264,000.00</Td>
+                </Tr>
+                <Tr>
+                  <Td>Cast Irons</Td>
+                  <Td numeric>7</Td>
+                  <Td numeric>2</Td>
+                  <Td numeric>₦135,000.00</Td>
+                </Tr>
+              </TBody>
+            </Table>
             <div className="grid gap-5 md:grid-cols-2">
               <Card>
                 <CardHeader title="Order BS-2026-000123" description="Placed 30 Sep 2026 · 2 items" action={<Badge tone="success">Paid</Badge>} />
