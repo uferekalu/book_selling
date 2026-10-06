@@ -48,7 +48,7 @@ type Row = EmailOutbox & {
   createdAt: Date;
 };
 
-const PROBLEM_FILTER: QueryFilter<EmailOutbox> = {
+export const PROBLEM_FILTER: QueryFilter<EmailOutbox> = {
   $or: [
     { status: 'dead' },
     { deliveryStatus: { $in: ['bounced', 'failed', 'complained'] } },

@@ -88,7 +88,7 @@ infrastructure only (config, filters, decorators, money utilities), never domain
 | `realtime` | Socket.IO gateway | BS-10 |
 | `reviews`, `wishlist` | reviews, wishlists | BS-11 |
 | `reports` | sales and earnings reports, CSV export | BS-29 |
-| `admin` | analytics, "needs attention" queue, audit log reads | BS-12 |
+| `admin` | dashboard (needs attention, revenue, best sellers, conversion, low stock), customers, audit log reads | BS-12 |
 
 Dependency direction: `payments → orders → catalog`. `library` and `mail` are called from order
 settlement, not the other way round. Circular module imports are a production boot crash that only
@@ -1444,6 +1444,28 @@ Store admin → Reports, for the owner and admins (two-step verified). Read-only
   with the largest-remainder method, so the shares add up to the discount exactly. Shipping stays an
   order-level figure.
 - Limits: a report reads at most 20,000 orders (above that it asks for a shorter range).
+
+## 12b. Store dashboard, customers and audit log (built in BS-12)
+
+`backend/src/admin`, read-only over other modules' collections. The calculations live in plain
+tested functions (`admin/dashboard.ts`).
+
+- `GET /admin/dashboard` (staff):
+  - `attention`: payments with `reconciliationRequired`, orders with `attention.required` (20 newest
+    each, plus counts), print orders to ship (count and oldest), unread conversations, new contact
+    requests, and open email problems (the BS-30 filter).
+  - `revenue`: per currency for today, the last 7 days and the last 30 days, plus a daily series,
+    from the BS-29 `earnings()` over orders paid in the last 30 Lagos days.
+  - `bestSellers`, `lowStock` (published, active print, free stock ≤ `LOW_STOCK`).
+  - `conversion`: `preview_events` grouped by book and session, with paid orders containing the
+    book.
+  - `customers`.
+- `GET /admin/customers` (staff): users, newest first, with paid orders aggregated per currency
+  (total − refunded). The password hash is read only to tell a guest checkout from an account; it
+  is never returned.
+- `GET /admin/audit-log` (**owner**): `audit_logs` newest first (new index `{ at: -1 }`), filtered
+  by entity type and action text. Actor names and order, book and user labels are resolved for
+  display.
 
 ## 13. Security
 

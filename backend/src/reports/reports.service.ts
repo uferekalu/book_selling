@@ -83,7 +83,7 @@ function nextDay(date: string): string {
 export class ReportsService {
   constructor(@InjectModel(Order.name) private readonly orders: Model<Order>) {}
 
-  private async paidOrders(
+  async paidOrders(
     range: ReportRange,
     currency?: Currency,
   ): Promise<ReportOrder[]> {

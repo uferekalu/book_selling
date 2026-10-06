@@ -4,6 +4,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { LoggerModule } from 'nestjs-pino';
+import { AdminModule } from './admin/admin.module.js';
 import { AuditModule } from './audit/audit.module.js';
 import { AccessTokenGuard, RolesGuard } from './auth/guards/auth.guards.js';
 import { AuthModule } from './auth/auth.module.js';
@@ -89,6 +90,7 @@ import { UsersModule } from './users/users.module.js';
     MessagingModule,
     ReportsModule,
     EngagementModule,
+    AdminModule,
   ],
   // Order matters: rate limit first, then authentication (default-deny), then roles.
   providers: [

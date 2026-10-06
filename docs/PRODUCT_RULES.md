@@ -58,7 +58,7 @@ they are asked to buy.** This must feel smooth and trustworthy, never like a tra
 
 1. Every published book has a preview. The admin chooses the preview sections by page range
    (usually Abstract + Introduction; a single page is fine). The preview **may not exceed 15% of
-   the book's pages** (`PREVIEW_MAX_PERCENT`; the owner can change it from the dashboard in BS-12).
+   the book's pages** (`PREVIEW_MAX_PERCENT`; the owner can change it in Store admin settings, BS-33).
 2. Anyone can read the preview: **no account, no email, no pop-up gate.**
 3. Only the preview pages ever leave the server before purchase. Locked pages are never sent to the
    browser, blurred or otherwise (except two deliberately unreadable thumbnail hints).
