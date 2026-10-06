@@ -15,8 +15,8 @@ const TO_SHIP = "__to_ship";
 const when = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 
 /** Orders for staff: search, filter by status, or just the print copies waiting to ship (oldest first). */
-export function OrdersAdmin() {
-  const [status, setStatus] = useState("");
+export function OrdersAdmin({ toShip: startToShip = false }: { toShip?: boolean }) {
+  const [status, setStatus] = useState(startToShip ? TO_SHIP : "");
   const [search, setSearch] = useState("");
   const q = useDeferredValue(search.trim());
   const toShip = status === TO_SHIP;

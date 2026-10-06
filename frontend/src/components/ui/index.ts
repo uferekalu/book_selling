@@ -4,6 +4,7 @@ export { Accordion, type AccordionItem, type AccordionProps } from "./accordion"
 export { Alert, type AlertProps } from "./alert";
 export { Avatar, type AvatarProps } from "./avatar";
 export { Badge, type BadgeProps } from "./badge";
+export { BarChart, type BarChartProps } from "./bar-chart";
 export { BookCard, type BookCardProps, type BookFormatType } from "./book-card";
 export { BookCover, type BookCoverProps } from "./book-cover";
 export { Breadcrumbs, type Crumb } from "./breadcrumbs";

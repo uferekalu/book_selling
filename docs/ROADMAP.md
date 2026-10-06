@@ -1,6 +1,6 @@
 # Roadmap
 
-**Next planned ticket: BS-12** · **Next reactive ticket: BS-33**
+**Next planned ticket: BS-13** · **Next reactive ticket: BS-34**
 
 Each ticket is one branch (`feature/BS-<n>-<suffix>`) and one squash-merged PR. The order is
 deliberate: each ticket builds only on merged work. When a ticket finishes, its row is rewritten
@@ -21,7 +21,7 @@ so planned numbers never shift; they get a new row at the end of the table.
 | BS-9 | `library-fulfillment` | See detail below | ✅ Done |
 | BS-10 | `messaging` | Conversations ("Ask the author", "Question about this order", general), staff inbox with filters, live updates over Socket.IO, read receipts and unread counts, 10-minute email fallback, contact form, notifications bell. See detail below | ✅ Done |
 | BS-11 | `reviews-wishlist-coupons` | Verified-buyer reviews (write, edit, delete; stars and breakdown on book pages), moderation (hide/show with a reason, never edit), wishlist (Save on book pages, Account → Wishlist), Discount codes admin screen. See detail below | ✅ Done |
-| BS-12 | `admin-dashboard` | Revenue per currency, orders, preview → purchase conversion per book, best sellers, low stock, **Needs attention** queue (reconciliation, attention orders, dead emails), customers, audit log viewer, settings (currencies, provider switches, preview cap, refund threshold) | ⏳ Planned |
+| BS-12 | `admin-dashboard` | Store admin opens on a **Dashboard**: Needs attention first (payments to check, orders needing a decision, print orders to ship, unanswered messages, failed emails, low or sold-out print stock), money received per currency (today, 7 and 30 days, daily chart), best sellers, customers, preview → purchase per book. **Customers** page (spend per currency; the owner gives or removes staff access) and an owner-only **Audit log**. Settings moved to BS-33. See detail below | ✅ Done |
 | BS-13 | `storefront-polish-seo-legal` | Landing-page art direction and motion polish, OG images, sitemap and robots, performance budget pass (LCP/INP/CLS), accessibility audit, legal pages (terms, refunds, privacy, shipping), data export and account deletion, cookie notice; **decide EU/UK digital VAT** (PRODUCT_RULES §9) | ⏳ Planned |
 | BS-14 | `production-launch` | Staging and production on Vercel + Render + Atlas, domains, Resend domain DNS, live provider accounts and webhooks, Sentry, `npm audit` CI check, go-live checklist (DEPLOYMENT §6) with a real live transaction and refund per provider | ⏳ Planned |
 | BS-15 | `gifts-bundles-preorders` | Buy an ebook **as a gift** (recipient email, message, scheduled delivery, gift claim link); **bundles** (e.g. print + ebook at a discount, multi-book course packs); **pre-orders** for upcoming books (charged at order and fulfilled on release, or cancel and refund) | ⏳ Planned |
@@ -42,6 +42,7 @@ so planned numbers never shift; they get a new row at the end of the table.
 | BS-30 | `storage-email-audit` | See detail below | ✅ Done |
 | BS-31 | `shipping-safeguards` | Reported: every print order on the live site was refused ("can't ship print copies to US in NGN"). Cause: the live store had **no shipping zones** (the demo seed made none). Fixed live at once with three starter zones (Nigeria, West Africa, Rest of the world; all four currencies; editable in Store admin → Shipping). Then: the checkout names the country and, when a zone lacks the currency, which currencies work; the Shipping and Books admin pages warn when buyers can't order print copies (no zone, no Rest of the world, a missing currency); `seed:demo` adds the starter zones to a store with none | ✅ Done |
 | BS-32 | `mobile-polish` | Reported from phones: the orders list was clunky, the reader's text tiny, the order page disorganised, and search waited for Enter. Shipped: the reader measures each book's text (pdf.js, a few sample pages) and trims the blank margins so the text fills a phone's width (**Fit text to screen** in Display; on by default under 640 px; remembered). The orders list and order page have a phone layout (number + status, each title once, date + total; full-width Read now; no empty History card). **Search as you type**: from 2 letters, 300 ms after typing stops; every word must match the start of a word in the title, subtitle, author, topics, ISBN or abstract; ranked title first; "No books found" when nothing matches; everything back when cleared. MongoDB `$text` search was dropped because it only matches whole words ("foun" found nothing). Sweep: 66 page loads at 375 and 320 px (signed out, customer, owner), no horizontal overflow, no page errors | ✅ Done |
+| BS-33 | `store-settings` | Split from BS-12 because it changes money paths: owner settings for the preview cap (`PREVIEW_MAX_PERCENT`), the refund threshold admins may refund up to, payment provider on/off switches and enabled currencies, stored in the database with env values as defaults, audited | ⏳ Next |
 
 **Launch line.** BS-1 to BS-14 are the launch. The store goes live after BS-14 with the complete
 buying, reading, email, messaging and admin experience. BS-15 to BS-18 are growth features shipped
@@ -288,6 +289,46 @@ checklist is reviewed whenever a ticket is planned, so nothing important is forg
      empty-state padding tightened on phones.
   7. Script robustness: the responsive check now rejects Git Bash–mangled paths and sanitises `?`
      in screenshot names.
+
+## BS-12: Store dashboard, customers and audit log (✅ Done, 2026-10-06)
+
+- **Dashboard** (`/admin`, staff; `GET /admin/dashboard`). Read-only: each item links to the page
+  where it is dealt with.
+  - **Needs attention** comes first, in order:
+    - payments flagged for reconciliation;
+    - orders with `attention.required` (up to 20 listed, then "N more");
+    - print orders to ship (it turns amber when the oldest has waited 3 days);
+    - unread conversations and new contact messages;
+    - emails that didn't arrive;
+    - sold-out or low print stock (≤ 3 copies free).
+
+    When nothing is waiting it says "Nothing needs your attention".
+  - **Money received** per currency (today, last 7 days, last 30 days, with orders), a 30-day daily
+    chart (a new kit `BarChart`), and refunds when any. It reuses the BS-29 earnings maths.
+  - **Best sellers** (30 days, by copies, money per currency) and **Customers** (total, new in 30
+    days).
+  - **From preview to purchase**: per published book, the preview sessions that opened it, read to
+    the end or pressed Buy, the orders, and orders per 100 previews. It is labelled as a guide,
+    because some buyers never preview.
+  - It refreshes live on new messages and sales (RealtimeBridge) and every 2 minutes.
+- **Customers** (`/admin/customers`): search by name or email; everyone, customers or staff; each
+  person's orders, spend per currency after refunds, joined and last order; badges for guest
+  checkout, unconfirmed email and suspended accounts. The owner can **make someone staff (admin)
+  or remove it** (the BS-4 endpoint, behind a confirmation that explains what staff can do).
+- **Audit log** (`/admin/audit`, **owner only**: it records the admins' own actions). Newest
+  first, with a search over actions and a filter by subject. Each entry shows the action in plain
+  words, who did it ("The store (automatic)" for jobs and webhooks), and a link to the order or
+  book. A Details panel shows the recorded changes and the IP address.
+- The orders page accepts `?show=to_ship` (the dashboard links there). The admin nav wraps on
+  wider screens now that it has 13 entries.
+- **Deviation**: settings (preview cap, refund threshold, provider switches, currencies) moved to
+  **BS-33**. They change money paths and deserve their own review.
+- **Tests**:
+  - Backend: 7 unit (windows in Lagos time, revenue per currency, daily rows, best sellers,
+    conversion, low stock) and 4 e2e (access, the dashboard figures, customers with spend and no
+    password hash, audit log owner-only).
+  - Frontend: needs-attention ordering and wording, day counting, audit labels.
+  - Browser: owner at 375, 320 and 1280 px; no sideways scroll, no page errors.
 
 ## BS-11: Reviews, wishlist and discount codes (✅ Done, 2026-10-05)
 

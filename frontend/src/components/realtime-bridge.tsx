@@ -9,7 +9,9 @@ import { REALTIME_URL, tokenIsFresh } from "@/lib/realtime";
 
 type ConversationEvent = { conversationId?: string };
 
-const MESSAGING_TAGS = ["Conversations", "Inbox", "ContactRequests", "Notifications"] as const;
+// The staff dashboard counts unread messages and new sales (both arrive as these events); it only
+// refetches while it is open.
+const MESSAGING_TAGS = ["Conversations", "Inbox", "ContactRequests", "Notifications", "AdminDashboard"] as const;
 
 /**
  * Live updates for the signed-in person (ARCHITECTURE §12). Events only say "this changed"; the
@@ -53,7 +55,7 @@ export function RealtimeBridge() {
     socket.on("message:new", (event: ConversationEvent) => refresh(conversationTags(event)));
     socket.on("message:read", (event: ConversationEvent) => refresh(conversationTags(event)));
     socket.on("conversation:updated", (event: ConversationEvent) => refresh(conversationTags(event)));
-    socket.on("notification:new", () => refresh(["Notifications"]));
+    socket.on("notification:new", () => refresh(["Notifications", "AdminDashboard"]));
     socket.on("disconnect", (reason) => {
       // Only a server-side drop needs us; the client reconnects by itself after network blips.
       if (reason !== "io server disconnect" || stopped) return;

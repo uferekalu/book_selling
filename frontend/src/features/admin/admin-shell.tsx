@@ -10,7 +10,9 @@ import { cn } from "@/lib/cn";
 import { useAppSelector } from "@/lib/redux/hooks";
 
 export const ADMIN_NAV = [
+  { href: "/admin", label: "Dashboard" },
   { href: "/admin/orders", label: "Orders" },
+  { href: "/admin/customers", label: "Customers" },
   { href: "/admin/reports", label: "Reports" },
   { href: "/admin/messages", label: "Messages" },
   { href: "/admin/emails", label: "Emails" },
@@ -20,7 +22,8 @@ export const ADMIN_NAV = [
   { href: "/admin/authors", label: "Authors" },
   { href: "/admin/categories", label: "Subjects" },
   { href: "/admin/shipping", label: "Shipping" },
-] as const;
+  { href: "/admin/audit", label: "Audit log", ownerOnly: true },
+] as const satisfies ReadonlyArray<{ href: string; label: string; ownerOnly?: boolean }>;
 
 /**
  * Store management. The API refuses every admin call unless the account is staff AND signed in
@@ -31,7 +34,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
     <RequireAuth>
       <StaffGate>
         <Container className="flex flex-col gap-6 py-6 sm:py-10">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div className="flex flex-col gap-4">
             <div>
               <Eyebrow>Store admin</Eyebrow>
               <h1 className="text-4xl font-medium">Store</h1>
@@ -78,11 +81,14 @@ function StaffGate({ children }: { children: ReactNode }) {
 
 function AdminNav() {
   const pathname = usePathname();
+  const isOwner = useAppSelector((state) => state.session.user?.role === "owner");
   return (
     <nav aria-label="Store admin">
-      <ul className="scrollbar-none -mx-1 flex gap-2 overflow-x-auto px-1">
-        {ADMIN_NAV.map((item) => {
-          const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+      {/* Phones: one row that scrolls sideways. Wider screens: every page visible, wrapping. */}
+      <ul className="scrollbar-none -mx-1 flex gap-2 overflow-x-auto px-1 sm:flex-wrap sm:overflow-visible">
+        {ADMIN_NAV.filter((item) => isOwner || !("ownerOnly" in item)).map((item) => {
+          // The dashboard is /admin itself; every other page also owns its sub-pages.
+          const active = pathname === item.href || (item.href !== "/admin" && pathname.startsWith(`${item.href}/`));
           return (
             <li key={item.href} className="shrink-0">
               <NextLink
