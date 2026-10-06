@@ -4,6 +4,7 @@ import type { PDFDocumentProxy, RenderTask } from "pdfjs-dist";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { cn } from "@/lib/cn";
 import { loadPdfJs } from "./pdf";
+import { NO_CROP, type Crop } from "./reader-logic";
 
 export type PaperTone = "paper" | "sepia" | "night";
 
@@ -27,6 +28,7 @@ export function PdfPage({
   caption,
   onVisible,
   onAspect,
+  crop = NO_CROP,
 }: {
   doc: PDFDocumentProxy;
   pageNumber: number;
@@ -39,12 +41,19 @@ export function PdfPage({
   onVisible: (pageNumber: number) => void;
   /** Reports the page's real height / width once loaded (pages of one book can differ). */
   onAspect?: (pageNumber: number, aspect: number) => void;
+  /**
+   * Side margins to trim (phones, BS-32): the page is drawn wider so its text column fills
+   * `width`, and the margins fall outside the frame. The text layer moves with it.
+   */
+  crop?: Crop;
 }) {
   const frameRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const textRef = useRef<HTMLDivElement>(null);
   const [near, setNear] = useState(false);
   const [rendered, setRendered] = useState(false);
+  // The whole page's drawn width: wider than the frame when the side margins are trimmed.
+  const drawn = Math.round(width / (1 - crop.left - crop.right));
 
   // Render pages within ~1.5 screens; report the page that fills the middle of the screen.
   useEffect(() => {
@@ -73,7 +82,7 @@ export function PdfPage({
       if (cancelled) return;
       const base = page.getViewport({ scale: 1 });
       onAspect?.(pageNumber, base.height / base.width);
-      const viewport = page.getViewport({ scale: width / base.width });
+      const viewport = page.getViewport({ scale: drawn / base.width });
       const ratio = Math.min(window.devicePixelRatio || 1, 3);
       const canvas = canvasRef.current;
       const text = textRef.current;
@@ -103,9 +112,10 @@ export function PdfPage({
       task?.cancel();
       textLayer?.cancel();
     };
-  }, [near, doc, pageNumber, width, onAspect]);
+  }, [near, doc, pageNumber, drawn, onAspect]);
 
-  const style = { width, height: Math.round(width * aspect) } as CSSProperties;
+  const style = { width, height: Math.round(drawn * aspect) } as CSSProperties;
+  const sheet = { width: drawn, height: Math.round(drawn * aspect), left: -Math.round(drawn * crop.left) } as CSSProperties;
   return (
     <figure className="flex flex-col items-center gap-2" data-page={pageNumber}>
       <div
@@ -113,13 +123,15 @@ export function PdfPage({
         className={cn("reader-page relative overflow-hidden rounded-sm bg-paper-50 shadow-book", !rendered && "animate-pulse")}
         style={style}
       >
-        <canvas
-          ref={canvasRef}
-          className="absolute inset-0 size-full"
-          style={{ filter: TONE_FILTER[tone] }}
-          aria-hidden="true"
-        />
-        <div ref={textRef} className="textLayer" />
+        <div className="absolute top-0" style={sheet}>
+          <canvas
+            ref={canvasRef}
+            className="absolute inset-0 size-full"
+            style={{ filter: TONE_FILTER[tone] }}
+            aria-hidden="true"
+          />
+          <div ref={textRef} className="textLayer" />
+        </div>
       </div>
       <figcaption className="text-xs text-text-subtle tabular-nums">{caption}</figcaption>
     </figure>

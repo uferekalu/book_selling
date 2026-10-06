@@ -51,8 +51,10 @@ export function OrderDetail({
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-4xl font-medium">Order {order.orderNumber}</h1>
+        <div className="min-w-0">
+          <p className="text-sm font-medium tracking-wide text-text-muted uppercase">Order</p>
+          {/* The number never breaks mid-way; it is at most 14 characters. */}
+          <h1 className="text-3xl font-medium whitespace-nowrap sm:text-4xl">{order.orderNumber}</h1>
           <p className="text-sm text-text-muted">Placed {when.format(new Date(order.createdAt))}</p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
@@ -82,19 +84,22 @@ export function OrderDetail({
       <Card className="flex flex-col gap-4">
         <ul className="flex flex-col gap-4">
           {order.items.map((item) => (
-            <li key={`${item.bookId}-${item.format}`} className="flex items-center gap-4">
+            // Phones: cover beside the details (title, format, price, line total), Read now full
+            // width underneath. From `sm`: total and Read now in a right-hand column.
+            <li key={`${item.bookId}-${item.format}`} className="grid grid-cols-[auto_1fr] items-start gap-x-4 gap-y-3 sm:grid-cols-[auto_1fr_auto] sm:items-center">
               <BookCover title={item.title} src={item.cover} size="xs" />
-              <div className="min-w-0 flex-1">
-                <p className="font-display text-lg leading-snug">{item.title}</p>
+              <div className="flex min-w-0 flex-col gap-0.5">
+                <p className="font-display text-base leading-snug text-pretty sm:text-lg">{item.title}</p>
                 <p className="text-sm text-text-muted">
                   {item.format === "ebook" ? "Ebook (PDF)" : `Print × ${item.quantity}`} · {money(item.unitAmount)}
                   {item.quantity > 1 ? " each" : ""}
                 </p>
+                <p className="mt-1 font-medium tabular-nums sm:hidden">{money(item.lineTotal)}</p>
               </div>
-              <div className="flex flex-col items-end gap-2">
-                <span className="font-medium tabular-nums">{money(item.lineTotal)}</span>
+              <div className="col-span-2 flex flex-col gap-2 sm:col-span-1 sm:items-end">
+                <span className="hidden font-medium tabular-nums sm:inline">{money(item.lineTotal)}</span>
                 {canRead && item.format === "ebook" && (
-                  <ButtonLink href={`/account/library/${item.bookId}/read`} size="sm" variant="outline">
+                  <ButtonLink href={`/account/library/${item.bookId}/read`} size="sm" variant="outline" className="w-full sm:w-auto">
                     <Icon icon={BookOpen} size="sm" />
                     Read now
                   </ButtonLink>
@@ -153,19 +158,21 @@ export function OrderDetail({
 
       {!staff && <ShipmentProgress order={order} />}
 
-      <Card className="flex flex-col gap-3">
-        <h2 className="text-xl font-medium">History</h2>
-        <ol className="flex flex-col gap-2 text-sm">
-          {order.history.map((h, i) => (
-            <li key={`${h.status}-${i}`} className="flex justify-between gap-4">
-              <span>{ORDER_STATUS[h.status].label}</span>
-              <time className="text-text-muted tabular-nums" dateTime={h.at}>
-                {when.format(new Date(h.at))}
-              </time>
-            </li>
-          ))}
-        </ol>
-      </Card>
+      {order.history.length > 0 && (
+        <Card className="flex flex-col gap-3">
+          <h2 className="text-xl font-medium">History</h2>
+          <ol className="flex flex-col gap-2 text-sm">
+            {order.history.map((h, i) => (
+              <li key={`${h.status}-${i}`} className="flex justify-between gap-4">
+                <span>{ORDER_STATUS[h.status].label}</span>
+                <time className="text-text-muted tabular-nums" dateTime={h.at}>
+                  {when.format(new Date(h.at))}
+                </time>
+              </li>
+            ))}
+          </ol>
+        </Card>
+      )}
     </div>
   );
 }

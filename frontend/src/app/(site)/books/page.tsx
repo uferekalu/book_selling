@@ -70,8 +70,8 @@ export default async function BooksPage({ searchParams }: PageProps<"/books">) {
           {result && result.items.length === 0 && (
             <EmptyState
               icon={SearchX}
-              title="No books match"
-              description={q ? "Try a shorter search, or check the spelling." : "Try another subject or format."}
+              title="No books found"
+              description={q ? `Nothing matches “${q}”. Try a shorter search, or check the spelling.` : "Try another subject or format."}
               action={<ButtonLink href="/books">Show all books</ButtonLink>}
             />
           )}

@@ -1,6 +1,6 @@
 # Roadmap
 
-**Next planned ticket: BS-12** · **Next reactive ticket: BS-32**
+**Next planned ticket: BS-12** · **Next reactive ticket: BS-33**
 
 Each ticket is one branch (`feature/BS-<n>-<suffix>`) and one squash-merged PR. The order is
 deliberate: each ticket builds only on merged work. When a ticket finishes, its row is rewritten
@@ -41,6 +41,7 @@ so planned numbers never shift; they get a new row at the end of the table.
 | BS-29 | `sales-reports` | See detail below | ✅ Done |
 | BS-30 | `storage-email-audit` | See detail below | ✅ Done |
 | BS-31 | `shipping-safeguards` | Reported: every print order on the live site was refused ("can't ship print copies to US in NGN"). Cause: the live store had **no shipping zones** (the demo seed made none). Fixed live at once with three starter zones (Nigeria, West Africa, Rest of the world; all four currencies; editable in Store admin → Shipping). Then: the checkout names the country and, when a zone lacks the currency, which currencies work; the Shipping and Books admin pages warn when buyers can't order print copies (no zone, no Rest of the world, a missing currency); `seed:demo` adds the starter zones to a store with none | ✅ Done |
+| BS-32 | `mobile-polish` | Reported from phones: the orders list was clunky, the reader's text tiny, the order page disorganised, and search waited for Enter. Shipped: the reader measures each book's text (pdf.js, a few sample pages) and trims the blank margins so the text fills a phone's width (**Fit text to screen** in Display; on by default under 640 px; remembered). The orders list and order page have a phone layout (number + status, each title once, date + total; full-width Read now; no empty History card). **Search as you type**: from 2 letters, 300 ms after typing stops; every word must match the start of a word in the title, subtitle, author, topics, ISBN or abstract; ranked title first; "No books found" when nothing matches; everything back when cleared. MongoDB `$text` search was dropped because it only matches whole words ("foun" found nothing). Sweep: 66 page loads at 375 and 320 px (signed out, customer, owner), no horizontal overflow, no page errors | ✅ Done |
 
 **Launch line.** BS-1 to BS-14 are the launch. The store goes live after BS-14 with the complete
 buying, reading, email, messaging and admin experience. BS-15 to BS-18 are growth features shipped

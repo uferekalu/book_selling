@@ -14,6 +14,7 @@ import type { BookListQuery } from './dto/catalog.dto.js';
 import { Author, type AuthorDocument } from './schemas/author.schema.js';
 import { Book, type BookDocument } from './schemas/book.schema.js';
 import { Category, type CategoryDocument } from './schemas/category.schema.js';
+import { searchScore, searchWords } from './book-search.js';
 
 export interface BookPage {
   items: BookCardDto[];
@@ -48,7 +49,6 @@ export class CatalogQueryService {
     const pageSize = query.pageSize ?? DEFAULT_PAGE_SIZE;
     const filter: QueryFilter<Book> = { status: PUBLISHED };
 
-    if (query.q) filter.$text = { $search: query.q };
     if (query.featured) filter.featured = true;
     if (query.format)
       filter.formats = { $elemMatch: { type: query.format, active: true } };
@@ -73,21 +73,40 @@ export class CatalogQueryService {
       };
     }
 
-    const sort = this.sortFor(
-      query.sort ?? (query.q ? 'relevance' : 'newest'),
-      currency,
-      Boolean(query.q),
-    );
-    const projection = query.q ? { score: { $meta: 'textScore' } } : {};
-    const [docs, total] = await Promise.all([
-      this.books
-        .find(filter, projection)
-        .sort(sort)
-        .skip((page - 1) * pageSize)
-        .limit(pageSize)
-        .exec(),
-      this.books.countDocuments(filter).exec(),
-    ]);
+    const words = query.q ? searchWords(query.q) : [];
+    const sortKey = query.sort ?? (words.length ? 'relevance' : 'newest');
+    let docs: BookDocument[];
+    let total: number;
+    if (words.length) {
+      // Search as you type (BS-32): rank the books that pass the other filters, then page.
+      const ranked = await this.searchIds(filter, words);
+      total = ranked.length;
+      if (sortKey === 'relevance') {
+        const pageIds = ranked.slice((page - 1) * pageSize, page * pageSize);
+        const found = await this.books.find({ _id: { $in: pageIds } }).exec();
+        const byId = new Map(found.map((d) => [d._id.toString(), d]));
+        docs = pageIds
+          .map((id) => byId.get(id.toString()))
+          .filter((d): d is BookDocument => Boolean(d));
+      } else {
+        docs = await this.books
+          .find({ _id: { $in: ranked } })
+          .sort(this.sortFor(sortKey, currency))
+          .skip((page - 1) * pageSize)
+          .limit(pageSize)
+          .exec();
+      }
+    } else {
+      [docs, total] = await Promise.all([
+        this.books
+          .find(filter)
+          .sort(this.sortFor(sortKey, currency))
+          .skip((page - 1) * pageSize)
+          .limit(pageSize)
+          .exec(),
+        this.books.countDocuments(filter).exec(),
+      ]);
+    }
     const authors = await this.authorsFor(docs);
     return {
       items: docs.map((book) => this.present.card(book, authors, currency)),
@@ -96,6 +115,59 @@ export class CatalogQueryService {
       pageSize,
       totalPages: Math.ceil(total / pageSize),
     };
+  }
+
+  /**
+   * Ids of the books matching every search word, best match first (ties: newest). Reads the
+   * searchable fields of the books that pass the other filters; the catalogue is one author's
+   * books, so this stays small.
+   */
+  private async searchIds(
+    filter: QueryFilter<Book>,
+    words: string[],
+  ): Promise<Types.ObjectId[]> {
+    const candidates = await this.books
+      .find(filter, {
+        title: 1,
+        subtitle: 1,
+        tags: 1,
+        isbn13: 1,
+        abstractMarkdown: 1,
+        descriptionMarkdown: 1,
+        authorIds: 1,
+        listedAt: 1,
+      })
+      .limit(2000)
+      .lean()
+      .exec();
+    const authorIds = [
+      ...new Set(candidates.flatMap((b) => b.authorIds.map(String))),
+    ];
+    const authors = await this.authors
+      .find({ _id: { $in: authorIds } }, { name: 1 })
+      .lean()
+      .exec();
+    const nameOf = new Map(authors.map((a) => [a._id.toString(), a.name]));
+    return candidates
+      .map((b) => ({
+        id: b._id,
+        listedAt: b.listedAt?.getTime() ?? 0,
+        score: searchScore(
+          {
+            title: b.title,
+            subtitle: b.subtitle,
+            tags: b.tags,
+            isbn13: b.isbn13,
+            abstractMarkdown: b.abstractMarkdown,
+            descriptionMarkdown: b.descriptionMarkdown,
+            authorNames:b.authorIds.map((a) => nameOf.get(a.toString()) ?? ''),
+          },
+          words,
+        ),
+      }))
+      .filter((r) => r.score > 0)
+      .sort((a, b) => b.score - a.score || b.listedAt - a.listedAt)
+      .map((r) => r.id);
   }
 
   /** Cards for these books (published only), in the order given: the wishlist (BS-11). */
@@ -227,16 +299,10 @@ export class CatalogQueryService {
     }));
   }
 
-  private sortFor(
-    sort: string,
-    currency: Currency,
-    hasText: boolean,
-  ): Record<string, SortOrder | { $meta: 'textScore' }> {
+  private sortFor(sort: string, currency: Currency): Record<string, SortOrder> {
     switch (sort) {
       case 'relevance':
-        return hasText
-          ? { score: { $meta: 'textScore' }, listedAt: -1 }
-          : { featured: -1, listedAt: -1 };
+        return { featured: -1, listedAt: -1 };
       case 'price_asc':
         return { [`fromPrices.${currency}`]: 1, listedAt: -1 };
       case 'price_desc':

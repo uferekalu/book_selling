@@ -11,7 +11,7 @@ import { useLibraryBookQuery, useReadLinkMutation, useSaveProgressMutation, type
 import { cn } from "@/lib/cn";
 import { openPdf } from "@/features/reader/pdf";
 import { PdfPage } from "@/features/reader/pdf-page";
-import { ToneButtons, useReaderTone, ZoomButtons } from "@/features/reader/reader-controls";
+import { FitTextSwitch, paddingX, ToneButtons, useFitText, useReaderTone, ZoomButtons } from "@/features/reader/reader-controls";
 import { nextZoom, pageWidth } from "@/features/reader/reader-logic";
 import { DownloadButton } from "./download-button";
 import { fullProgressLabel, linkRefreshDelay, startPage } from "./library-logic";
@@ -104,7 +104,7 @@ export function FullReader({ bookId }: { bookId: string }) {
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    const measure = () => setAvailable(Math.max(240, el.clientWidth - 32));
+    const measure = () => setAvailable(Math.max(240, el.clientWidth - paddingX(el)));
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(el);
@@ -112,6 +112,7 @@ export function FullReader({ bookId }: { bookId: string }) {
   }, []);
 
   const doc = loaded?.doc ?? null;
+  const { crop, fit, setFit, applies } = useFitText(doc, available);
   const pageCount = doc?.numPages ?? book?.pages ?? 0;
   const jumpTo = useCallback((page: number, behavior: ScrollBehavior = "smooth") => {
     scrollRef.current?.querySelector(`[data-page="${page}"]`)?.scrollIntoView({ behavior, block: "start" });
@@ -261,6 +262,7 @@ export function FullReader({ bookId }: { bookId: string }) {
             caption={`Page ${n} of ${pageCount}`}
             onVisible={onVisible}
             onAspect={onAspect}
+            crop={crop}
           />
         ))}
         <div className="flex flex-col items-center gap-3 py-8 text-center">
@@ -308,7 +310,7 @@ export function FullReader({ bookId }: { bookId: string }) {
         {doc && <ProgressBar value={current} max={pageCount} label="Reading progress" valueText={label} className="[&>div]:h-1 [&>div]:rounded-none" />}
       </header>
 
-      <div ref={scrollRef} className="relative flex-1 overflow-y-auto overscroll-contain px-4 pt-6 pb-20" tabIndex={-1}>
+      <div ref={scrollRef} className="relative flex-1 overflow-y-auto overscroll-contain px-1.5 sm:px-4 pt-6 pb-20" tabIndex={-1}>
         {body}
       </div>
 
@@ -341,6 +343,7 @@ export function FullReader({ bookId }: { bookId: string }) {
             <p className="text-sm font-medium text-text">Text size</p>
             {zoomButtons}
           </div>
+          {applies && <FitTextSwitch fit={fit} onChange={setFit} />}
           {book && <DownloadButton bookId={bookId} title={book.title} variant="outline" />}
           <ButtonLink href="/account/library" variant="ghost">
             Back to your library
