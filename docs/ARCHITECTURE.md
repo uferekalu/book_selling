@@ -308,9 +308,17 @@ user: one entry per event), `readAt`. TTL 180 days.
 
 ### 4.6 Engagement and admin
 
-**`reviews`**: `bookId`, `userId`, `rating` (1–5), `title`, `body`, `verifiedPurchase`,
-`status: 'published' | 'hidden'`. Unique `{ bookId, userId }`.
-**`wishlists`**: `userId` (unique), `bookIds[]`.
+**`reviews`** (BS-11): `bookId`, `userId`, `authorName` ("Ada O.", set when written), `rating`
+(1–5), `title`, `body` (plain text), `verifiedPurchase`, `status: 'published' | 'hidden'`,
+`hiddenReason`. Unique `{ bookId, userId }`.
+- **Who may write**: a buyer with a `paid`, `fulfilled` or `partially_refunded` order for the book
+  (not fully refunded, not staff).
+- **Changes**: the buyer edits or deletes their own review; staff hide or show a review (audited)
+  but never edit it, and editing a hidden review keeps it hidden.
+- **Book stars**: `ratingAvg` (1 decimal) and `ratingCount` are recomputed from published reviews
+  after every change, and the storefront cache for the book is revalidated.
+**`wishlists`** (BS-11): `userId` (unique), `bookIds[]` newest first, no duplicates (`$ne` guard),
+at most 200; listed as storefront cards in the visitor's currency, unpublished books dropped.
 **`audit_logs`**: append-only. `actorId`, `actorRole`, `action` (e.g. `refund.requested`,
 `book.price_changed`), `entityType`, `entityId`, `changes`, `ip`, `at`. Written for every admin
 mutation and every money event; never updated or deleted.

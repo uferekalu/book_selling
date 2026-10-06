@@ -71,6 +71,11 @@ import { PreviewWorker } from '../preview/preview.worker.js';
     PreviewWorker,
     PreviewEventsService,
   ],
-  exports: [BooksService, CatalogQueryService, MongooseModule],
+  exports: [
+    BooksService,
+    CatalogQueryService,
+    StorefrontRevalidator,
+    MongooseModule,
+  ],
 })
 export class CatalogModule {}

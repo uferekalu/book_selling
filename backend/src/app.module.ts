@@ -14,6 +14,7 @@ import { PaymentsModule } from './payments/payments.module.js';
 import { ReportsModule } from './reports/reports.module.js';
 import { envValidationSchema } from './common/config/env.validation.js';
 import { DatabaseModule } from './database/database.module.js';
+import { EngagementModule } from './engagement/engagement.module.js';
 import { HealthModule } from './health/health.module.js';
 import { JobsModule } from './jobs/jobs.module.js';
 import { MailModule } from './mail/mail.module.js';
@@ -87,6 +88,7 @@ import { UsersModule } from './users/users.module.js';
     LibraryModule,
     MessagingModule,
     ReportsModule,
+    EngagementModule,
   ],
   // Order matters: rate limit first, then authentication (default-deny), then roles.
   providers: [
