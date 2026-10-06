@@ -8,6 +8,8 @@ import { BookGrid } from "@/features/catalog/catalog-book-card";
 import { RecentlyViewed, RecordView } from "@/features/catalog/recently-viewed";
 import { FormatPicker } from "@/features/catalog/format-picker";
 import { AskTheAuthor } from "@/features/messaging/ask-links";
+import { BookReviews } from "@/features/engagement/book-reviews";
+import { WishlistButton } from "@/features/engagement/wishlist";
 import { getBook, relatedBooks } from "@/lib/catalog";
 import type { PublicBook } from "@/lib/catalog-types";
 import { minorToInput } from "@/lib/money";
@@ -160,7 +162,10 @@ export default async function BookPage({ params }: PageProps<"/books/[slug]">) {
             </div>
 
             <FormatPicker bookId={book.id} slug={book.slug} formats={book.formatDetails} hasPreview={book.hasPreview} />
-            <AskTheAuthor book={{ id: book.id, title: book.title }} />
+            <div className="flex flex-wrap gap-2">
+              <AskTheAuthor book={{ id: book.id, title: book.title }} />
+              <WishlistButton bookId={book.id} slug={book.slug} />
+            </div>
 
             {book.abstractHtml && (
               <section aria-labelledby="abstract-heading" className="flex flex-col gap-3 rounded-2xl border border-border bg-surface p-5 sm:p-7">
@@ -180,6 +185,10 @@ export default async function BookPage({ params }: PageProps<"/books/[slug]">) {
             <BookTabs book={book} />
           </div>
         </div>
+      </Container>
+
+      <Container className="py-10 sm:py-14">
+        <BookReviews bookId={book.id} slug={book.slug} />
       </Container>
 
       <RecordView

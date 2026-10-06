@@ -98,6 +98,23 @@ export class CatalogQueryService {
     };
   }
 
+  /** Cards for these books (published only), in the order given: the wishlist (BS-11). */
+  async cardsByIds(ids: string[], currency: Currency): Promise<BookCardDto[]> {
+    if (!ids.length) return [];
+    const docs = await this.books
+      .find({
+        _id: { $in: ids.map((id) => new Types.ObjectId(id)) },
+        status: PUBLISHED,
+      })
+      .exec();
+    const authors = await this.authorsFor(docs);
+    const byId = new Map(docs.map((d) => [d._id.toString(), d]));
+    return ids
+      .map((id) => byId.get(id))
+      .filter((d): d is BookDocument => Boolean(d))
+      .map((book) => this.present.card(book, authors, currency));
+  }
+
   /** Book page data, or where a renamed book now lives. */
   async bySlug(slug: string, currency: Currency): Promise<BookLookup> {
     const book = await this.books.findOne({ slug, status: PUBLISHED }).exec();

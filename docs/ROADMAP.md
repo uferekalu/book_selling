@@ -1,6 +1,6 @@
 # Roadmap
 
-**Next planned ticket: BS-11** · **Next reactive ticket: BS-32**
+**Next planned ticket: BS-12** · **Next reactive ticket: BS-32**
 
 Each ticket is one branch (`feature/BS-<n>-<suffix>`) and one squash-merged PR. The order is
 deliberate: each ticket builds only on merged work. When a ticket finishes, its row is rewritten
@@ -20,7 +20,7 @@ so planned numbers never shift; they get a new row at the end of the table.
 | BS-8 | `payments` | See detail below | ✅ Done |
 | BS-9 | `library-fulfillment` | See detail below | ✅ Done |
 | BS-10 | `messaging` | Conversations ("Ask the author", "Question about this order", general), staff inbox with filters, live updates over Socket.IO, read receipts and unread counts, 10-minute email fallback, contact form, notifications bell. See detail below | ✅ Done |
-| BS-11 | `reviews-wishlist-coupons` | Verified-buyer reviews with rating aggregation, wishlist, coupons admin UI | ⏳ Planned |
+| BS-11 | `reviews-wishlist-coupons` | Verified-buyer reviews (write, edit, delete; stars and breakdown on book pages), moderation (hide/show with a reason, never edit), wishlist (Save on book pages, Account → Wishlist), Discount codes admin screen. See detail below | ✅ Done |
 | BS-12 | `admin-dashboard` | Revenue per currency, orders, preview → purchase conversion per book, best sellers, low stock, **Needs attention** queue (reconciliation, attention orders, dead emails), customers, audit log viewer, settings (currencies, provider switches, preview cap, refund threshold) | ⏳ Planned |
 | BS-13 | `storefront-polish-seo-legal` | Landing-page art direction and motion polish, OG images, sitemap and robots, performance budget pass (LCP/INP/CLS), accessibility audit, legal pages (terms, refunds, privacy, shipping), data export and account deletion, cookie notice; **decide EU/UK digital VAT** (PRODUCT_RULES §9) | ⏳ Planned |
 | BS-14 | `production-launch` | Staging and production on Vercel + Render + Atlas, domains, Resend domain DNS, live provider accounts and webhooks, Sentry, `npm audit` CI check, go-live checklist (DEPLOYMENT §6) with a real live transaction and refund per provider | ⏳ Planned |
@@ -287,6 +287,37 @@ checklist is reviewed whenever a ticket is planned, so nothing important is forg
      empty-state padding tightened on phones.
   7. Script robustness: the responsive check now rejects Git Bash–mangled paths and sanitises `?`
      in screenshot names.
+
+## BS-11: Reviews, wishlist and discount codes (✅ Done, 2026-10-05)
+
+- **Reviews**:
+  - On book pages: the average and a per-star breakdown, reviews newest first, paged.
+  - Each review shows "Ada O." (never a full name or email) and a "Bought this book" badge.
+  - A buyer writes, edits or deletes their own review; others see why they can't (sign in, or
+    only buyers can review).
+  - **Store admin → Reviews** hides an abusive review with a reason, or shows it again. It never
+    edits one, and every change is audited.
+  - The book's stars update immediately.
+- **Wishlist**: "Save to wishlist" on book pages (via sign-in for visitors); **Account → Wishlist**
+  shows saved books as store cards in the visitor's currency.
+- **Discount codes**: **Store admin → Discount codes** lists every code (what it takes off, uses of
+  the limit, formats, minimum spend, dates, state: Active / Scheduled / Ended / Used up /
+  Switched off). It creates and edits codes:
+  - a percentage, or a fixed amount per currency;
+  - ebooks and/or print;
+  - an optional minimum spend per currency;
+  - start and end dates;
+  - total and per-customer limits;
+  - an on/off switch.
+
+  The form is Zod-validated and its body built explicitly. Limits to specific books set through
+  the API are kept on edit. The server still checks every rule at checkout (BS-7).
+- **Tests**:
+  - Backend: 3 unit (name, text, rounding) and 6 e2e (who may review, validation, stars after
+    write/edit/second reviewer, hide/show with audit, delete own, wishlist rules).
+  - Frontend: coupon form schema and conversions.
+  - A browser run on the local API: a buyer reviews and saves; the owner hides and the stars
+    drop; the owner creates a code. No sideways scroll at 375px; test data deleted afterwards.
 
 ## BS-30: Email, R2 and Cloudinary audit (✅ Done, 2026-10-05)
 
