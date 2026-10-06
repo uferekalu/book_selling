@@ -34,14 +34,19 @@ export function OrdersList() {
         {data.map((order) => (
           <li key={order.orderNumber}>
             <NextLink href={`/account/orders/${order.orderNumber}`} className="block rounded-2xl">
-              <Card interactive className="flex flex-wrap items-center gap-x-6 gap-y-2">
-                <div className="flex min-w-0 flex-1 flex-col">
-                  <span className="font-medium text-text">{order.orderNumber}</span>
-                  <span className="truncate text-sm text-text-muted">{order.items.map((i) => i.title).join(", ")}</span>
-                </div>
-                <span className="text-sm text-text-muted">{day.format(new Date(order.createdAt))}</span>
-                <span className="font-medium tabular-nums">{formatMoney({ amount: order.total, currency: order.currency })}</span>
-                <OrderStatusBadge order={order} />
+              {/* Phones: number + status, titles, then date + total. From `sm`: one row. */}
+              <Card interactive className="grid grid-cols-[1fr_auto] items-center gap-x-4 gap-y-1.5 sm:flex sm:gap-x-6">
+                <span className="font-medium whitespace-nowrap text-text sm:order-1">{order.orderNumber}</span>
+                <span className="justify-self-end sm:order-5">
+                  <OrderStatusBadge order={order} />
+                </span>
+                <span className="col-span-2 truncate text-sm text-text-muted sm:order-2 sm:col-span-1 sm:min-w-0 sm:flex-1">
+                  {[...new Set(order.items.map((i) => i.title))].join(", ")}
+                </span>
+                <span className="text-sm whitespace-nowrap text-text-muted sm:order-3">{day.format(new Date(order.createdAt))}</span>
+                <span className="justify-self-end font-medium whitespace-nowrap tabular-nums sm:order-4">
+                  {formatMoney({ amount: order.total, currency: order.currency })}
+                </span>
               </Card>
             </NextLink>
           </li>

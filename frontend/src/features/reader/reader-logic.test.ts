@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { nextZoom, pageWidth, previewPageFromParam, progressLabel, readSavedPage, savePage, sectionOf, shouldNudge } from "./reader-logic";
+import { NO_CROP, bookCrop, nextZoom, pageWidth, previewPageFromParam, progressLabel, readSavedPage, samplePages, savePage, sectionOf, shouldNudge, textBounds } from "./reader-logic";
 
 const preview = {
   pageCount: 7,
@@ -52,5 +52,35 @@ describe("reader logic", () => {
     expect(readSavedPage("other")).toBeNull();
     window.localStorage.setItem("bs_reader_progress", "{bad json");
     expect(readSavedPage("heat-treatment-of-steels")).toBeNull();
+  });
+});
+
+describe("fitting the text to a phone screen (BS-32)", () => {
+  it("finds where the text sits on a page", () => {
+    // A 432-wide page with 54 margins (the demo books): text from 54 to 378.
+    expect(textBounds([{ x: 54, width: 300 }, { x: 54, width: 324 }, { x: 200, width: 20 }], 432)).toEqual({ left: 0.125, right: 0.125 });
+    expect(textBounds([], 432)).toBeNull();
+    expect(textBounds([{ x: 10, width: 0 }], 432)).toBeNull();
+    // An odd page with text near the edge never trims more than 30% on a side.
+    expect(textBounds([{ x: 300, width: 10 }], 432)?.left).toBe(0.3);
+  });
+
+  it("uses the median margins of the sampled pages, with breathing room", () => {
+    const crop = bookCrop([{ left: 0.125, right: 0.125 }, { left: 0.125, right: 0.13 }, { left: 0.3, right: 0.3 }, null]);
+    expect(crop.left).toBeCloseTo(0.105, 5);
+    expect(crop.right).toBeCloseTo(0.11, 5);
+  });
+
+  it("leaves a full-bleed book alone and never trims too much", () => {
+    expect(bookCrop([{ left: 0.02, right: 0.02 }])).toEqual(NO_CROP);
+    expect(bookCrop([])).toEqual(NO_CROP);
+    const wide = bookCrop([{ left: 0.3, right: 0.3 }]);
+    expect(wide.left + wide.right).toBeCloseTo(0.45, 5);
+  });
+
+  it("samples up to five pages through the body of the book", () => {
+    expect(samplePages(3)).toEqual([1, 2, 3]);
+    expect(samplePages(261)).toEqual([52, 91, 131, 170, 209]);
+    expect(samplePages(7)).toEqual([1, 2, 4, 5, 6]);
   });
 });

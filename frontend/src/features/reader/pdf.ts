@@ -1,6 +1,7 @@
 "use client";
 
 import type { PDFDocumentProxy } from "pdfjs-dist";
+import { NO_CROP, bookCrop, samplePages, textBounds, type Crop } from "./reader-logic";
 
 type PdfJs = typeof import("pdfjs-dist");
 
@@ -66,4 +67,36 @@ export async function openPdf(
   signal.addEventListener("abort", () => void task.destroy(), { once: true });
   const doc = await task.promise;
   return { pdfjs, doc };
+}
+
+const crops = new WeakMap<PDFDocumentProxy, Promise<Crop>>();
+
+/**
+ * The book's text margins, measured from a few sampled pages (BS-32), so a phone can show the
+ * text column at the full screen width. Measured once per opened document; any failure means
+ * no trim (the page is shown whole, as before).
+ */
+export function measureCrop(doc: PDFDocumentProxy): Promise<Crop> {
+  let pending = crops.get(doc);
+  if (!pending) {
+    pending = (async () => {
+      const pdfjs = await loadPdfJs();
+      const bounds = await Promise.all(
+        samplePages(doc.numPages).map(async (n) => {
+          const page = await doc.getPage(n);
+          const viewport = page.getViewport({ scale: 1 });
+          const content = await page.getTextContent();
+          const items = content.items.flatMap((item) => {
+            if (!("transform" in item) || !item.str.trim()) return [];
+            const [, , , , x] = pdfjs.Util.transform(viewport.transform, item.transform);
+            return [{ x, width: item.width }];
+          });
+          return textBounds(items, viewport.width);
+        }),
+      );
+      return bookCrop(bounds);
+    })().catch(() => NO_CROP);
+    crops.set(doc, pending);
+  }
+  return pending;
 }

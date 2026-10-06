@@ -14,7 +14,7 @@ import { createTracker } from "./analytics";
 import { ContinueCard } from "./continue-card";
 import { openPdf } from "./pdf";
 import { PdfPage } from "./pdf-page";
-import { ToneButtons, useReaderTone, ZoomButtons } from "./reader-controls";
+import { FitTextSwitch, paddingX, ToneButtons, useFitText, useReaderTone, ZoomButtons } from "./reader-controls";
 import { ReaderContents } from "./reader-contents";
 import {
   nextZoom,
@@ -63,6 +63,7 @@ export function PreviewReader({ book, preview }: { book: PublicBook; preview: Pr
   const restored = useRef(false);
 
   const width = pageWidth(available, zoom);
+  const { crop, fit, setFit, applies } = useFitText(doc, available);
 
   // ---- load ------------------------------------------------------------------------------------
   useEffect(() => {
@@ -96,7 +97,7 @@ export function PreviewReader({ book, preview }: { book: PublicBook; preview: Pr
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    const measure = () => setAvailable(Math.max(240, el.clientWidth - 32));
+    const measure = () => setAvailable(Math.max(240, el.clientWidth - paddingX(el)));
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(el);
@@ -243,7 +244,7 @@ export function PreviewReader({ book, preview }: { book: PublicBook; preview: Pr
       </header>
 
       {/* ---- pages ---- */}
-      <div ref={scrollRef} className="relative flex-1 overflow-y-auto overscroll-contain px-4 pt-6 pb-28" tabIndex={-1}>
+      <div ref={scrollRef} className="relative flex-1 overflow-y-auto overscroll-contain px-1.5 sm:px-4 pt-6 pb-28" tabIndex={-1}>
         {failed ? (
           <div className="mx-auto max-w-md py-16">
             <Alert
@@ -282,6 +283,7 @@ export function PreviewReader({ book, preview }: { book: PublicBook; preview: Pr
                 tone={tone}
                 caption={`${sectionOf(n, preview) ?? "Preview"} · page ${preview.pageMap[n - 1]} of ${preview.totalPages}`}
                 onVisible={onVisible}
+                crop={crop}
               />
             ))}
             <ContinueCard
@@ -350,6 +352,7 @@ export function PreviewReader({ book, preview }: { book: PublicBook; preview: Pr
             <p className="text-sm font-medium text-text">Text size</p>
             {zoomButtons}
           </div>
+          {applies && <FitTextSwitch fit={fit} onChange={setFit} />}
           <ButtonLink href={`/books/${book.slug}`} variant="ghost">
             Back to the book page
           </ButtonLink>

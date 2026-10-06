@@ -2,7 +2,7 @@
 
 import { Search, SlidersHorizontal } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useState, useTransition, type FormEvent } from "react";
+import { useEffect, useState, useTransition, type FormEvent } from "react";
 import { Badge, Button, Drawer, FormField, Icon, Input, Pagination, RadioGroup, Select } from "@/components/ui";
 import type { BookSort, PublicCategory } from "@/lib/catalog-types";
 
@@ -22,7 +22,7 @@ function useListingParams() {
   const params = useSearchParams();
   const [pending, startTransition] = useTransition();
 
-  const update = (changes: Record<string, string | null>, { resetPage = true } = {}) => {
+  const update = (changes: Record<string, string | null>, { resetPage = true, replace = false } = {}) => {
     const next = new URLSearchParams(params.toString());
     for (const [key, value] of Object.entries(changes)) {
       if (value === null || value === "") next.delete(key);
@@ -30,17 +30,52 @@ function useListingParams() {
     }
     if (resetPage) next.delete("page");
     const query = next.toString();
-    startTransition(() => router.push(query ? `${pathname}?${query}` : pathname, { scroll: false }));
+    const href = query ? `${pathname}?${query}` : pathname;
+    // Typing replaces the entry, so "back" skips every keystroke.
+    startTransition(() => (replace ? router.replace(href, { scroll: false }) : router.push(href, { scroll: false })));
   };
   return { params, update, pending };
 }
 
+/** Searching starts at this many characters; fewer (or none) shows every book again. */
+export const SEARCH_MIN_CHARS = 2;
+const SEARCH_DELAY_MS = 300;
+
+/** What the URL's `q` should become for what's typed, or undefined to leave it as it is. */
+export function searchQueryFor(typed: string, current: string): string | null | undefined {
+  const text = typed.trim();
+  if (!text) return current ? null : undefined;
+  if (text.length < SEARCH_MIN_CHARS) return undefined;
+  return text === current ? undefined : text;
+}
+
+/**
+ * Search as you type (BS-32): results follow the typing after a short pause, from two characters;
+ * clearing the box shows every book again. Enter searches at once.
+ */
 export function SearchBox() {
   const { params, update } = useListingParams();
-  const [value, setValue] = useState(params.get("q") ?? "");
+  const current = params.get("q") ?? "";
+  const [value, setValue] = useState(current);
+  const [synced, setSynced] = useState(current);
+  // The URL changed elsewhere ("Show all books", back button): follow it.
+  if (current !== synced) {
+    setSynced(current);
+    if (searchQueryFor(value, current) !== undefined) setValue(current);
+  }
+  const apply = (typed: string) => {
+    const next = searchQueryFor(typed, current);
+    if (next !== undefined) update({ q: next, sort: null }, { replace: true });
+  };
+  useEffect(() => {
+    const timer = window.setTimeout(() => apply(value), SEARCH_DELAY_MS);
+    return () => window.clearTimeout(timer);
+    // apply reads the latest URL each time; only typing should restart the pause.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    update({ q: value.trim() || null, sort: null });
+    apply(value);
   };
   return (
     <form role="search" onSubmit={submit} className="w-full">

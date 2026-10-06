@@ -1,11 +1,13 @@
 "use client";
 
 import { Coffee, Moon, Sun, ZoomIn, ZoomOut } from "lucide-react";
-import { useState } from "react";
-import { Icon, IconButton } from "@/components/ui";
+import type { PDFDocumentProxy } from "pdfjs-dist";
+import { useEffect, useState } from "react";
+import { Icon, IconButton, Switch } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import type { PaperTone } from "./pdf-page";
-import { nextZoom } from "./reader-logic";
+import { measureCrop } from "./pdf";
+import { NO_CROP, nextZoom, type Crop } from "./reader-logic";
 
 const TONE_KEY = "bs_reader_tone";
 const TONES: Array<{ value: PaperTone; label: string; icon: typeof Sun }> = [
@@ -78,4 +80,62 @@ export function ZoomButtons({ zoom, onChange }: { zoom: number; onChange: (zoom:
       <IconButton label="Zoom in" icon={<Icon icon={ZoomIn} size="sm" />} onClick={() => onChange(nextZoom(zoom, 1))} disabled={zoom >= 2} />
     </div>
   );
+}
+
+const FIT_KEY = "bs_reader_fit";
+/** Below this width the page's margins are trimmed so the text is readable (BS-32). */
+export const FIT_TEXT_BELOW = 640;
+
+/**
+ * "Fit text to the screen" on phones: the book's side margins are measured once and trimmed, so
+ * the text column fills the screen instead of a whole page shrunk to fit. On by default; the
+ * choice is remembered. Wider screens show whole pages.
+ */
+export function useFitText(doc: PDFDocumentProxy | null, available: number) {
+  const [fit, setFitState] = useState<boolean>(() => {
+    try {
+      return window.localStorage.getItem(FIT_KEY) !== "0";
+    } catch {
+      return true;
+    }
+  });
+  const [measured, setMeasured] = useState<{ doc: PDFDocumentProxy; crop: Crop } | null>(null);
+  const applies = available < FIT_TEXT_BELOW;
+  useEffect(() => {
+    if (!doc || !fit || !applies || measured?.doc === doc) return;
+    let cancelled = false;
+    void measureCrop(doc).then((crop) => {
+      if (!cancelled) setMeasured({ doc, crop });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [doc, fit, applies, measured]);
+  const setFit = (value: boolean) => {
+    setFitState(value);
+    try {
+      window.localStorage.setItem(FIT_KEY, value ? "1" : "0");
+    } catch {
+      // ignore
+    }
+  };
+  const crop = fit && applies && measured?.doc === doc ? measured.crop : NO_CROP;
+  return { crop, fit, setFit, applies };
+}
+
+export function FitTextSwitch({ fit, onChange }: { fit: boolean; onChange: (fit: boolean) => void }) {
+  return (
+    <Switch
+      checked={fit}
+      onCheckedChange={onChange}
+      label="Fit text to the screen"
+      description="Trims the page margins so the words are larger on a phone. Turn off to see whole pages."
+    />
+  );
+}
+
+/** Horizontal padding of the reading area, so pages use the width that is really there. */
+export function paddingX(el: HTMLElement): number {
+  const style = window.getComputedStyle(el);
+  return (Number.parseFloat(style.paddingLeft) || 0) + (Number.parseFloat(style.paddingRight) || 0);
 }

@@ -195,7 +195,12 @@ Stock invariant: `0 ≤ stockReserved ≤ stockOnHand`. It is only ever changed 
 atomic updates in §8.3, never by read-modify-write.
 
 Indexes: `slug` unique; `formats.sku` unique (partial); `status + publishedAt`; a text index on
-`title`, `subtitle`, `description` and `tags` (weights 10/5/1/3) for search.
+`title`, `subtitle`, `description` and `tags` (no longer queried since BS-32). Search is
+search-as-you-type (`catalog/book-search.ts`): every typed word must match the start of a word in
+the title, subtitle, author names, tags, ISBN, abstract or description; matching books are scored
+(title 100, subtitle 40, author 30, tags/ISBN 25, abstract 8, description 4, plus a bonus when the
+title starts with or contains the phrase) and ranked in the API. The storefront searches from 2
+letters, 300 ms after typing stops.
 
 ### 4.3 Commerce
 
@@ -1154,6 +1159,10 @@ as built in BS-6 unless marked *later*):
   full-screen focus mode, and **Paper / Sepia / Night** page tones (Night by default in dark mode;
   remembered). Pages render lazily near the viewport, crisp on high-DPI screens; the reader is
   client-only and loads pdf.js on demand. *Later*: a two-page spread on wide screens.
+- **Fit text to screen** (BS-32): pdf.js measures where the text sits on a few sample pages, and
+  the reader trims the blank margins (median per side, never more than 45% in total) so the text
+  fills a phone's width. It is on by default under 640 px, can be switched off in Display, and
+  the choice is remembered. Only the drawing is cropped; the PDF itself is unchanged.
 - **Table of contents** (a drawer) shows the whole book. Preview chapters are clickable; locked
   chapters show a lock icon and open the paywall card with that chapter's name ("Chapter 4: Heat
   Exchangers is in the full book").
