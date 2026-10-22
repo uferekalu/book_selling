@@ -1,4 +1,4 @@
-import { ArrowRight, BookOpen, Download, FileText, ShieldCheck, Truck } from "lucide-react";
+import { ArrowRight, BookOpen, Download, FileText, MessageCircle, ShieldCheck, Truck } from "lucide-react";
 import NextLink from "next/link";
 import { RecentlyViewed } from "@/features/catalog/recently-viewed";
 import { Accordion, Avatar, BookCover, ButtonLink, Container, Eyebrow, Icon, Section } from "@/components/ui";
@@ -244,8 +244,24 @@ export default async function Home() {
       <RecentlyViewed />
 
       {/* ---------------------------------------------------------------- FAQ */}
-      <Section eyebrow="Questions" title="Good to know" containerWidth="narrow">
-        <Accordion items={FAQ} headingLevel={3} />
+      <Section className="border-t border-border" aria-labelledby="faq-heading">
+        {/* Phones: the intro, then the questions. Desktop: the intro stays beside them (BS-35). */}
+        <div className="grid gap-10 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] lg:gap-16">
+          <div className="flex flex-col items-start gap-4 lg:sticky lg:top-28 lg:self-start">
+            <Eyebrow>Questions</Eyebrow>
+            <h2 id="faq-heading" className="text-4xl font-medium text-balance sm:text-5xl">
+              Good to know
+            </h2>
+            <p className="max-w-md text-lg text-text-muted">
+              Buying, reading, delivery and payment, answered. Can&rsquo;t find what you need? Ask the author directly.
+            </p>
+            <ButtonLink href="/contact" variant="outline">
+              <Icon icon={MessageCircle} size="sm" />
+              Contact us
+            </ButtonLink>
+          </div>
+          <Accordion items={FAQ} headingLevel={3} numbered defaultOpen={[FAQ[0].id]} />
+        </div>
       </Section>
     </>
   );

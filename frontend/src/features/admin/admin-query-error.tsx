@@ -1,7 +1,7 @@
 "use client";
 
 import { Alert, Button } from "@/components/ui";
-import { errorCode, errorMessage } from "@/lib/api/errors";
+import { SERVER_BEHIND, errorCode, errorMessage } from "@/lib/api/errors";
 
 /** Load failures in admin pages, including "your session predates turning on 2FA". */
 export function AdminQueryError({ error, onRetry }: { error: unknown; onRetry?: () => void }) {
@@ -13,10 +13,13 @@ export function AdminQueryError({ error, onRetry }: { error: unknown; onRetry?: 
       </Alert>
     );
   }
+  const message = errorMessage(error);
+  // The website was updated before the server: not a fault, just a few minutes' wait (BS-35).
+  const updating = message === SERVER_BEHIND;
   return (
     <Alert
-      tone="danger"
-      title="This couldn’t be loaded"
+      tone={updating ? "info" : "danger"}
+      title={updating ? "The store is being updated" : "This couldn’t be loaded"}
       action={
         onRetry && (
           <Button size="sm" variant="outline" onClick={onRetry}>
@@ -25,7 +28,7 @@ export function AdminQueryError({ error, onRetry }: { error: unknown; onRetry?: 
         )
       }
     >
-      {errorMessage(error)}
+      {message}
     </Alert>
   );
 }

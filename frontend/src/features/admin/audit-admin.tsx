@@ -106,6 +106,7 @@ function AuditRow({ entry: e }: { entry: AuditEntry }) {
       </p>
       {changes && (
         <Accordion
+          variant="plain"
           headingLevel={3}
           items={[
             {

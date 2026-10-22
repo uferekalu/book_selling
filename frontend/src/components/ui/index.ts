@@ -7,6 +7,7 @@ export { Badge, type BadgeProps } from "./badge";
 export { BarChart, type BarChartProps } from "./bar-chart";
 export { BookCard, type BookCardProps, type BookFormatType } from "./book-card";
 export { BookCover, type BookCoverProps } from "./book-cover";
+export { Carousel, type CarouselProps } from "./carousel";
 export { Breadcrumbs, type Crumb } from "./breadcrumbs";
 export { Button, buttonVariants, type ButtonProps } from "./button";
 export { Card, CardFooter, CardHeader, type CardProps } from "./card";
