@@ -1,6 +1,6 @@
 "use client";
 
-import { BookPlus, Search } from "lucide-react";
+import { BookPlus, FilePlus, Search } from "lucide-react";
 import NextLink from "next/link";
 import { useRouter } from "next/navigation";
 import { useDeferredValue, useState, type FormEvent } from "react";
@@ -19,6 +19,7 @@ import {
   useToast,
 } from "@/components/ui";
 import { useAdminBooksQuery, useCreateBookMutation, type AdminBookRow, type BookStatus } from "@/lib/api/catalog-admin-api";
+import type { BookKind } from "@/lib/catalog-types";
 import { errorMessage } from "@/lib/api/errors";
 import { AdminQueryError } from "./admin-query-error";
 import { ShippingCoverageAlert } from "./shipping-coverage";
@@ -31,15 +32,46 @@ export const STATUS_BADGE: Record<BookStatus, { label: string; tone: "neutral" |
   archived: { label: "Archived", tone: "neutral" },
 };
 
+/** Words that differ between the Books and Papers pages (BS-34). */
+const WORDS = {
+  book: {
+    noun: "book",
+    plural: "books",
+    search: "Search books",
+    create: "New book",
+    firstTitle: "No books yet",
+    first: "Add the first book: start with its title, then fill in the rest at your own pace.",
+    addFirst: "Add a book",
+    example: "e.g. Principles of Foundry Technology",
+    dialog: "Start with the title. It stays a private draft until you publish it.",
+  },
+  paper: {
+    noun: "paper",
+    plural: "papers",
+    search: "Search papers",
+    create: "New paper",
+    firstTitle: "No papers yet",
+    first: "Add a conference or workshop paper: start with its title, then add the PDF, where it was presented and its price.",
+    addFirst: "Add a paper",
+    example: "e.g. Slag Control in Electric Arc Furnaces",
+    dialog: "Start with the paper's title. It stays a private draft until you publish it.",
+  },
+} as const;
+
+/** The editor for a title, under Books or Papers. */
+export const adminEditPath = (kind: BookKind, id: string) => `/admin/${kind === "paper" ? "papers" : "books"}/${id}`;
+
 const updated = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric" });
 
-export function BooksList() {
+export function BooksList({ kind = "book" }: { kind?: BookKind }) {
+  const words = WORDS[kind];
   const [status, setStatus] = useState<StatusTab>("all");
   const [search, setSearch] = useState("");
   const q = useDeferredValue(search.trim());
   const [page, setPage] = useState(1);
   const [creating, setCreating] = useState(false);
   const { data, error, isLoading, isFetching, refetch } = useAdminBooksQuery({
+    kind,
     q: q || undefined,
     status: status === "all" ? undefined : status,
     page,
@@ -58,10 +90,10 @@ export function BooksList() {
         </div>
       ) : data && data.items.length === 0 ? (
         <EmptyState
-          icon={BookPlus}
-          title={q || status !== "all" ? "No books match" : "No books yet"}
-          description={q || status !== "all" ? "Try another search or status." : "Add the first book: start with its title, then fill in the rest at your own pace."}
-          action={!q && status === "all" ? <Button onClick={() => setCreating(true)}>Add a book</Button> : undefined}
+          icon={kind === "paper" ? FilePlus : BookPlus}
+          title={q || status !== "all" ? `No ${words.plural} match` : words.firstTitle}
+          description={q || status !== "all" ? "Try another search or status." : words.first}
+          action={!q && status === "all" ? <Button onClick={() => setCreating(true)}>{words.addFirst}</Button> : undefined}
         />
       ) : (
         <ul className="flex flex-col gap-3">{data?.items.map((book) => <BookRow key={book.id} book={book} />)}</ul>
@@ -72,9 +104,10 @@ export function BooksList() {
 
   return (
     <div className="flex flex-col gap-5">
-      <ShippingCoverageAlert />
+      {/* Papers are never posted, so shipping coverage doesn't concern them. */}
+      {kind === "book" && <ShippingCoverageAlert />}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-        <FormField label="Search books" hideLabel className="flex-1">
+        <FormField label={words.search} hideLabel className="flex-1">
           <Input
             type="search"
             value={search}
@@ -86,8 +119,8 @@ export function BooksList() {
             leading={<Icon icon={Search} size="sm" />}
           />
         </FormField>
-        <Button leadingIcon={<Icon icon={BookPlus} size="sm" />} onClick={() => setCreating(true)}>
-          New book
+        <Button leadingIcon={<Icon icon={kind === "paper" ? FilePlus : BookPlus} size="sm" />} onClick={() => setCreating(true)}>
+          {words.create}
         </Button>
       </div>
       <Tabs<StatusTab>
@@ -104,7 +137,7 @@ export function BooksList() {
           content: list,
         }))}
       />
-      <NewBookDialog open={creating} onClose={() => setCreating(false)} />
+      <NewBookDialog kind={kind} open={creating} onClose={() => setCreating(false)} />
     </div>
   );
 }
@@ -114,7 +147,7 @@ function BookRow({ book }: { book: AdminBookRow }) {
   return (
     <li>
       <NextLink
-        href={`/admin/books/${book.id}`}
+        href={adminEditPath(book.kind ?? "book", book.id)}
         className="flex items-center gap-4 rounded-2xl border border-border bg-surface p-3 transition-colors hover:border-border-strong hover:bg-surface-sunken sm:p-4"
       >
         <BookCover title={book.title} src={book.cover?.src} blurDataUrl={book.cover?.blurDataUrl} size="xs" />
@@ -126,7 +159,7 @@ function BookRow({ book }: { book: AdminBookRow }) {
             </Badge>
             {book.formats.map((format) => (
               <Badge key={format} size="sm">
-                {format === "ebook" ? "Ebook" : "Print"}
+                {book.kind === "paper" ? "PDF" : format === "ebook" ? "Ebook" : "Print"}
               </Badge>
             ))}
             {book.status === "draft" && book.problems > 0 && (
@@ -142,7 +175,8 @@ function BookRow({ book }: { book: AdminBookRow }) {
   );
 }
 
-function NewBookDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+function NewBookDialog({ kind, open, onClose }: { kind: BookKind; open: boolean; onClose: () => void }) {
+  const words = WORDS[kind];
   const [title, setTitle] = useState("");
   const [create, state] = useCreateBookMutation();
   const router = useRouter();
@@ -152,11 +186,11 @@ function NewBookDialog({ open, onClose }: { open: boolean; onClose: () => void }
     event.preventDefault();
     if (!title.trim()) return;
     try {
-      const book = await create({ title: title.trim() }).unwrap();
+      const book = await create({ title: title.trim(), kind }).unwrap();
       toast({ title: "Draft created", description: "Fill in the details, then publish when it's ready.", tone: "success" });
       setTitle("");
       onClose();
-      router.push(`/admin/books/${book.id}`);
+      router.push(adminEditPath(kind, book.id));
     } catch (error) {
       toast({ title: errorMessage(error), tone: "danger" });
     }
@@ -166,8 +200,8 @@ function NewBookDialog({ open, onClose }: { open: boolean; onClose: () => void }
     <Modal
       open={open}
       onClose={onClose}
-      title="New book"
-      description="Start with the title. It stays a private draft until you publish it."
+      title={words.create}
+      description={words.dialog}
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
@@ -181,7 +215,7 @@ function NewBookDialog({ open, onClose }: { open: boolean; onClose: () => void }
     >
       <form id="new-book" onSubmit={(event) => void submit(event)}>
         <FormField label="Title" required>
-          <Input value={title} onChange={(event) => setTitle(event.target.value)} maxLength={200} autoFocus placeholder="e.g. Principles of Foundry Technology" />
+          <Input value={title} onChange={(event) => setTitle(event.target.value)} maxLength={200} autoFocus placeholder={words.example} />
         </FormField>
       </form>
     </Modal>

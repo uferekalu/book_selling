@@ -2,7 +2,7 @@ import "server-only";
 import { notFound } from "next/navigation";
 import { getBackendUrl } from "@/lib/backend-url";
 import type { Currency } from "@/lib/money";
-import type { BookFilters, BookPage, PreviewData, PublicAuthor, PublicBook, PublicCategory } from "./catalog-types";
+import type { BookFilters, BookKind, BookPage, PreviewData, PublicAuthor, PublicBook, PublicCategory } from "./catalog-types";
 
 /**
  * Server-side catalogue reads. Responses are cached and tagged, and the API refreshes the tags
@@ -74,8 +74,8 @@ export async function getAuthor(slug: string): Promise<PublicAuthor> {
   return author;
 }
 
-export async function sitemapBooks(): Promise<Array<{ slug: string; updatedAt: string }>> {
-  return (await get<Array<{ slug: string; updatedAt: string }>>("/catalog/sitemap", [])) ?? [];
+export async function sitemapBooks(): Promise<Array<{ slug: string; kind: BookKind; updatedAt: string }>> {
+  return (await get<Array<{ slug: string; kind: BookKind; updatedAt: string }>>("/catalog/sitemap", [])) ?? [];
 }
 
 /** Runs a catalogue read and returns `fallback` if the API is unreachable, so a page still renders. */

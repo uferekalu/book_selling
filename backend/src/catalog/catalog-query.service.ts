@@ -12,7 +12,13 @@ import {
 } from './catalog.presenter.js';
 import type { BookListQuery } from './dto/catalog.dto.js';
 import { Author, type AuthorDocument } from './schemas/author.schema.js';
-import { Book, type BookDocument } from './schemas/book.schema.js';
+import {
+  Book,
+  BOOKS_ONLY,
+  PAPERS_ONLY,
+  type BookDocument,
+  type BookKind,
+} from './schemas/book.schema.js';
 import { Category, type CategoryDocument } from './schemas/category.schema.js';
 import { searchScore, searchWords } from './book-search.js';
 
@@ -47,7 +53,12 @@ export class CatalogQueryService {
     const currency: Currency = query.currency ?? 'USD';
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? DEFAULT_PAGE_SIZE;
-    const filter: QueryFilter<Book> = { status: PUBLISHED };
+    const kind: BookKind = query.kind ?? 'book';
+    // Textbooks and papers are listed apart (BS-34): /books never shows a paper.
+    const filter: QueryFilter<Book> = {
+      status: PUBLISHED,
+      ...(kind === 'paper' ? PAPERS_ONLY : BOOKS_ONLY),
+    };
 
     if (query.featured) filter.featured = true;
     if (query.format)
@@ -91,7 +102,7 @@ export class CatalogQueryService {
       } else {
         docs = await this.books
           .find({ _id: { $in: ranked } })
-          .sort(this.sortFor(sortKey, currency))
+          .sort(this.sortFor(sortKey, currency, kind))
           .skip((page - 1) * pageSize)
           .limit(pageSize)
           .exec();
@@ -100,7 +111,7 @@ export class CatalogQueryService {
       [docs, total] = await Promise.all([
         this.books
           .find(filter)
-          .sort(this.sortFor(sortKey, currency))
+          .sort(this.sortFor(sortKey, currency, kind))
           .skip((page - 1) * pageSize)
           .limit(pageSize)
           .exec(),
@@ -132,6 +143,8 @@ export class CatalogQueryService {
         subtitle: 1,
         tags: 1,
         isbn13: 1,
+        'paper.venue': 1,
+        'paper.location': 1,
         abstractMarkdown: 1,
         descriptionMarkdown: 1,
         authorIds: 1,
@@ -158,9 +171,12 @@ export class CatalogQueryService {
             subtitle: b.subtitle,
             tags: b.tags,
             isbn13: b.isbn13,
+            venue: [b.paper?.venue, b.paper?.location]
+              .filter(Boolean)
+              .join(' '),
             abstractMarkdown: b.abstractMarkdown,
             descriptionMarkdown: b.descriptionMarkdown,
-            authorNames:b.authorIds.map((a) => nameOf.get(a.toString()) ?? ''),
+            authorNames: b.authorIds.map((a) => nameOf.get(a.toString()) ?? ''),
           },
           words,
         ),
@@ -213,6 +229,8 @@ export class CatalogQueryService {
     const book = await this.books.findOne({ slug, status: PUBLISHED }).exec();
     if (!book) throw new NotFoundException('Book not found');
     const picked = new Map<string, BookDocument>();
+    // Papers suggest papers, books suggest books; the paper page lists textbooks separately.
+    const sameKind = book.kind === 'paper' ? PAPERS_ONLY : BOOKS_ONLY;
     const pools: Array<QueryFilter<Book>> = [
       { categoryIds: { $in: book.categoryIds } },
       { authorIds: { $in: book.authorIds } },
@@ -223,6 +241,7 @@ export class CatalogQueryService {
       const docs = await this.books
         .find({
           status: PUBLISHED,
+          ...sameKind,
           _id: {
             $nin: [
               book._id,
@@ -241,29 +260,47 @@ export class CatalogQueryService {
     return docs.map((doc) => this.present.card(doc, authors, currency));
   }
 
-  /** Categories that have at least one published book, with counts. */
+  /**
+   * Subjects that have at least one published textbook or paper, with a count of each (BS-34).
+   * The Books page shows the ones with textbooks; the Papers page, the ones with papers.
+   */
   async categoriesWithCounts(): Promise<PublicCategoryDto[]> {
     const [categories, counts] = await Promise.all([
       this.categories.find().sort({ sortOrder: 1, name: 1 }).exec(),
       this.books
-        .aggregate<{ _id: Types.ObjectId; count: number }>([
+        .aggregate<{
+          _id: Types.ObjectId;
+          books: number;
+          papers: number;
+        }>([
           { $match: { status: PUBLISHED } },
           { $unwind: '$categoryIds' },
-          { $group: { _id: '$categoryIds', count: { $sum: 1 } } },
+          {
+            $group: {
+              _id: '$categoryIds',
+              papers: {
+                $sum: { $cond: [{ $eq: ['$kind', 'paper'] }, 1, 0] },
+              },
+              books: {
+                $sum: { $cond: [{ $eq: ['$kind', 'paper'] }, 0, 1] },
+              },
+            },
+          },
         ])
         .exec(),
     ]);
-    const countById = new Map(
-      counts.map((row) => [row._id.toString(), row.count]),
-    );
+    const countById = new Map(counts.map((row) => [row._id.toString(), row]));
     return categories
-      .map((category) =>
-        this.present.category(
-          category,
-          countById.get(category._id.toString()) ?? 0,
-        ),
-      )
-      .filter((category) => (category.bookCount ?? 0) > 0);
+      .map((category) => {
+        const row = countById.get(category._id.toString());
+        return {
+          ...this.present.category(category, row?.books ?? 0),
+          paperCount: row?.papers ?? 0,
+        };
+      })
+      .filter(
+        (category) => (category.bookCount ?? 0) + category.paperCount > 0,
+      );
   }
 
   async authorBySlug(slug: string): Promise<PublicAuthorDto> {
@@ -286,20 +323,27 @@ export class CatalogQueryService {
   }
 
   /** Published slugs and last-modified dates for the sitemap. */
-  async sitemapEntries(): Promise<Array<{ slug: string; updatedAt: string }>> {
+  async sitemapEntries(): Promise<
+    Array<{ slug: string; kind: BookKind; updatedAt: string }>
+  > {
     const docs = await this.books
-      .find({ status: PUBLISHED }, { slug: 1, updatedAt: 1 })
+      .find({ status: PUBLISHED }, { slug: 1, kind: 1, updatedAt: 1 })
       .lean()
       .exec();
     return docs.map((doc) => ({
       slug: doc.slug,
+      kind: doc.kind ?? 'book',
       updatedAt: (
         doc as unknown as { updatedAt: Date }
       ).updatedAt.toISOString(),
     }));
   }
 
-  private sortFor(sort: string, currency: Currency): Record<string, SortOrder> {
+  private sortFor(
+    sort: string,
+    currency: Currency,
+    kind: BookKind = 'book',
+  ): Record<string, SortOrder> {
     switch (sort) {
       case 'relevance':
         return { featured: -1, listedAt: -1 };
@@ -312,7 +356,10 @@ export class CatalogQueryService {
       case 'title':
         return { title: 1 };
       default:
-        return { listedAt: -1, _id: -1 };
+        // Papers read newest-first by when they were presented, not when they were uploaded.
+        return kind === 'paper'
+          ? { publicationDate: -1, listedAt: -1, _id: -1 }
+          : { listedAt: -1, _id: -1 };
     }
   }
 

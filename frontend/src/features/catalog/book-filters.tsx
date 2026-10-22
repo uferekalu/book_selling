@@ -4,7 +4,7 @@ import { Search, SlidersHorizontal } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, useTransition, type FormEvent } from "react";
 import { Badge, Button, Drawer, FormField, Icon, Input, Pagination, RadioGroup, Select } from "@/components/ui";
-import type { BookSort, PublicCategory } from "@/lib/catalog-types";
+import type { BookKind, BookSort, PublicCategory } from "@/lib/catalog-types";
 
 const SORT_OPTIONS: Array<{ value: BookSort; label: string }> = [
   { value: "relevance", label: "Most relevant" },
@@ -53,7 +53,7 @@ export function searchQueryFor(typed: string, current: string): string | null | 
  * Search as you type (BS-32): results follow the typing after a short pause, from two characters;
  * clearing the box shows every book again. Enter searches at once.
  */
-export function SearchBox() {
+export function SearchBox({ kind = "book" }: { kind?: BookKind }) {
   const { params, update } = useListingParams();
   const current = params.get("q") ?? "";
   const [value, setValue] = useState(current);
@@ -79,13 +79,13 @@ export function SearchBox() {
   };
   return (
     <form role="search" onSubmit={submit} className="w-full">
-      <FormField label="Search books" hideLabel>
+      <FormField label={kind === "paper" ? "Search papers" : "Search books"} hideLabel>
         <Input
           id="search"
           type="search"
           value={value}
           onChange={(e) => setValue(e.target.value)}
-          placeholder="Search by title, topic or ISBN…"
+          placeholder={kind === "paper" ? "Search by title, topic or conference…" : "Search by title, topic or ISBN…"}
           enterKeyHint="search"
           leading={<Icon icon={Search} size="sm" />}
         />
@@ -94,7 +94,7 @@ export function SearchBox() {
   );
 }
 
-export function SortSelect() {
+export function SortSelect({ kind = "book" }: { kind?: BookKind }) {
   const { params, update } = useListingParams();
   const hasQuery = Boolean(params.get("q"));
   const value = params.get("sort") ?? (hasQuery ? "relevance" : "newest");
@@ -102,48 +102,65 @@ export function SortSelect() {
     <FormField label="Sort by" className="w-full sm:w-56">
       <Select
         value={value}
-        options={SORT_OPTIONS.filter((o) => o.value !== "relevance" || hasQuery)}
+        options={SORT_OPTIONS.filter((o) => o.value !== "relevance" || hasQuery).map((o) =>
+          // Papers are newest by when they were presented.
+          kind === "paper" && o.value === "newest" ? { ...o, label: "Most recent" } : o,
+        )}
         onChange={(e) => update({ sort: e.target.value })}
       />
     </FormField>
   );
 }
 
-function FilterControls({ categories, onChange }: { categories: PublicCategory[]; onChange?: () => void }) {
+/** The subjects that hold this kind of title, with how many each has. */
+export function subjectsFor(categories: PublicCategory[], kind: BookKind) {
+  return categories
+    .map((c) => ({ ...c, count: (kind === "paper" ? c.paperCount : c.bookCount) ?? 0 }))
+    .filter((c) => c.count > 0);
+}
+
+function FilterControls({ categories, kind, onChange }: { categories: PublicCategory[]; kind: BookKind; onChange?: () => void }) {
   const { params, update } = useListingParams();
   return (
     <div className="flex flex-col gap-8">
       <RadioGroup
-        legend="Subject"
+        legend={kind === "paper" ? "Research area" : "Subject"}
         value={params.get("category") ?? ""}
         onChange={(value) => {
           update({ category: value || null });
           onChange?.();
         }}
         options={[
-          { value: "", label: "All subjects" },
-          ...categories.map((c) => ({ value: c.slug, label: c.name, aside: <span className="text-xs font-normal text-text-subtle">{c.bookCount}</span> })),
+          { value: "", label: kind === "paper" ? "All areas" : "All subjects" },
+          ...subjectsFor(categories, kind).map((c) => ({
+            value: c.slug,
+            label: c.name,
+            aside: <span className="text-xs font-normal text-text-subtle">{c.count}</span>,
+          })),
         ]}
       />
-      <RadioGroup
-        legend="Format"
-        value={params.get("format") ?? ""}
-        onChange={(value) => {
-          update({ format: value || null });
-          onChange?.();
-        }}
-        options={[
-          { value: "", label: "Any format" },
-          { value: "ebook", label: "Ebook", description: "Instant access, read anywhere" },
-          { value: "print", label: "Print", description: "Shipped to your door" },
-        ]}
-      />
+      {/* Papers are PDFs only, so they have no format to choose. */}
+      {kind === "book" && (
+        <RadioGroup
+          legend="Format"
+          value={params.get("format") ?? ""}
+          onChange={(value) => {
+            update({ format: value || null });
+            onChange?.();
+          }}
+          options={[
+            { value: "", label: "Any format" },
+            { value: "ebook", label: "Ebook", description: "Instant access, read anywhere" },
+            { value: "print", label: "Print", description: "Shipped to your door" },
+          ]}
+        />
+      )}
     </div>
   );
 }
 
 /** Sidebar on desktop; a "Filters" button opening a bottom sheet on phones and tablets. */
-export function BookFilters({ categories }: { categories: PublicCategory[] }) {
+export function BookFilters({ categories, kind = "book" }: { categories: PublicCategory[]; kind?: BookKind }) {
   const [open, setOpen] = useState(false);
   const { params, update } = useListingParams();
   const active = ["category", "format"].filter((key) => params.get(key)).length;
@@ -151,7 +168,7 @@ export function BookFilters({ categories }: { categories: PublicCategory[] }) {
   return (
     <>
       <aside className="hidden lg:block" aria-label="Filters">
-        <FilterControls categories={categories} />
+        <FilterControls categories={categories} kind={kind} />
       </aside>
       <div className="flex items-center gap-3 lg:hidden">
         <Button variant="outline" leadingIcon={<Icon icon={SlidersHorizontal} size="sm" />} onClick={() => setOpen(true)}>
@@ -179,7 +196,7 @@ export function BookFilters({ categories }: { categories: PublicCategory[] }) {
           </Button>
         }
       >
-        <FilterControls categories={categories} />
+        <FilterControls categories={categories} kind={kind} />
       </Drawer>
     </>
   );

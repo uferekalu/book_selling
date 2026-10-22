@@ -1,5 +1,5 @@
 import type { Currency } from "@/lib/money";
-import type { FormatType, PublicAuthor, PublicCategory, PublicImage, TocEntry } from "@/lib/catalog-types";
+import type { BookKind, FormatType, PublicAuthor, PublicCategory, PublicImage, PublicPaper, TocEntry } from "@/lib/catalog-types";
 import type { UploadTicket } from "@/lib/upload";
 import { api } from "./api";
 
@@ -31,6 +31,10 @@ export interface AdminFormat {
 
 export interface AdminBook {
   id: string;
+  /** A textbook or a conference / workshop paper; set when created (BS-34). */
+  kind: BookKind;
+  /** Papers only. */
+  paper: PublicPaper | null;
   title: string;
   subtitle: string;
   slug: string;
@@ -82,6 +86,7 @@ export interface AdminPreview {
 
 export interface AdminBookRow {
   id: string;
+  kind: BookKind;
   title: string;
   slug: string;
   status: BookStatus;
@@ -118,6 +123,8 @@ export interface BookUpdate {
   tags?: string[];
   seo?: { title?: string; description?: string };
   featured?: boolean;
+  /** Papers only (BS-34). */
+  paper?: Partial<Omit<PublicPaper, "externalUrl">> & { externalUrl?: string | null };
 }
 
 export interface FormatInput {
@@ -161,7 +168,7 @@ const bookTags = (id: string) => [{ type: "AdminBook" as const, id }, "AdminBook
 
 export const catalogAdminApi = api.injectEndpoints({
   endpoints: (builder) => ({
-    adminBooks: builder.query<AdminBookList, { q?: string; status?: BookStatus; page?: number }>({
+    adminBooks: builder.query<AdminBookList, { kind?: BookKind; q?: string; status?: BookStatus; page?: number }>({
       query: (params) => ({ url: "/admin/catalog/books", params }),
       providesTags: ["AdminBooks"],
     }),
@@ -169,7 +176,7 @@ export const catalogAdminApi = api.injectEndpoints({
       query: (id) => `/admin/catalog/books/${id}`,
       providesTags: (_result, _error, id) => [{ type: "AdminBook", id }],
     }),
-    createBook: builder.mutation<AdminBook, { title: string }>({
+    createBook: builder.mutation<AdminBook, { title: string; kind?: BookKind }>({
       query: (body) => ({ url: "/admin/catalog/books", method: "POST", body }),
       invalidatesTags: ["AdminBooks"],
     }),

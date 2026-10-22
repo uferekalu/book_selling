@@ -1,8 +1,9 @@
-import { ArrowRight, BookOpen, Download, ShieldCheck, Truck } from "lucide-react";
+import { ArrowRight, BookOpen, Download, FileText, ShieldCheck, Truck } from "lucide-react";
 import NextLink from "next/link";
 import { RecentlyViewed } from "@/features/catalog/recently-viewed";
 import { Accordion, Avatar, BookCover, ButtonLink, Container, Eyebrow, Icon, Section } from "@/components/ui";
 import { BookGrid } from "@/features/catalog/catalog-book-card";
+import { PaperList } from "@/features/catalog/paper-card";
 import { listAuthors, listBooks, listCategories, orFallback } from "@/lib/catalog";
 import type { BookCardData } from "@/lib/catalog-types";
 import { requestCurrency } from "@/lib/request-currency";
@@ -16,7 +17,7 @@ const PLACEHOLDER_COVERS = [
 ];
 
 const VALUE_PROPS = [
-  { icon: BookOpen, title: "Read before you buy", text: "Every book's abstract and introduction, free in your browser." },
+  { icon: BookOpen, title: "Read before you buy", text: "Every book's abstract and introduction, and the first pages of every paper, free." },
   { icon: Download, title: "Instant ebooks", text: "Read online on any device or download the PDF the moment you pay." },
   { icon: Truck, title: "Print, shipped worldwide", text: "Delivery costs and times shown before you pay." },
   { icon: ShieldCheck, title: "Secure checkout", text: "Pay in naira, dollars, pounds or euros with Paystack, Flutterwave or Stripe." },
@@ -27,6 +28,12 @@ const FAQ = [
     id: "preview",
     title: "Can I read a book before buying it?",
     content: "Yes. Every book's abstract and introduction can be read free in your browser, no account needed.",
+  },
+  {
+    id: "papers",
+    title: "What are the conference and workshop papers?",
+    content:
+      "Papers the author presented at conferences and workshops on foundry, iron and steel making, safety and technical education in Nigeria. Read the first pages of any paper free, then buy the full paper as a PDF.",
   },
   {
     id: "ebook",
@@ -54,9 +61,10 @@ const FAQ = [
 
 export default async function Home() {
   const currency = await requestCurrency();
-  const [featured, latest, categories, authors] = await Promise.all([
+  const [featured, latest, papers, categories, authors] = await Promise.all([
     orFallback(listBooks({ currency, featured: true, pageSize: 3 }), EMPTY_PAGE),
     orFallback(listBooks({ currency, sort: "newest", pageSize: 10 }), EMPTY_PAGE),
+    orFallback(listBooks({ kind: "paper", currency, sort: "newest", pageSize: 3 }), EMPTY_PAGE),
     orFallback(listCategories(), []),
     orFallback(listAuthors(), []),
   ]);
@@ -70,20 +78,26 @@ export default async function Home() {
       <div className="surface-grain overflow-hidden border-b border-border">
         <Container className="grid items-center gap-12 py-14 sm:py-20 lg:grid-cols-[1.1fr_0.9fr] lg:gap-16 lg:py-24">
           <div className="flex animate-rise-in flex-col items-start gap-6">
-            <Eyebrow>Foundry technology · Metal casting · Heat treatment</Eyebrow>
+            <Eyebrow>Textbooks · Conference and workshop papers</Eyebrow>
             <h1 className="text-6xl font-medium text-text">
-              Foundry and heat treatment books that <em className="text-primary">explain</em>, not just describe.
+              Engineering books and papers that <em className="text-primary">explain</em>, not just describe.
             </h1>
             <p className="max-w-xl text-lg text-text-muted">
-              Textbooks by a mechanical engineering lecturer, in print and as instant ebooks. Read the introduction of any
-              book free, before you buy.
+              Manufacturing, foundry, heat treatment, workshop practice and technical drawing, by a mechanical engineering
+              lecturer. Read the introduction of any book, or the first pages of any paper, free before you buy.
             </p>
             <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
               <ButtonLink href="/books" size="lg" fullWidth className="sm:w-auto">
                 Browse the books
                 <Icon icon={ArrowRight} size="sm" />
               </ButtonLink>
-              {spotlight && (
+              {papers.total > 0 && (
+                <ButtonLink href="/papers" size="lg" variant="outline" fullWidth className="sm:w-auto">
+                  <Icon icon={FileText} size="sm" />
+                  Conference papers
+                </ButtonLink>
+              )}
+              {spotlight && papers.total === 0 && (
                 <ButtonLink href={`/books/${spotlight.slug}`} size="lg" variant="outline" fullWidth className="sm:w-auto">
                   <Icon icon={BookOpen} size="sm" />
                   Read a free introduction
@@ -145,15 +159,25 @@ export default async function Home() {
             {categories.map((category) => (
               <li key={category.id}>
                 <NextLink
-                  href={`/books?category=${category.slug}`}
+                  // A subject with papers only opens the papers in it.
+                  href={`${(category.bookCount ?? 0) > 0 ? "/books" : "/papers"}?category=${category.slug}`}
                   className="group flex h-full items-start justify-between gap-4 rounded-2xl border border-border bg-surface p-5 transition-[border-color,box-shadow,transform] duration-(--duration-base) hover:-translate-y-0.5 hover:border-border-strong hover:shadow-md"
                 >
                   <span className="flex flex-col gap-1">
                     <span className="font-display text-xl font-medium text-text">{category.name}</span>
                     {category.description && <span className="text-sm text-text-muted">{category.description}</span>}
                   </span>
-                  <span className="shrink-0 rounded-full bg-secondary px-2.5 py-1 text-xs font-medium text-text-muted">
-                    {category.bookCount} {category.bookCount === 1 ? "book" : "books"}
+                  <span className="flex shrink-0 flex-col items-end gap-1">
+                    {(category.bookCount ?? 0) > 0 && (
+                      <span className="rounded-full bg-secondary px-2.5 py-1 text-xs font-medium whitespace-nowrap text-text-muted">
+                        {category.bookCount} {category.bookCount === 1 ? "book" : "books"}
+                      </span>
+                    )}
+                    {(category.paperCount ?? 0) > 0 && (
+                      <span className="rounded-full bg-primary-subtle px-2.5 py-1 text-xs font-medium whitespace-nowrap text-on-primary-subtle">
+                        {category.paperCount} {category.paperCount === 1 ? "paper" : "papers"}
+                      </span>
+                    )}
                   </span>
                 </NextLink>
               </li>
@@ -175,6 +199,23 @@ export default async function Home() {
           }
         >
           <BookGrid books={latest.items} />
+        </Section>
+      )}
+
+      {/* ---------------------------------------------------------------- papers (BS-34) */}
+      {papers.items.length > 0 && (
+        <Section
+          eyebrow="Research"
+          title="Conference and workshop papers"
+          intro="Read the first pages of any paper free, then buy the full paper as a PDF."
+          className="border-t border-border"
+          actions={
+            <ButtonLink href="/papers" variant="outline">
+              See all {papers.total} {papers.total === 1 ? "paper" : "papers"}
+            </ButtonLink>
+          }
+        >
+          <PaperList papers={papers.items} />
         </Section>
       )}
 

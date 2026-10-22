@@ -44,8 +44,13 @@ export function publishProblems(
     | 'formats'
     | 'manuscript'
     | 'authorIds'
-  > & { preview?: { enabled?: boolean } | null },
+  > & {
+    preview?: { enabled?: boolean } | null;
+    kind?: Book['kind'];
+    paper?: Book['paper'];
+  },
 ): string[] {
+  if (book.kind === 'paper') return paperProblems(book);
   const problems: string[] = [];
   if (!book.title.trim()) problems.push('Add a title');
   if (book.authorIds.length === 0) problems.push('Add at least one author');
@@ -91,5 +96,60 @@ export function publishProblems(
       problems.push('Print: enter the weight (needed for shipping costs)');
     }
   }
+  return problems;
+}
+
+/** A web address the store will link to: http(s) only, so a link can never run script. */
+export function isSafeExternalUrl(value: string | null | undefined): boolean {
+  if (!value) return false;
+  try {
+    const url = new URL(value);
+    return (
+      (url.protocol === 'https:' || url.protocol === 'http:') && !!url.hostname
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * A paper's checklist (BS-34). The cover is optional (the store draws one from the title). A paper
+ * for sale needs its PDF, a free preview and an ebook price in every currency; it has no print
+ * copy. A paper listed for citation only needs the publisher's link instead, and is never sold.
+ */
+function paperProblems(book: Parameters<typeof publishProblems>[0]): string[] {
+  const problems: string[] = [];
+  if (!book.title.trim()) problems.push('Add a title');
+  if (book.authorIds.length === 0) problems.push('Add at least one author');
+  if (markdownToPlainText(book.abstractMarkdown).length < MIN_ABSTRACT_CHARS) {
+    problems.push(
+      `Write the abstract (at least ${MIN_ABSTRACT_CHARS} characters); it's shown on the paper's page`,
+    );
+  }
+  if (!book.paper?.venue.trim())
+    problems.push(
+      'Enter where it was presented or published (the conference, workshop or journal)',
+    );
+  if (book.paper?.access === 'external') {
+    if (!isSafeExternalUrl(book.paper.externalUrl))
+      problems.push("Enter the link to the paper on the publisher's website");
+    return problems;
+  }
+  if (!book.manuscript) problems.push('Upload the paper (PDF)');
+  if (!book.preview?.enabled)
+    problems.push('Set up the free preview (the first pages)');
+  const ebook = book.formats.find((f) => f.type === 'ebook' && f.active);
+  if (!ebook) problems.push('Turn on the ebook and set its price');
+  else {
+    const missing = CURRENCIES.filter(
+      (currency) =>
+        !ebook.prices.some(
+          (p) => p.currency === currency && isValidMinorAmount(p.amount),
+        ),
+    );
+    if (missing.length) problems.push(`Set a price in ${missing.join(', ')}`);
+  }
+  if (book.formats.some((f) => f.type === 'print' && f.active))
+    problems.push('Papers are sold as PDFs only: turn off the print copy');
   return problems;
 }

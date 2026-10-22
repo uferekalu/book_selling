@@ -19,20 +19,28 @@ import { MailService } from '../mail/mail.service.js';
 import { BookFilesService } from '../uploads/book-files.service.js';
 import { User } from '../users/schemas/user.schema.js';
 import { CloudinaryService } from '../uploads/cloudinary.service.js';
-import { normaliseIsbn13, publishProblems } from './catalog-rules.js';
+import {
+  isSafeExternalUrl,
+  normaliseIsbn13,
+  publishProblems,
+} from './catalog-rules.js';
 import type {
   AdminBookListQuery,
   AttachImageDto,
   AttachManuscriptDto,
   FormatDto,
+  PaperDetailsDto,
   UpdateBookDto,
 } from './dto/catalog.dto.js';
 import { ManuscriptsService } from './manuscripts.service.js';
 import { Author } from './schemas/author.schema.js';
 import {
   Book,
+  BOOKS_ONLY,
+  PAPERS_ONLY,
   type BookDocument,
   type BookFormat,
+  type BookKind,
   type BookStatus,
 } from './schemas/book.schema.js';
 import { Category } from './schemas/category.schema.js';
@@ -78,7 +86,9 @@ export class BooksService {
     page: number;
     pageSize: number;
   }> {
-    const filter: QueryFilter<Book> = {};
+    const filter: QueryFilter<Book> = {
+      ...(query.kind === 'paper' ? PAPERS_ONLY : BOOKS_ONLY),
+    };
     if (query.status) filter.status = query.status as BookStatus;
     if (query.q) filter.title = { $regex: escapeRegex(query.q), $options: 'i' };
     const page = query.page ?? 1;
@@ -103,12 +113,16 @@ export class BooksService {
   async create(
     title: string,
     actor: AccessTokenPayload,
+    kind: BookKind = 'book',
   ): Promise<BookDocument> {
     const book = await this.books.create({
       title,
+      kind,
+      // A paper starts as one for sale; the editor can switch it to "cited, read at the publisher".
+      paper: kind === 'paper' ? {} : null,
       slug: await uniqueSlug(this.books, title, { checkPrevious: true }),
     });
-    await this.record(actor, 'book.created', book, { title });
+    await this.record(actor, 'book.created', book, { title, kind });
     return book;
   }
 
@@ -189,10 +203,70 @@ export class BooksService {
         description: dto.seo.description ?? '',
       });
     if (dto.featured !== undefined) assign('featured', dto.featured);
+    if (dto.paper !== undefined)
+      this.applyPaperDetails(book, dto.paper, changed);
 
     await book.save();
     await this.record(actor, 'book.updated', book, { fields: changed });
     return book;
+  }
+
+  /**
+   * Papers only (BS-34). Switching between "for sale" and "cited, at the publisher" is refused
+   * while the paper is published, so a paper on sale never loses its buy button (or a cited one
+   * gains one) without passing the publish checklist again.
+   */
+  private applyPaperDetails(
+    book: BookDocument,
+    dto: PaperDetailsDto,
+    changed: string[],
+  ): void {
+    if (book.kind !== 'paper') {
+      throw new BadRequestException('Only a paper has paper details');
+    }
+    const current = book.paper ?? {
+      access: 'sale',
+      eventType: 'conference',
+      venue: '',
+      location: '',
+      publisher: '',
+      pages: '',
+      doi: '',
+      externalUrl: null,
+    };
+    if (
+      dto.access !== undefined &&
+      dto.access !== current.access &&
+      book.status === 'published'
+    ) {
+      throw new BadRequestException(
+        'Unpublish the paper first to change how it is offered (for sale, or read at the publisher).',
+      );
+    }
+    const next = {
+      access: dto.access ?? current.access,
+      eventType: dto.eventType ?? current.eventType,
+      venue: dto.venue ?? current.venue,
+      location: dto.location ?? current.location,
+      publisher: dto.publisher ?? current.publisher,
+      pages: dto.pages ?? current.pages,
+      doi: dto.doi ?? current.doi,
+      externalUrl:
+        dto.externalUrl !== undefined ? dto.externalUrl : current.externalUrl,
+    };
+    if (next.externalUrl && !isSafeExternalUrl(next.externalUrl)) {
+      throw new BadRequestException(
+        'Enter the full web address, starting with https://',
+      );
+    }
+    // A cited paper is never sold: nothing stays on sale once it points to the publisher.
+    if (next.access === 'external' && book.formats.some((f) => f.active)) {
+      // In place: the formats are Mongoose subdocuments (a spread would lose their identity).
+      for (const format of book.formats) format.active = false;
+      changed.push('formats');
+    }
+    book.set('paper', next);
+    changed.push('paper');
   }
 
   /**
@@ -205,6 +279,18 @@ export class BooksService {
     actor: AccessTokenPayload,
   ): Promise<BookDocument> {
     const book = await this.get(id);
+    if (book.kind === 'paper') {
+      if (formats.some((f) => f.type === 'print')) {
+        throw new BadRequestException(
+          'Papers are sold as PDFs only; they have no print copy.',
+        );
+      }
+      if (book.paper?.access === 'external' && formats.some((f) => f.active)) {
+        throw new BadRequestException(
+          'This paper is read at the publisher, so it is not sold here. Switch it to "for sale" first.',
+        );
+      }
+    }
     const types = formats.map((f) => f.type);
     if (new Set(types).size !== types.length)
       throw new BadRequestException('Each format can appear only once');

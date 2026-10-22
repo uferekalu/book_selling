@@ -25,6 +25,8 @@ async function load(slug: string) {
   const currency = await requestCurrency();
   const result = await getBook(slug, currency);
   if ("redirectTo" in result) permanentRedirect(`/books/${result.redirectTo}`);
+  // Papers have their own page (BS-34); older links to /books/<paper> land there.
+  if (result.book.kind === "paper") permanentRedirect(`/papers/${result.book.slug}`);
   return { book: result.book, currency };
 }
 

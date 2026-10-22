@@ -274,3 +274,144 @@ export async function demoManuscript(book: {
     },
   };
 }
+
+/** A4, the usual size for conference proceedings. */
+const A4: [number, number] = [595, 842];
+const A4_MARGIN = 64;
+
+export interface DemoPaper {
+  bytes: Uint8Array;
+  pages: number;
+}
+
+/**
+ * A stand-in conference paper (BS-34): a first page with the title, authors, where it was
+ * presented, the abstract and keywords, then the usual sections and references. Development and
+ * demo only; the text is drawn from `body`, the paper's own paragraphs.
+ */
+export async function demoPaper(paper: {
+  title: string;
+  authors: string[];
+  venue: string;
+  abstract: string;
+  keywords: string[];
+  body: string[];
+  pages: number;
+}): Promise<DemoPaper> {
+  const doc = await PDFDocument.create();
+  const fonts: Fonts = {
+    body: await doc.embedFont(StandardFonts.TimesRoman),
+    bold: await doc.embedFont(StandardFonts.TimesRomanBold),
+    italic: await doc.embedFont(StandardFonts.TimesRomanItalic),
+  };
+  const width = A4[0] - A4_MARGIN * 2;
+  const write = (
+    page: PDFPage,
+    text: string,
+    font: PDFFont,
+    size: number,
+    y: number,
+    lineHeight: number,
+    color = INK,
+  ): number => {
+    let cursor = y;
+    for (const line of wrap(safe(text, font), font, size, width)) {
+      if (cursor < A4_MARGIN + 30) return cursor;
+      page.drawText(line, { x: A4_MARGIN, y: cursor, size, font, color });
+      cursor -= lineHeight;
+    }
+    return cursor;
+  };
+  const footer = (page: PDFPage, n: number) => {
+    page.drawText(safe(paper.venue, fonts.italic), {
+      x: A4_MARGIN,
+      y: A4[1] - 40,
+      size: 8.5,
+      font: fonts.italic,
+      color: MUTED,
+    });
+    page.drawText(String(n), {
+      x: A4[0] / 2 - 4,
+      y: 36,
+      size: 9,
+      font: fonts.body,
+      color: MUTED,
+    });
+  };
+
+  // Page 1: title, authors, abstract, keywords, then the introduction begins.
+  const first = doc.addPage(A4);
+  let y = write(first, paper.title, fonts.bold, 17, A4[1] - 110, 22);
+  y = write(first, paper.authors.join(', '), fonts.body, 11.5, y - 8, 15);
+  y = write(first, paper.venue, fonts.italic, 10, y - 2, 13, MUTED);
+  first.drawText('Abstract', {
+    x: A4_MARGIN,
+    y: y - 28,
+    size: 11.5,
+    font: fonts.bold,
+    color: INK,
+  });
+  y = write(first, paper.abstract, fonts.italic, 10.5, y - 46, 14);
+  y = write(
+    first,
+    `Keywords: ${paper.keywords.join('; ')}`,
+    fonts.body,
+    10,
+    y - 8,
+    13,
+    MUTED,
+  );
+  footer(first, 1);
+
+  const sections = [
+    '1. Introduction',
+    '2. Literature review',
+    '3. Methodology',
+    '4. Results and discussion',
+    '5. Conclusion and recommendations',
+    'References',
+  ];
+  const bodyPages = Math.max(sections.length, paper.pages - 1);
+  const perSection = Math.max(1, Math.floor(bodyPages / sections.length));
+  let n = 2;
+  for (const [index, heading] of sections.entries()) {
+    const length =
+      index === sections.length - 1
+        ? Math.max(1, bodyPages - perSection * (sections.length - 1))
+        : perSection;
+    for (let i = 0; i < length; i += 1) {
+      const page = doc.addPage(A4);
+      let top = A4[1] - 80;
+      if (i === 0) {
+        page.drawText(safe(heading, fonts.bold), {
+          x: A4_MARGIN,
+          y: top,
+          size: 13,
+          font: fonts.bold,
+          color: INK,
+        });
+        top -= 28;
+      }
+      const texts =
+        heading === 'References'
+          ? paper.authors.map(
+              (author, k) =>
+                `[${k + 1}] ${author} (${2015 + k}). ${paper.keywords[k % paper.keywords.length]}: a review of practice. ${paper.venue}.`,
+            )
+          : paper.body
+              .slice((index + i) % paper.body.length)
+              .concat(paper.body.slice(0, (index + i) % paper.body.length));
+      for (const text of [...texts, ...texts]) {
+        top = write(page, text, fonts.body, 10.5, top, 14.5) - 8;
+        if (top < A4_MARGIN + 40) break;
+      }
+      footer(page, n);
+      n += 1;
+    }
+  }
+
+  doc.setTitle(paper.title);
+  doc.setAuthor(paper.authors.join(', '));
+  const bytes = await doc.save();
+  return { bytes, pages: doc.getPageCount() };
+}

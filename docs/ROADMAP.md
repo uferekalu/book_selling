@@ -1,6 +1,6 @@
 # Roadmap
 
-**Next planned ticket: BS-13** · **Next reactive ticket: BS-34**
+**Next planned ticket: BS-13** · **Next reactive ticket: BS-35**
 
 Each ticket is one branch (`feature/BS-<n>-<suffix>`) and one squash-merged PR. The order is
 deliberate: each ticket builds only on merged work. When a ticket finishes, its row is rewritten
@@ -43,6 +43,7 @@ so planned numbers never shift; they get a new row at the end of the table.
 | BS-31 | `shipping-safeguards` | Reported: every print order on the live site was refused ("can't ship print copies to US in NGN"). Cause: the live store had **no shipping zones** (the demo seed made none). Fixed live at once with three starter zones (Nigeria, West Africa, Rest of the world; all four currencies; editable in Store admin → Shipping). Then: the checkout names the country and, when a zone lacks the currency, which currencies work; the Shipping and Books admin pages warn when buyers can't order print copies (no zone, no Rest of the world, a missing currency); `seed:demo` adds the starter zones to a store with none | ✅ Done |
 | BS-32 | `mobile-polish` | Reported from phones: the orders list was clunky, the reader's text tiny, the order page disorganised, and search waited for Enter. Shipped: the reader measures each book's text (pdf.js, a few sample pages) and trims the blank margins so the text fills a phone's width (**Fit text to screen** in Display; on by default under 640 px; remembered). The orders list and order page have a phone layout (number + status, each title once, date + total; full-width Read now; no empty History card). **Search as you type**: from 2 letters, 300 ms after typing stops; every word must match the start of a word in the title, subtitle, author, topics, ISBN or abstract; ranked title first; "No books found" when nothing matches; everything back when cleared. MongoDB `$text` search was dropped because it only matches whole words ("foun" found nothing). Sweep: 66 page loads at 375 and 320 px (signed out, customer, owner), no horizontal overflow, no page errors | ✅ Done |
 | BS-33 | `store-settings` | Split from BS-12 because it changes money paths: owner settings for the preview cap (`PREVIEW_MAX_PERCENT`), the refund threshold admins may refund up to, payment provider on/off switches and enabled currencies, stored in the database with env values as defaults, audited | ⏳ Next |
+| BS-34 | `conference-papers` | The lecturer asked to showcase his **conference and workshop papers** (foundry; iron and steel making; safety; history and development of technical education in Nigeria; technical education and techno-industrial development) beside his **textbooks** (manufacturing, foundry, heat treatment and metal forming, workshop and machine tools, technical drawing, materials). Shipped: papers as a second kind of title (`/papers`, its own page, citation, Google Scholar tags), sold as PDFs with **at most 3 free pages** (never more than half), or listed for citation only with a link to the publisher; **Store admin → Papers**; one subject list for both. The demo catalogue now follows his arrangement (8 textbooks under his titles, 10 papers in his 5 areas, the earlier demo books moved into his subjects). See detail below | ✅ Done |
 
 **Launch line.** BS-1 to BS-14 are the launch. The store goes live after BS-14 with the complete
 buying, reading, email, messaging and admin experience. BS-15 to BS-18 are growth features shipped
@@ -289,6 +290,40 @@ checklist is reviewed whenever a ticket is planned, so nothing important is forg
      empty-state padding tightened on phones.
   7. Script robustness: the responsive check now rejects Git Bash–mangled paths and sanitises `?`
      in screenshot names.
+
+## BS-34: Conference and workshop papers, and the lecturer's arrangement (✅ Done, 2026-10-22)
+
+- **Asked:** the lecturer listed his conference and workshop papers in five areas and his textbooks,
+  and asked for them to be arranged "in the natural form they will assume as they go live". The
+  owner added: papers are **not free** (2–3 pages free, then buy), and a paper he didn't write
+  can be cited with a link to its publisher.
+- **Model:** a paper is a `books` row with `kind: 'paper'` and paper details (ARCHITECTURE §4.2),
+  so selling one reuses the whole money path unchanged. No print copy; a cited paper is never sold.
+  Older rows have no `kind` and are books.
+- **Preview cap:** at most 3 pages, never more than half (§10.1), enforced by the API and shown in
+  the editor.
+- **Storefront:** a Papers link in the main menu, `/papers` (search, research-area filter, sort),
+  each paper's page (publication details, citation with copy, textbooks in the same area, related
+  papers), `/papers/<slug>/read`, papers on the home page and the author page, the sitemap, and
+  Google Scholar tags (§12c). `/books/<paper>` redirects.
+- **Admin:** Store admin → Papers, with a Paper details section and a paper checklist.
+- **Demo content** (`seed:demo`, add-only and idempotent; nothing deleted):
+  - his 9 subjects and areas, in his order;
+  - 8 demo textbooks under his titles;
+  - 10 demo papers (8 for sale with typeset PDFs and 2-page previews, 2 cited with an example
+    publisher link) and a demo co-author;
+  - the 11 earlier demo books moved into his subjects.
+
+  The owner's real book is never moved. `--remove` also removes the papers, the co-author and
+  the new subjects.
+- **Tests:**
+  - Backend: paper publish rules, safe links and the 3-page cap (unit); an e2e test for papers
+    over HTTP (no print, http(s) links only, cited never sold, no access switch while published,
+    kept out of /books, per-kind counts and search).
+  - Frontend: citation format, paths, the paper form schema and the preview rule.
+  - Browser, on the local API with the seeded data: every new page at 375, 320 and 1280 px with no
+    sideways scroll and no page errors; a buyer adds a paper and reaches checkout; old
+    `/books/<paper>` links redirect.
 
 ## BS-12: Store dashboard, customers and audit log (✅ Done, 2026-10-06)
 

@@ -15,12 +15,13 @@ import { randomBytes } from 'node:crypto';
 import { NestFactory } from '@nestjs/core';
 import { SchedulerRegistry } from '@nestjs/schedule';
 import { getModelToken } from '@nestjs/mongoose';
-import type { Model } from 'mongoose';
+import { Types, type Model } from 'mongoose';
 import { AppModule } from '../src/app.module.js';
 import type { AccessTokenPayload } from '../src/auth/interfaces/auth.types.js';
 import { AuthorsService } from '../src/catalog/authors.service.js';
 import { BooksService } from '../src/catalog/books.service.js';
 import { CategoriesService } from '../src/catalog/categories.service.js';
+import { slugify } from '../src/catalog/catalog-rules.js';
 import { Author } from '../src/catalog/schemas/author.schema.js';
 import { Book } from '../src/catalog/schemas/book.schema.js';
 import { Category } from '../src/catalog/schemas/category.schema.js';
@@ -29,7 +30,14 @@ import { renderTeasers } from '../src/preview/page-teaser.js';
 import { PreviewStorage } from '../src/preview/preview-storage.js';
 import { BookFilesService } from '../src/uploads/book-files.service.js';
 import { ShippingService } from '../src/commerce/shipping.service.js';
-import { demoManuscript } from './demo-manuscript.js';
+import {
+  ARRANGED_PAPERS,
+  ARRANGED_SUBJECTS,
+  ARRANGED_TEXTBOOKS,
+  OWNER_BOOK_TITLE,
+  REARRANGE,
+} from './demo-arrangement.js';
+import { demoManuscript, demoPaper } from './demo-manuscript.js';
 
 /**
  * `--live`: the owner asked for a showcase catalogue on a hosted site (BS-27). Without it the
@@ -396,6 +404,9 @@ const BOOKS: DemoBook[] = [
 ];
 
 /** Starter delivery rates in minor units: first copy, then each additional copy. */
+/** The first demo books, then the lecturer's own titles (BS-34). */
+const ALL_BOOKS: DemoBook[] = [...BOOKS, ...ARRANGED_TEXTBOOKS];
+
 const rate = (
   currency: 'NGN' | 'USD' | 'GBP' | 'EUR',
   firstItem: number,
@@ -482,11 +493,13 @@ try {
     }
     const removed = await bookModel.deleteMany({ tags: 'demo' });
     const demoAuthor = await authorModel.deleteMany({
-      slug: 'prof-a-author',
+      slug: { $in: ['prof-a-author', 'dr-b-okonkwo'] },
       _id: { $nin: await bookModel.distinct('authorIds') },
     });
     const demoCategories = await categoryModel.deleteMany({
-      name: { $in: CATEGORIES.map((c) => c.name) },
+      name: {
+        $in: [...CATEGORIES, ...ARRANGED_SUBJECTS].map((c) => c.name),
+      },
       _id: { $nin: await bookModel.distinct('categoryIds') },
     });
     console.log(
@@ -530,9 +543,38 @@ try {
         )._id.toString(),
       );
     }
+    // The lecturer's arrangement (BS-34): his subjects and research areas lead the list; the
+    // first demo subjects follow, and drop out of the store once no published title uses them.
+    for (const category of ARRANGED_SUBJECTS) {
+      const existing = await categoryModel.findOne({ name: category.name });
+      if (existing) {
+        await categoryModel.updateOne(
+          { _id: existing._id },
+          {
+            $set: {
+              sortOrder: category.sortOrder,
+              description: category.description,
+            },
+          },
+        );
+      }
+      categoryIds.set(
+        category.name,
+        (
+          existing ?? (await categories.create(category, system))
+        )._id.toString(),
+      );
+    }
+    for (const [index, category] of CATEGORIES.entries()) {
+      if (ARRANGED_SUBJECTS.some((c) => c.name === category.name)) continue;
+      await categoryModel.updateOne(
+        { name: category.name },
+        { $set: { sortOrder: 20 + index } },
+      );
+    }
 
     let created = 0;
-    for (const [index, demo] of BOOKS.entries()) {
+    for (const [index, demo] of ALL_BOOKS.entries()) {
       // Any book with this title, not just a demo one: never duplicate a book the owner added.
       if (await bookModel.exists({ title: demo.title })) continue;
       const book = await books.create(demo.title, system);
@@ -588,6 +630,98 @@ try {
       );
       created += 1;
     }
+    // Move the existing demo books into the new arrangement. Only demo books: the owner's real
+    // book keeps the subjects it has.
+    let moved = 0;
+    for (const [title, names] of Object.entries(REARRANGE)) {
+      if (title === OWNER_BOOK_TITLE) continue;
+      const result = await bookModel.updateOne(
+        { title, tags: 'demo' },
+        {
+          $set: {
+            categoryIds: names.map(
+              (name) => new Types.ObjectId(categoryIds.get(name)!),
+            ),
+          },
+        },
+      );
+      moved += result.modifiedCount;
+    }
+
+    // Demo papers (BS-34): conference and workshop papers in each research area.
+    const coAuthors = new Map<string, string>();
+    for (const name of new Set(
+      ARRANGED_PAPERS.flatMap((p) => p.coAuthors ?? []),
+    )) {
+      const existing = await authorModel.findOne({ slug: slugify(name) });
+      coAuthors.set(
+        name,
+        (
+          existing ??
+          (await authors.create(
+            {
+              name,
+              title: 'Co-author (demo)',
+              bioMarkdown: 'Placeholder co-author for the demo papers.',
+            },
+            system,
+          ))
+        )._id.toString(),
+      );
+    }
+    let papersCreated = 0;
+    for (const [index, demo] of ARRANGED_PAPERS.entries()) {
+      if (await bookModel.exists({ title: demo.title })) continue;
+      const paper = await books.create(demo.title, system, 'paper');
+      const id = paper._id.toString();
+      await books.update(
+        id,
+        {
+          authorIds: [
+            author._id.toString(),
+            ...(demo.coAuthors ?? []).map((name) => coAuthors.get(name)!),
+          ],
+          categoryIds: [categoryIds.get(demo.area)!],
+          abstractMarkdown: demo.abstract,
+          tags: ['demo', ...demo.keywords],
+          publicationDate: new Date(`${demo.date}T00:00:00.000Z`).toISOString(),
+          paper: {
+            access: demo.access,
+            eventType: demo.eventType,
+            venue: demo.venue,
+            location: demo.location,
+            publisher: demo.publisher,
+            pages: demo.pages,
+            externalUrl: demo.externalUrl ?? null,
+          },
+        },
+        system,
+      );
+      if (demo.access === 'sale') {
+        await books.setFormats(
+          id,
+          [
+            {
+              type: 'ebook',
+              active: true,
+              prices: prices(3000, 500, 400, 450),
+              ebook: { stampWithBuyer: true },
+            },
+          ],
+          system,
+        );
+      }
+      // Demo only: published directly (the PDF and preview are added below).
+      await bookModel.updateOne(
+        { _id: paper._id },
+        {
+          status: 'published',
+          listedAt: new Date(Date.now() - index * 5 * 86_400_000),
+        },
+      );
+      papersCreated += 1;
+    }
+
     // Previews for every demo book that doesn't have one yet (also upgrades older demo data).
     // With R2 configured, the full book is uploaded too, so purchases can be read and downloaded;
     // demo books made before that (placeholder `demo/` key) are rebuilt with a real file.
@@ -600,7 +734,7 @@ try {
     }
     let previews = 0;
     let uploaded = 0;
-    for (const demo of BOOKS) {
+    for (const demo of ALL_BOOKS) {
       const book = await bookModel.findOne({ title: demo.title, tags: 'demo' });
       if (!book) continue;
       const needsFile =
@@ -696,8 +830,90 @@ try {
       );
       previews += 1;
     }
+    // Papers for sale: a typeset PDF, its first two pages free.
+    let paperPreviews = 0;
+    for (const demo of ARRANGED_PAPERS) {
+      if (demo.access !== 'sale') continue;
+      const paper = await bookModel.findOne({
+        title: demo.title,
+        tags: 'demo',
+      });
+      if (!paper) continue;
+      const needsFile =
+        files.configured &&
+        (!paper.manuscript?.key || paper.manuscript.key.startsWith('demo/'));
+      if (paper.preview?.fileId && !needsFile) continue;
+      if (paper.preview?.fileId) await storage.remove(paper.preview.fileId);
+      const pdf = await demoPaper({
+        title: demo.title,
+        authors: [author.name, ...(demo.coAuthors ?? [])],
+        venue: [demo.venue, demo.location, demo.date.slice(0, 4)]
+          .filter(Boolean)
+          .join(', '),
+        abstract: demo.abstract,
+        keywords: demo.keywords,
+        body: demo.body,
+        pages: demo.length,
+      });
+      const sections = [{ label: 'First pages', fromPage: 1, toPage: 2 }];
+      const built = await buildPreview(pdf.bytes, {
+        title: demo.title,
+        sections,
+        maxPercent: 15,
+        kind: 'paper',
+      });
+      const size = pdf.bytes.length;
+      let manuscriptKey = `demo/${paper.slug}.pdf`;
+      if (files.configured) {
+        manuscriptKey = `${files.manuscriptPrefix(paper._id.toString())}${randomBytes(16).toString('hex')}.pdf`;
+        // A copy: rendering the teasers below takes ownership of the original bytes.
+        await files.put(manuscriptKey, pdf.bytes.slice());
+        uploaded += 1;
+      }
+      const teasers = (await renderTeasers(pdf.bytes, [3, 4])).filter(
+        (t): t is string => t !== null,
+      );
+      const checksum = `demo-${paper._id.toString()}`;
+      const fileId = await storage.save(
+        built.bytes,
+        `${paper.slug}-preview.pdf`,
+        { bookId: paper._id.toString(), sourceChecksum: checksum },
+      );
+      await bookModel.updateOne(
+        { _id: paper._id },
+        {
+          $set: {
+            pageCount: pdf.pages,
+            manuscript: {
+              key: manuscriptKey,
+              bytes: size,
+              pages: pdf.pages,
+              checksum,
+              uploadedAt: new Date(),
+            },
+            preview: {
+              enabled: true,
+              status: 'ready',
+              sections,
+              pageOffset: 0,
+              fileId,
+              pageMap: [1, 2],
+              sourceChecksum: checksum,
+              teasers,
+              error: null,
+              buildToken: 1,
+              attempts: 0,
+              queuedAt: null,
+              startedAt: null,
+              generatedAt: new Date(),
+            },
+          },
+        },
+      );
+      paperPreviews += 1;
+    }
     console.log(
-      `Demo catalogue ready: ${created} new book(s), ${BOOKS.length - created} already present, ${previews} preview(s) built, ${uploaded} full book(s) uploaded.`,
+      `Demo catalogue ready: ${created} new book(s), ${ALL_BOOKS.length - created} already present, ${moved} moved to the new subjects, ${papersCreated} new paper(s), ${previews + paperPreviews} preview(s) built, ${uploaded} full file(s) uploaded.`,
     );
   }
 } finally {

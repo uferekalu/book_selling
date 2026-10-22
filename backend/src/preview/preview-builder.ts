@@ -23,8 +23,24 @@ export class PreviewBuildError extends Error {}
 
 export const DEFAULT_MAX_PREVIEW_PERCENT = 15;
 
-/** Most pages a preview may have for a book of `totalPages` (at least one). */
-export function maxPreviewPages(totalPages: number, percent: number): number {
+/** A paper's free preview: its first pages, never more than this (BS-34). */
+export const PAPER_PREVIEW_MAX_PAGES = 3;
+
+/**
+ * Most pages a preview may have (at least one). A book: `percent` of its pages. A paper: up to
+ * `PAPER_PREVIEW_MAX_PAGES`, and never more than half of it, so a short paper is still worth buying.
+ */
+export function maxPreviewPages(
+  totalPages: number,
+  percent: number,
+  kind: 'book' | 'paper' = 'book',
+): number {
+  if (kind === 'paper') {
+    return Math.max(
+      1,
+      Math.min(PAPER_PREVIEW_MAX_PAGES, Math.floor(totalPages / 2)),
+    );
+  }
   return Math.max(1, Math.floor((totalPages * percent) / 100));
 }
 
@@ -42,15 +58,17 @@ export function sectionProblems(
   sections: PreviewSection[],
   totalPages: number,
   maxPercent: number,
+  kind: 'book' | 'paper' = 'book',
 ): string[] {
   const problems: string[] = [];
+  const what = kind === 'paper' ? 'paper' : 'book';
   if (sections.length === 0) problems.push('Choose at least one section');
   for (const s of sections) {
     const name = s.label.trim() || 'A section';
     if (!Number.isInteger(s.fromPage) || !Number.isInteger(s.toPage)) {
       problems.push(`${name}: page numbers must be whole numbers`);
     } else if (s.fromPage < 1 || s.toPage > totalPages) {
-      problems.push(`${name}: the book has pages 1 to ${totalPages}`);
+      problems.push(`${name}: the ${what} has pages 1 to ${totalPages}`);
     } else if (s.fromPage > s.toPage) {
       problems.push(`${name}: the first page comes after the last`);
     }
@@ -65,10 +83,12 @@ export function sectionProblems(
     }
   }
   const count = previewPageNumbers(sections).length;
-  const max = maxPreviewPages(totalPages, maxPercent);
+  const max = maxPreviewPages(totalPages, maxPercent, kind);
   if (count > max) {
     problems.push(
-      `The preview has ${count} pages; at most ${max} (${maxPercent}% of ${totalPages}) are allowed`,
+      kind === 'paper'
+        ? `The preview has ${count} pages; a paper may show at most ${max} free (never more than half of its ${totalPages})`
+        : `The preview has ${count} pages; at most ${max} (${maxPercent}% of ${totalPages}) are allowed`,
     );
   }
   return problems;
@@ -137,7 +157,12 @@ export async function loadPdf(
 
 export async function buildPreview(
   manuscript: Uint8Array,
-  options: { title: string; sections: PreviewSection[]; maxPercent: number },
+  options: {
+    title: string;
+    sections: PreviewSection[];
+    maxPercent: number;
+    kind?: 'book' | 'paper';
+  },
 ): Promise<BuiltPreview> {
   const { doc: source, pages: totalPages } = await loadPdf(manuscript);
 
@@ -145,6 +170,7 @@ export async function buildPreview(
     options.sections,
     totalPages,
     options.maxPercent,
+    options.kind ?? 'book',
   );
   if (problems.length) throw new PreviewBuildError(problems.join('. '));
 

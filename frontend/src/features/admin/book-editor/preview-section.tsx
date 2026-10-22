@@ -28,10 +28,13 @@ const STATUS: Record<PreviewStatus, { label: string; tone: "neutral" | "info" | 
 const draftsFrom = (book: AdminBook): SectionDraft[] =>
   book.preview.sections.length
     ? book.preview.sections.map((s) => ({ label: s.label, fromPage: String(s.fromPage), toPage: String(s.toPage) }))
-    : [
-        { label: "Abstract", fromPage: "", toPage: "" },
-        { label: "Introduction", fromPage: "", toPage: "" },
-      ];
+    : book.kind === "paper"
+      ? // A paper's free preview is its opening pages (BS-34).
+        [{ label: "First pages", fromPage: "1", toPage: "2" }]
+      : [
+          { label: "Abstract", fromPage: "", toPage: "" },
+          { label: "Introduction", fromPage: "", toPage: "" },
+        ];
 
 interface Baseline {
   drafts: SectionDraft[];
@@ -48,6 +51,7 @@ const baselineFrom = (book: AdminBook): Baseline => ({
  * cap. Saving builds the preview on the server; only those pages are ever sent to visitors.
  */
 export function PreviewSection({ book }: { book: AdminBook }) {
+  const isPaper = book.kind === "paper";
   const [saved, setSaved] = useState(() => baselineFrom(book));
   const [drafts, setDrafts] = useState(saved.drafts);
   const [firstPrinted, setFirstPrinted] = useState(saved.firstPrinted);
@@ -72,20 +76,20 @@ export function PreviewSection({ book }: { book: AdminBook }) {
 
   const manuscript = book.manuscript;
   const parsed = useMemo(
-    () => (manuscript ? parseSections(drafts, manuscript.pages, book.preview.maxPercent) : null),
-    [drafts, manuscript, book.preview.maxPercent],
+    () => (manuscript ? parseSections(drafts, manuscript.pages, book.preview.maxPercent, book.kind) : null),
+    [drafts, manuscript, book.preview.maxPercent, book.kind],
   );
   const offsetValid = /^\d{1,3}$/.test(firstPrinted.trim()) && Number(firstPrinted) >= 1;
 
   if (!manuscript) {
     return (
-      <EditorSection id="preview" title="Free preview" description="The pages anyone can read before buying.">
-        <Alert tone="info">Upload the book PDF first; the preview is made from its pages.</Alert>
+      <EditorSection id="preview" title={isPaper ? "Free first pages" : "Free preview"} description="The pages anyone can read before buying.">
+        <Alert tone="info">Upload the {isPaper ? "paper" : "book"} PDF first; the preview is made from its pages.</Alert>
       </EditorSection>
     );
   }
 
-  const max = maxPreviewPages(manuscript.pages, book.preview.maxPercent);
+  const max = maxPreviewPages(manuscript.pages, book.preview.maxPercent, book.kind);
   const count = parsed ? previewPageCount(parsed.sections) : 0;
   const status = STATUS[book.preview.status];
   const working = book.preview.status === "queued" || book.preview.status === "building";
@@ -111,8 +115,12 @@ export function PreviewSection({ book }: { book: AdminBook }) {
   return (
     <EditorSection
       id="preview"
-      title="Free preview"
-      description={`The pages anyone can read before buying, usually the abstract and the introduction. Up to ${max} pages (${book.preview.maxPercent}% of ${manuscript.pages}).`}
+      title={isPaper ? "Free first pages" : "Free preview"}
+      description={
+        isPaper
+          ? `The pages anyone can read before buying the paper, usually the first ${max}. Up to ${max} of its ${manuscript.pages} pages.`
+          : `The pages anyone can read before buying, usually the abstract and the introduction. Up to ${max} pages (${book.preview.maxPercent}% of ${manuscript.pages}).`
+      }
       dirty={dirty}
       saving={saveState.isLoading}
       onSave={() => void onSave()}

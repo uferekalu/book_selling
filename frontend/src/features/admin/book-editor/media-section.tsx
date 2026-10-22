@@ -24,6 +24,18 @@ interface PendingCover {
 }
 
 export function MediaSection({ book }: { book: AdminBook }) {
+  // A paper's cover is optional: without one the store draws a cover from its title (BS-34).
+  if (book.kind === "paper") {
+    return (
+      <EditorSection
+        id="media"
+        title="Cover (optional)"
+        description="Papers don’t need a cover: without one, the store shows a cover made from the paper’s title."
+      >
+        <CoverPanel book={book} />
+      </EditorSection>
+    );
+  }
   return (
     <EditorSection
       id="media"

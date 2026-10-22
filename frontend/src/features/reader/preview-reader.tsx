@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Button, ButtonLink, Drawer, Icon, IconButton, ProgressBar, Skeleton } from "@/components/ui";
+import { readPath, titlePath } from "@/lib/catalog-links";
 import { useOwnedBooksQuery } from "@/lib/api/library-api";
 import type { PublicBook } from "@/lib/catalog-types";
 import { useAppSelector } from "@/lib/redux/hooks";
@@ -214,7 +215,7 @@ export function PreviewReader({ book, preview }: { book: PublicBook; preview: Pr
       <header className="z-10 flex flex-col border-b border-border bg-surface/95 backdrop-blur safe-x">
         <div className="flex items-center gap-1 px-2 py-1.5 sm:gap-2 sm:px-4">
           <NextLink
-            href={`/books/${book.slug}`}
+            href={titlePath(book.kind, book.slug)}
             className="flex size-11 shrink-0 items-center justify-center rounded-full text-text hover:bg-secondary"
             aria-label={`Back to ${book.title}`}
           >
@@ -237,7 +238,7 @@ export function PreviewReader({ book, preview }: { book: PublicBook; preview: Pr
             onClick={toggleFullscreen}
           />
           <Button size="sm" variant="accent" className="ml-1 hidden sm:inline-flex" onClick={showOptions}>
-            Buy the book
+            {book.kind === "paper" ? "Buy the paper" : "Buy the book"}
           </Button>
         </div>
         <ProgressBar value={current} max={preview.pageCount} label="Preview progress" valueText={label} className="[&>div]:h-1 [&>div]:rounded-none" />
@@ -337,7 +338,7 @@ export function PreviewReader({ book, preview }: { book: PublicBook; preview: Pr
       {/* Buying without leaving the book (PRODUCT_RULES §4.7); after paying, the buyer returns here. */}
       <Drawer open={checkoutOpen} onClose={() => setCheckoutOpen(false)} title="Checkout" side="right">
         <CheckoutFlow
-          returnPath={`/books/${book.slug}/read?page=${preview.continuesAt ?? preview.pageMap[current - 1] ?? 1}`}
+          returnPath={`${readPath(book.kind, book.slug)}?page=${preview.continuesAt ?? preview.pageMap[current - 1] ?? 1}`}
           onNavigate={() => setCheckoutOpen(false)}
         />
       </Drawer>
@@ -353,8 +354,8 @@ export function PreviewReader({ book, preview }: { book: PublicBook; preview: Pr
             {zoomButtons}
           </div>
           {applies && <FitTextSwitch fit={fit} onChange={setFit} />}
-          <ButtonLink href={`/books/${book.slug}`} variant="ghost">
-            Back to the book page
+          <ButtonLink href={titlePath(book.kind, book.slug)} variant="ghost">
+            {book.kind === "paper" ? "Back to the paper" : "Back to the book page"}
           </ButtonLink>
         </div>
       </Drawer>

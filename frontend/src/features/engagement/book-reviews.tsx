@@ -17,7 +17,10 @@ const date = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long", y
  * Reviews on a book page (PRODUCT_RULES §12): the star summary, a buyer's own review (write, edit,
  * delete) and everyone's published reviews. Only readers who bought the book can write one.
  */
-export function BookReviews({ bookId, slug }: { bookId: string; slug: string }) {
+/** "book" or "paper" (BS-34): the reviews read the same on both pages. */
+type Noun = "book" | "paper";
+
+export function BookReviews({ bookId, slug, noun = "book" }: { bookId: string; slug: string; noun?: Noun }) {
   const [page, setPage] = useState(1);
   const { data } = useBookReviewsQuery({ bookId, page });
   const summary = data?.summary;
@@ -44,12 +47,12 @@ export function BookReviews({ bookId, slug }: { bookId: string; slug: string }) 
               ))}
             </div>
           )}
-          <MyReview bookId={bookId} slug={slug} />
+          <MyReview bookId={bookId} slug={slug} noun={noun} />
         </div>
 
         <div className="flex min-w-0 flex-col gap-4">
           {!data ? null : data.items.length === 0 ? (
-            <EmptyState icon={MessageSquareQuote} title="No reviews yet" description="Readers who buy this book can share what they thought of it here." />
+            <EmptyState icon={MessageSquareQuote} title="No reviews yet" description={`Readers who buy this ${noun} can share what they thought of it here.`} />
           ) : (
             <>
               <ul className="flex flex-col gap-4">
@@ -67,7 +70,7 @@ export function BookReviews({ bookId, slug }: { bookId: string; slug: string }) 
                         {r.edited && <span className="text-text-subtle">(edited)</span>}
                         {r.verifiedPurchase && (
                           <Badge tone="success" size="sm" icon={<Icon icon={BadgeCheck} size="xs" />}>
-                            Bought this book
+                            Bought this {noun}
                           </Badge>
                         )}
                       </p>
@@ -85,7 +88,7 @@ export function BookReviews({ bookId, slug }: { bookId: string; slug: string }) 
   );
 }
 
-function MyReview({ bookId, slug }: { bookId: string; slug: string }) {
+function MyReview({ bookId, slug, noun }: { bookId: string; slug: string; noun: Noun }) {
   const status = useAppSelector((state) => state.session.status);
   const { data } = useMyReviewQuery(bookId, { skip: status !== "authenticated" });
   const [editing, setEditing] = useState(false);
@@ -94,7 +97,7 @@ function MyReview({ bookId, slug }: { bookId: string; slug: string }) {
   if (status !== "authenticated") {
     return (
       <Card variant="sunken" padding="sm" className="flex flex-col gap-2 text-sm">
-        <p className="text-text-muted">Bought this book? Sign in to review it.</p>
+        <p className="text-text-muted">Bought this {noun}? Sign in to review it.</p>
         <ButtonLink href={`/login?next=${encodeURIComponent(`/books/${slug}#reviews-heading`)}`} variant="outline" size="sm" className="self-start">
           Sign in
         </ButtonLink>
@@ -104,9 +107,9 @@ function MyReview({ bookId, slug }: { bookId: string; slug: string }) {
   if (!data) return null;
   if (data.reason === "staff") return null;
   if (!data.canReview && !data.review) {
-    return <p className="text-sm text-text-muted">Only readers who bought this book can review it.</p>;
+    return <p className="text-sm text-text-muted">Only readers who bought this {noun} can review it.</p>;
   }
-  if (data.review && !editing) return <OwnReview state={data} bookId={bookId} onEdit={() => setEditing(true)} />;
+  if (data.review && !editing) return <OwnReview state={data} bookId={bookId} noun={noun} onEdit={() => setEditing(true)} />;
   if (!data.review && !editing) {
     return (
       <Button variant="outline" className="self-start" leadingIcon={<Icon icon={PenLine} size="sm" />} onClick={() => setEditing(true)}>
@@ -117,7 +120,7 @@ function MyReview({ bookId, slug }: { bookId: string; slug: string }) {
   return <ReviewForm bookId={bookId} initial={data.review} onDone={() => setEditing(false)} />;
 }
 
-function OwnReview({ state, bookId, onEdit }: { state: MyReviewState; bookId: string; onEdit: () => void }) {
+function OwnReview({ state, bookId, noun, onEdit }: { state: MyReviewState; bookId: string; noun: Noun; onEdit: () => void }) {
   const [remove, removeState] = useDeleteReviewMutation();
   const { toast } = useToast();
   const review = state.review!;
@@ -127,7 +130,7 @@ function OwnReview({ state, bookId, onEdit }: { state: MyReviewState; bookId: st
       <Rating value={review.rating} />
       {review.status === "hidden" && (
         <Alert tone="warning" title="Hidden by the store">
-          It isn’t shown on the book page. Contact the store if you think that’s a mistake.
+          It isn’t shown on the {noun} page. Contact the store if you think that’s a mistake.
         </Alert>
       )}
       <p className="text-xs text-text-subtle">Written {timeAgo(review.createdAt)}</p>

@@ -47,6 +47,18 @@ engineers, and university libraries and lecturers elsewhere.
   - Covers are at least 1200×1800px and cropped to 2:3 in the editor, so a title is never cut off.
   - The manuscript must be a normal, unencrypted PDF.
   - The editor saves drafts automatically and won't publish until the checklist above passes.
+- **Conference and workshop papers** (BS-34) are a second kind of title, listed apart from the
+  textbooks under **Papers** (`/papers/<slug>`), filtered by research area:
+  - A paper **for sale** is a PDF only (no print copy). Its first pages are free: **at most 3, and
+    never more than half the paper**. To read on, the reader buys the paper exactly like an ebook
+    (same checkout, library, reader and download).
+  - A paper the author did not write, or cannot sell, is listed **for citation only**: its page
+    shows the abstract, the publication details and a citation, and links to the paper on the
+    publisher's website. It is never sold here.
+  - Each paper shows where and when it was presented or published (conference, workshop, seminar
+    or journal; place; date; pages; publisher; DOI) and a ready-to-copy citation.
+  - Subjects are shared: a textbook subject and a research area are one list, so a foundry paper
+    points readers to the foundry textbooks.
 - **Archiving a book never breaks a buyer's library.** It disappears from the store; owners keep
   reading and downloading it. A corrected manuscript reaches existing ebook owners automatically,
   with an email.

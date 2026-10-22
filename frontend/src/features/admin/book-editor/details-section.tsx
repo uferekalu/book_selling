@@ -111,6 +111,9 @@ function toggle(list: string[], id: string, on: boolean) {
 }
 
 export function DetailsSection({ book }: { book: AdminBook }) {
+  const isPaper = book.kind === "paper";
+  const noun = isPaper ? "paper" : "book";
+  const base = isPaper ? "/papers" : "/books";
   const [update, state] = useUpdateBookMutation();
   const authors = useAdminAuthorsQuery();
   const categories = useAdminCategoriesQuery();
@@ -139,7 +142,7 @@ export function DetailsSection({ book }: { book: AdminBook }) {
     <EditorSection
       id="details"
       title="Details"
-      description="What the book is called, who wrote it and how it is listed."
+      description={isPaper ? "What the paper is called, who wrote it and its research area." : "What the book is called, who wrote it and how it is listed."}
       dirty={isDirty}
       saving={state.isLoading}
       onReset={() => form.reset(detailsFromBook(book))}
@@ -157,8 +160,8 @@ export function DetailsSection({ book }: { book: AdminBook }) {
           error={errors.slug?.message}
           hint={
             book.status === "draft" && !book.listedAt
-              ? `The book's link: /books/${slug || "…"}`
-              : `The book's link: /books/${slug || "…"}. Changing it keeps the old link working (it redirects).`
+              ? `The ${noun}'s link: ${base}/${slug || "…"}`
+              : `The ${noun}'s link: ${base}/${slug || "…"}. Changing it keeps the old link working (it redirects).`
           }
         >
           <Input {...form.register("slug")} autoCapitalize="none" spellCheck={false} maxLength={80} />
@@ -166,6 +169,15 @@ export function DetailsSection({ book }: { book: AdminBook }) {
 
         <fieldset className="flex flex-col gap-3">
           <legend className="mb-2 text-sm font-medium text-text">Authors</legend>
+          {isPaper && (
+            <p className="-mt-1 text-sm text-text-muted">
+              Tick every author of the paper. A co-author who isn&rsquo;t listed yet can be added under{" "}
+              <NextLink href="/admin/authors" className="font-medium text-primary underline underline-offset-4">
+                Authors
+              </NextLink>
+              .
+            </p>
+          )}
           {authors.isLoading ? (
             <Skeleton className="h-11 w-full" />
           ) : authors.data?.length ? (
@@ -199,7 +211,7 @@ export function DetailsSection({ book }: { book: AdminBook }) {
         </fieldset>
 
         <fieldset className="flex flex-col gap-3">
-          <legend className="mb-2 text-sm font-medium text-text">Subjects</legend>
+          <legend className="mb-2 text-sm font-medium text-text">{isPaper ? "Research areas" : "Subjects"}</legend>
           {categories.isLoading ? (
             <Skeleton className="h-11 w-full" />
           ) : categories.data?.length ? (
@@ -232,13 +244,22 @@ export function DetailsSection({ book }: { book: AdminBook }) {
         </fieldset>
 
         <div className="grid gap-5 sm:grid-cols-2">
-          <FormField label="ISBN-13" error={errors.isbn13?.message} hint="Optional. Hyphens are fine.">
-            <Input {...form.register("isbn13")} inputMode="numeric" placeholder="978-…" />
-          </FormField>
-          <FormField label="Edition" error={errors.edition?.message}>
-            <Input {...form.register("edition")} placeholder="e.g. 2nd edition" maxLength={40} />
-          </FormField>
-          <FormField label="Publication date" error={errors.publicationDate?.message}>
+          {/* A paper has no ISBN or edition (BS-34). */}
+          {!isPaper && (
+            <>
+              <FormField label="ISBN-13" error={errors.isbn13?.message} hint="Optional. Hyphens are fine.">
+                <Input {...form.register("isbn13")} inputMode="numeric" placeholder="978-…" />
+              </FormField>
+              <FormField label="Edition" error={errors.edition?.message}>
+                <Input {...form.register("edition")} placeholder="e.g. 2nd edition" maxLength={40} />
+              </FormField>
+            </>
+          )}
+          <FormField
+            label={isPaper ? "Date presented or published" : "Publication date"}
+            hint={isPaper ? "Shown with the paper and used in its citation." : undefined}
+            error={errors.publicationDate?.message}
+          >
             <Input type="date" {...form.register("publicationDate")} />
           </FormField>
           <FormField label="Pages" error={errors.pageCount?.message}>
@@ -247,28 +268,30 @@ export function DetailsSection({ book }: { book: AdminBook }) {
           <FormField label="Language">
             <Select options={LANGUAGES} {...form.register("language")} />
           </FormField>
-          <FormField label="Keywords" hint="Comma-separated; help search find the book." error={errors.tags?.message}>
-            <Input {...form.register("tags")} placeholder="casting, sand moulding, annealing" />
+          <FormField label="Keywords" hint={`Comma-separated; help search find the ${noun}.`} error={errors.tags?.message}>
+            <Input {...form.register("tags")} placeholder={isPaper ? "slag, electric arc furnace, energy" : "casting, sand moulding, annealing"} />
           </FormField>
         </div>
 
-        <Controller
-          control={form.control}
-          name="featured"
-          render={({ field }) => (
-            <Switch
-              checked={field.value}
-              onCheckedChange={field.onChange}
-              label="Feature on the home page"
-              description="Featured books lead the home page and the default listing."
-            />
-          )}
-        />
+        {!isPaper && (
+          <Controller
+            control={form.control}
+            name="featured"
+            render={({ field }) => (
+              <Switch
+                checked={field.value}
+                onCheckedChange={field.onChange}
+                label="Feature on the home page"
+                description="Featured books lead the home page and the default listing."
+              />
+            )}
+          />
+        )}
 
         <details className="group rounded-xl border border-border p-4">
           <summary className="cursor-pointer text-sm font-medium text-text">Search engine listing (optional)</summary>
           <div className="mt-4 flex flex-col gap-5">
-            <FormField label="Search title" hint="Defaults to the book title." error={errors.seoTitle?.message}>
+            <FormField label="Search title" hint={`Defaults to the ${noun} title.`} error={errors.seoTitle?.message}>
               <Input {...form.register("seoTitle")} maxLength={70} />
             </FormField>
             <FormField label="Search description" hint="Defaults to the start of the abstract." error={errors.seoDescription?.message}>

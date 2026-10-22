@@ -75,8 +75,11 @@ export function formatProblems(drafts: Drafts, invalidInputs: ReadonlySet<string
   return problems;
 }
 
+/** The formats a title can have: a paper is a PDF only (BS-34). */
+export const formatTypesFor = (book: Pick<AdminBook, "kind">) => (book.kind === "paper" ? (["ebook"] as const) : (["ebook", "print"] as const));
+
 export function draftsToInput(drafts: Drafts, book: AdminBook): FormatInput[] {
-  return (["ebook", "print"] as const)
+  return formatTypesFor(book)
     .filter((type) => drafts[type].active || book.formats.some((f) => f.type === type) || toPrices(drafts[type].prices).length > 0)
     .map((type) => {
       const d = drafts[type];
@@ -93,6 +96,7 @@ export function draftsToInput(drafts: Drafts, book: AdminBook): FormatInput[] {
 }
 
 export function FormatsSection({ book }: { book: AdminBook }) {
+  const isPaper = book.kind === "paper";
   const [saved, setSaved] = useState(() => draftsFromBook(book));
   const [drafts, setDrafts] = useState(saved);
   const [invalid, setInvalid] = useState<ReadonlySet<string>>(new Set());
@@ -132,7 +136,7 @@ export function FormatsSection({ book }: { book: AdminBook }) {
       const next = draftsFromBook(result);
       setSaved(next);
       setDrafts(next);
-      toast({ title: "Formats and prices saved", tone: "success" });
+      toast({ title: isPaper ? "Price saved" : "Formats and prices saved", tone: "success" });
     } catch (error) {
       toast({ title: errorMessage(error), tone: "danger" });
     }
@@ -141,8 +145,12 @@ export function FormatsSection({ book }: { book: AdminBook }) {
   return (
     <EditorSection
       id="formats"
-      title="Formats & prices"
-      description="Set a price in every currency for each format you sell. Prices are exact; there is no automatic conversion."
+      title={isPaper ? "Price" : "Formats & prices"}
+      description={
+        isPaper
+          ? "Set the paper's price in every currency. Prices are exact; there is no automatic conversion."
+          : "Set a price in every currency for each format you sell. Prices are exact; there is no automatic conversion."
+      }
       dirty={dirty}
       saving={state.isLoading}
       onSave={() => void onSave()}
@@ -151,7 +159,7 @@ export function FormatsSection({ book }: { book: AdminBook }) {
         setInvalid(new Set());
       }}
     >
-      {(["ebook", "print"] as const).map((type) => {
+      {formatTypesFor(book).map((type) => {
         const d = drafts[type];
         const existing = book.formats.find((f) => f.type === type);
         return (
@@ -161,7 +169,7 @@ export function FormatsSection({ book }: { book: AdminBook }) {
               <Switch
                 checked={d.active}
                 onCheckedChange={(active) => patch(type, { active })}
-                label={type === "ebook" ? "Sell as an ebook (PDF)" : "Sell in print"}
+                label={isPaper ? "Sell the paper as a PDF" : type === "ebook" ? "Sell as an ebook (PDF)" : "Sell in print"}
                 description={type === "ebook" ? "Instant access after payment: read online or download." : "Shipped from your stock; shipping is charged at checkout."}
               />
               {existing && (

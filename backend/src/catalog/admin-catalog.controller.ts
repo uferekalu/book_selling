@@ -25,7 +25,7 @@ import { PreviewService, previewLimits } from '../preview/preview.service.js';
 import { CloudinaryService } from '../uploads/cloudinary.service.js';
 import { AuthorsService } from './authors.service.js';
 import { BooksService } from './books.service.js';
-import { CatalogPresenter } from './catalog.presenter.js';
+import { CatalogPresenter, presentPaper } from './catalog.presenter.js';
 import { ManuscriptsService } from './manuscripts.service.js';
 import { publishProblems } from './catalog-rules.js';
 import { CategoriesService } from './categories.service.js';
@@ -84,6 +84,7 @@ export class AdminCatalogController {
         id: book._id.toString(),
         title: book.title,
         slug: book.slug,
+        kind: book.kind ?? 'book',
         status: book.status,
         cover: this.present.image(book.cover, book.title),
         formats: book.formats.filter((f) => f.active).map((f) => f.type),
@@ -100,7 +101,9 @@ export class AdminCatalogController {
     @Body() dto: CreateBookDto,
     @CurrentUser() me: AccessTokenPayload,
   ) {
-    return this.adminBook(await this.books.create(dto.title, me));
+    return this.adminBook(
+      await this.books.create(dto.title, me, dto.kind ?? 'book'),
+    );
   }
 
   @Get('books/:id')
@@ -372,6 +375,8 @@ export class AdminCatalogController {
       title: book.title,
       subtitle: book.subtitle,
       slug: book.slug,
+      kind: book.kind ?? 'book',
+      paper: book.kind === 'paper' ? presentPaper(book.paper) : null,
       status: book.status,
       listedAt: book.listedAt?.toISOString() ?? null,
       featured: book.featured,
@@ -423,7 +428,11 @@ export class AdminCatalogController {
           book.manuscript &&
           book.preview?.sourceChecksum === book.manuscript.checksum,
         ),
-        ...previewLimits(book.manuscript?.pages, this.previews.maxPercent()),
+        ...previewLimits(
+          book.manuscript?.pages,
+          this.previews.maxPercent(),
+          book.kind ?? 'book',
+        ),
       },
       formats: book.formats,
       publishProblems: publishProblems(book),

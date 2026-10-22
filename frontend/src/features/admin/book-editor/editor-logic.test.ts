@@ -6,6 +6,8 @@ import { draftsFromBook, draftsToInput, formatProblems } from "./formats-section
 function book(overrides: Partial<AdminBook> = {}): AdminBook {
   return {
     id: "b1",
+    kind: "book",
+    paper: null,
     title: "Principles of Foundry Technology",
     subtitle: "",
     slug: "principles-of-foundry-technology",

@@ -19,6 +19,7 @@ export const ContinueCard = forwardRef<
   ref,
 ) {
   const author = book.authors.map((a) => a.name).join(", ");
+  const what = book.kind === "paper" ? "paper" : "book";
   return (
     <section aria-labelledby="continue-heading" className="flex w-full flex-col items-center">
       {/* Locked hints: tiny blurred images of the next pages, or blank paper with faint lines. */}
@@ -41,7 +42,7 @@ export const ContinueCard = forwardRef<
         </div>
         <span className="absolute inset-x-0 top-1/4 flex justify-center">
           <span className="flex items-center gap-2 rounded-full bg-surface/90 px-4 py-2 text-sm font-medium text-text shadow-md">
-            <Icon icon={Lock} size="sm" /> The rest is in the full book
+            <Icon icon={Lock} size="sm" /> The rest is in the full {what}
           </span>
         </span>
       </div>
@@ -67,9 +68,11 @@ export const ContinueCard = forwardRef<
             </h2>
             <p className="text-sm text-text-muted">
               {preview.continuesAt
-                ? `The full book carries on from page ${preview.continuesAt} and has ${preview.totalPages} pages.`
-                : `The full book has ${preview.totalPages} pages.`}{" "}
-              With the ebook you get instant access and continue right where you stopped.
+                ? `The full ${what} carries on from page ${preview.continuesAt} and has ${preview.totalPages} pages.`
+                : `The full ${what} has ${preview.totalPages} pages.`}{" "}
+              {book.kind === "paper"
+                ? "Buy the paper as a PDF to read it all online or download it."
+                : "With the ebook you get instant access and continue right where you stopped."}
             </p>
           </div>
         </div>
@@ -77,6 +80,7 @@ export const ContinueCard = forwardRef<
           <FormatPicker
             bookId={book.id}
             slug={book.slug}
+            kind={book.kind}
             formats={book.formatDetails}
             hasPreview
             showPreviewButton={false}

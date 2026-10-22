@@ -8,7 +8,8 @@ import { useBookStatusMutation, useDeleteBookMutation, type AdminBook } from "@/
 import { errorMessage, errorProblems } from "@/lib/api/errors";
 import { STATUS_BADGE } from "../books-list";
 import { useDirtyRegistry } from "./dirty";
-import { SECTIONS } from "./section";
+import { titlePath } from "@/lib/catalog-links";
+import { sectionsFor } from "./section";
 
 /** Every requirement, ticked off as the API stops listing it. Order matches the editor. */
 const CHECKS: Array<{ label: string; section: string; matches: (problem: string) => boolean }> = [
@@ -21,7 +22,16 @@ const CHECKS: Array<{ label: string; section: string; matches: (problem: string)
   { label: "Formats and prices", section: "formats", matches: (p) => /format|price/i.test(p) },
 ];
 
-const sectionLabel = (id: string) => SECTIONS.find((s) => s.id === id)?.label ?? id;
+/** A paper's checklist (BS-34): the API's paper problems, grouped the same way. */
+const PAPER_CHECKS: typeof CHECKS = [
+  { label: "Title and author", section: "details", matches: (p) => /title|author/i.test(p) },
+  { label: "Where it was presented", section: "paper", matches: (p) => /presented or published/i.test(p) },
+  { label: "Publisher link", section: "paper", matches: (p) => /publisher/i.test(p) },
+  { label: "Abstract", section: "text", matches: (p) => /abstract/i.test(p) },
+  { label: "Paper PDF", section: "file", matches: (p) => /upload the paper/i.test(p) },
+  { label: "Free first pages", section: "preview", matches: (p) => /preview/i.test(p) },
+  { label: "Price", section: "formats", matches: (p) => /price|ebook|print/i.test(p) },
+];
 
 export function PublishPanel({ book }: { book: AdminBook }) {
   const [setStatus, statusState] = useBookStatusMutation();
@@ -32,6 +42,12 @@ export function PublishPanel({ book }: { book: AdminBook }) {
   const { toast } = useToast();
   const router = useRouter();
   const badge = STATUS_BADGE[book.status];
+  const isPaper = book.kind === "paper";
+  const noun = isPaper ? "paper" : "book";
+  const sections = sectionsFor(book);
+  const sectionLabel = (id: string) => sections.find((s) => s.id === id)?.label ?? id;
+  // Only the checks that apply: a paper read at the publisher has no PDF, preview or price here.
+  const checks = isPaper ? PAPER_CHECKS.filter((check) => sections.some((s) => s.id === check.section)) : CHECKS;
   const ready = book.publishProblems.length === 0;
   const canDelete = book.status === "draft" && !book.listedAt;
 
@@ -40,7 +56,14 @@ export function PublishPanel({ book }: { book: AdminBook }) {
     try {
       await setStatus({ id: book.id, action }).unwrap();
       toast({
-        title: action === "publish" ? "Published: the book is on sale" : action === "unpublish" ? "Moved back to drafts" : "Archived",
+        title:
+          action === "publish"
+            ? isPaper && book.paper?.access === "external"
+              ? "Published: the paper is listed"
+              : `Published: the ${noun} is on sale`
+            : action === "unpublish"
+              ? "Moved back to drafts"
+              : "Archived",
         tone: "success",
       });
     } catch (error) {
@@ -68,7 +91,7 @@ export function PublishPanel({ book }: { book: AdminBook }) {
         <div className="flex flex-col gap-3">
           <p className="text-sm text-text-muted">{ready ? "Everything is in place." : "Before it can go on sale:"}</p>
           <ul className="flex flex-col gap-2">
-            {CHECKS.map((check) => {
+            {checks.map((check) => {
               const problems = book.publishProblems.filter(check.matches);
               const done = problems.length === 0;
               return (
@@ -113,7 +136,7 @@ export function PublishPanel({ book }: { book: AdminBook }) {
         )}
         {book.status === "published" && (
           <>
-            <ButtonLink href={`/books/${book.slug}`} variant="outline" fullWidth target="_blank" rel="noopener">
+            <ButtonLink href={titlePath(book.kind, book.slug)} variant="outline" fullWidth target="_blank" rel="noopener">
               View in the store
               <Icon icon={ExternalLink} size="sm" />
             </ButtonLink>
@@ -138,7 +161,7 @@ export function PublishPanel({ book }: { book: AdminBook }) {
         open={confirm === "unpublish" || confirm === "archive"}
         onCancel={() => setConfirm(null)}
         onConfirm={() => void run(confirm as "unpublish" | "archive")}
-        title={confirm === "archive" ? "Archive this book?" : "Take this book off sale?"}
+        title={confirm === "archive" ? `Archive this ${noun}?` : `Take this ${noun} off the store?`}
         description={
           confirm === "archive"
             ? "It disappears from the store. Buyers keep their copies. You can publish it again later."
@@ -156,13 +179,13 @@ export function PublishPanel({ book }: { book: AdminBook }) {
             .unwrap()
             .then(() => {
               toast({ title: "Draft deleted", tone: "success" });
-              router.replace("/admin/books");
+              router.replace(isPaper ? "/admin/papers" : "/admin/books");
             })
             .catch((error: unknown) => toast({ title: errorMessage(error), tone: "danger" }))
             .finally(() => setConfirm(null))
         }
         title="Delete this draft for good?"
-        description="Its cover, sample pages and book file are deleted too. This can't be undone."
+        description={`Its cover and ${noun} file are deleted too. This can't be undone.`}
         confirmLabel="Delete"
         tone="danger"
         isConfirming={removeState.isLoading}

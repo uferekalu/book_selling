@@ -24,7 +24,16 @@ import {
   MAX_PRICE_MINOR,
   type Currency,
 } from '../../common/money/currency.js';
-import { FORMAT_TYPES, type FormatType } from '../schemas/book.schema.js';
+import {
+  BOOK_KINDS,
+  FORMAT_TYPES,
+  PAPER_ACCESS,
+  PAPER_EVENT_TYPES,
+  type BookKind,
+  type FormatType,
+  type PaperAccess,
+  type PaperEventType,
+} from '../schemas/book.schema.js';
 
 const trim = ({ value }: { value: unknown }) =>
   typeof value === 'string' ? value.trim() : value;
@@ -227,6 +236,69 @@ export class CreateBookDto {
   @IsNotEmpty()
   @MaxLength(200)
   title: string;
+
+  @ApiPropertyOptional({ enum: BOOK_KINDS, default: 'book' })
+  @IsOptional()
+  @IsIn(BOOK_KINDS)
+  kind?: BookKind;
+}
+
+/** Where and how a paper was presented or published (BS-34). Every field optional on update. */
+export class PaperDetailsDto {
+  @ApiPropertyOptional({ enum: PAPER_ACCESS })
+  @IsOptional()
+  @IsIn(PAPER_ACCESS)
+  access?: PaperAccess;
+  @ApiPropertyOptional({ enum: PAPER_EVENT_TYPES })
+  @IsOptional()
+  @IsIn(PAPER_EVENT_TYPES)
+  eventType?: PaperEventType;
+  @ApiPropertyOptional({
+    example: 'Nigerian Metallurgical Society Annual Conference',
+  })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(200)
+  venue?: string;
+  @ApiPropertyOptional({ example: 'Enugu, Nigeria' })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(120)
+  location?: string;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(160)
+  publisher?: string;
+  @ApiPropertyOptional({ example: '112–124' })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(20)
+  pages?: string;
+  @ApiPropertyOptional({ example: '10.1000/xyz123' })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(120)
+  doi?: string;
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'The publisher page (http or https)',
+  })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() || null : value,
+  )
+  @IsUrl(
+    { protocols: ['http', 'https'], require_protocol: true },
+    { message: 'Enter the full web address, starting with https://' },
+  )
+  @MaxLength(500)
+  externalUrl?: string | null;
 }
 
 export class UpdateBookDto {
@@ -328,6 +400,12 @@ export class UpdateBookDto {
   @Type(() => SeoDto)
   seo?: SeoDto;
   @ApiPropertyOptional() @IsOptional() @IsBoolean() featured?: boolean;
+
+  @ApiPropertyOptional({ type: PaperDetailsDto, description: 'Papers only' })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => PaperDetailsDto)
+  paper?: PaperDetailsDto;
 }
 
 class PriceDto {
@@ -419,6 +497,10 @@ export const BOOK_SORTS = [
 export type BookSort = (typeof BOOK_SORTS)[number];
 
 export class BookListQuery {
+  @ApiPropertyOptional({ enum: BOOK_KINDS, default: 'book' })
+  @IsOptional()
+  @IsIn(BOOK_KINDS)
+  kind?: BookKind;
   @ApiPropertyOptional()
   @IsOptional()
   @Transform(trim)
@@ -498,6 +580,10 @@ export class AdminBookListQuery {
   @IsOptional()
   @IsIn(['draft', 'published', 'archived'])
   status?: string;
+  @ApiPropertyOptional({ enum: BOOK_KINDS, default: 'book' })
+  @IsOptional()
+  @IsIn(BOOK_KINDS)
+  kind?: BookKind;
   @ApiPropertyOptional({ default: 1 })
   @IsOptional()
   @Transform(toInt)

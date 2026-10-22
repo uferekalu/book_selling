@@ -28,6 +28,8 @@ export interface SearchableBook {
   subtitle?: string | null;
   tags?: string[];
   isbn13?: string | null;
+  /** A paper's conference, workshop or journal, and where it took place (BS-34). */
+  venue?: string;
   abstractMarkdown?: string | null;
   descriptionMarkdown?: string | null;
   /** Names of the book's authors. */
@@ -40,6 +42,7 @@ const FIELD_WEIGHT = {
   author: 30,
   tags: 25,
   isbn: 25,
+  venue: 20,
   abstract: 8,
   description: 4,
 } as const;
@@ -56,6 +59,7 @@ export function searchScore(book: SearchableBook, words: string[]): number {
     ['author', (book.authorNames ?? []).join(' ')],
     ['tags', (book.tags ?? []).join(' ')],
     ['isbn', book.isbn13 ?? ''],
+    ['venue', book.venue ?? ''],
     ['abstract', book.abstractMarkdown ?? ''],
     ['description', book.descriptionMarkdown ?? ''],
   ];
