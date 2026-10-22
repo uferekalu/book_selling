@@ -3,6 +3,7 @@ export const BRAND_NAME = process.env.NEXT_PUBLIC_BRAND_NAME ?? "Engineering Boo
 
 export const MAIN_NAV = [
   { href: "/books", label: "Books" },
+  { href: "/papers", label: "Papers" },
   { href: "/authors", label: "The author" },
 ] as const;
 

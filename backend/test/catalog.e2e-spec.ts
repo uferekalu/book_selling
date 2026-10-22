@@ -306,4 +306,121 @@ describe('Catalog (e2e)', () => {
       .send({ publicId: 'books/x/manuscript/file' })
       .expect(400);
   });
+
+  it('lists papers apart from textbooks, sold as PDFs or cited at the publisher (BS-34)', async () => {
+    const auth = { Authorization: `Bearer ${staffToken}` };
+    const author = await http()
+      .post('/admin/catalog/authors')
+      .set(auth)
+      .send({ name: 'Paper Author' })
+      .expect(201);
+    const area = await http()
+      .post('/admin/catalog/categories')
+      .set(auth)
+      .send({ name: 'Iron and Steel Making' })
+      .expect(201);
+    const created = await http()
+      .post('/admin/catalog/books')
+      .set(auth)
+      .send({ title: 'Slag Control in Electric Arc Furnaces', kind: 'paper' })
+      .expect(201);
+    expect(created.body).toMatchObject({
+      kind: 'paper',
+      paper: { access: 'sale', eventType: 'conference' },
+    });
+    const id = created.body.id as string;
+
+    // A paper has no print copy.
+    const ngnOnly = [{ currency: 'NGN', amount: 300_000 }];
+    await http()
+      .put(`/admin/catalog/books/${id}/formats`)
+      .set(auth)
+      .send({ formats: [{ type: 'print', active: true, prices: ngnOnly }] })
+      .expect(400);
+    // Links are http(s) only.
+    await http()
+      .patch(`/admin/catalog/books/${id}`)
+      .set(auth)
+      .send({ paper: { externalUrl: 'javascript:alert(1)' } })
+      .expect(400);
+
+    const updated = await http()
+      .patch(`/admin/catalog/books/${id}`)
+      .set(auth)
+      .send({
+        authorIds: [author.body.id],
+        categoryIds: [area.body.id],
+        publicationDate: '2019-11-12',
+        abstractMarkdown:
+          'How slag basicity and foaming practice affect energy use and refractory wear in electric arc furnaces at a Nigerian mini-mill.',
+        paper: {
+          access: 'external',
+          venue: 'Nigerian Metallurgical Society Annual Conference',
+          location: 'Jos, Nigeria',
+          externalUrl: 'https://doi.org/10.1000/slag',
+        },
+      })
+      .expect(200);
+    expect(updated.body.publishProblems).toEqual([]);
+    await http()
+      .post(`/admin/catalog/books/${id}/publish`)
+      .set(auth)
+      .expect(200);
+
+    // A cited paper is never sold, and can't switch to "for sale" while published.
+    await http()
+      .put(`/admin/catalog/books/${id}/formats`)
+      .set(auth)
+      .send({ formats: [{ type: 'ebook', active: true, prices: ngnOnly }] })
+      .expect(400);
+    await http()
+      .patch(`/admin/catalog/books/${id}`)
+      .set(auth)
+      .send({ paper: { access: 'sale' } })
+      .expect(400);
+
+    const books = await http().get('/catalog/books').expect(200);
+    expect(books.body.items.map((b: { slug: string }) => b.slug)).not.toContain(
+      created.body.slug,
+    );
+    const papers = await http().get('/catalog/books?kind=paper').expect(200);
+    expect(papers.body.total).toBe(1);
+    expect(papers.body.items[0]).toMatchObject({
+      kind: 'paper',
+      year: 2019,
+      formats: [],
+      fromPrice: null,
+      paper: {
+        access: 'external',
+        venue: 'Nigerian Metallurgical Society Annual Conference',
+        externalUrl: 'https://doi.org/10.1000/slag',
+      },
+    });
+    const search = await http()
+      .get('/catalog/books?kind=paper&q=metallurgical')
+      .expect(200);
+    expect(search.body.total).toBe(1);
+    const subjects = await http().get('/catalog/categories').expect(200);
+    expect(
+      subjects.body.find((c: { slug: string }) => c.slug === area.body.slug),
+    ).toMatchObject({ bookCount: 0, paperCount: 1 });
+    const admin = await http()
+      .get('/admin/catalog/books?kind=paper')
+      .set(auth)
+      .expect(200);
+    expect(admin.body.items.map((b: { id: string }) => b.id)).toEqual([id]);
+
+    // Paper details belong to papers only.
+    const book = await http()
+      .post('/admin/catalog/books')
+      .set(auth)
+      .send({ title: 'Machine Tools Practice' })
+      .expect(201);
+    expect(book.body).toMatchObject({ kind: 'book', paper: null });
+    await http()
+      .patch(`/admin/catalog/books/${book.body.id}`)
+      .set(auth)
+      .send({ paper: { venue: 'X' } })
+      .expect(400);
+  });
 });

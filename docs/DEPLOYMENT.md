@@ -160,8 +160,9 @@ serving errors):
 
 ### Showcase catalogue on a hosted site (BS-27)
 
-For a demo, `seed:demo` can fill a hosted site with 12 foundry and heat-treatment titles (tagged
-`demo`, removable with `--remove`). Run it from a machine with the repository, pointing at that
+For a demo, `seed:demo` can fill a hosted site with demo titles in the lecturer's arrangement
+(BS-34: 20 textbooks and 10 conference and workshop papers, tagged `demo`, removable with
+`--remove`). It only adds what is missing, so running it again is safe. Run it from a machine with the repository, pointing at that
 site's database and R2 folder, with `--live`:
 
 ```

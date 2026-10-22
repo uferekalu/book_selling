@@ -27,5 +27,10 @@ describe("preview sections (editor)", () => {
   it("matches the server's cap", () => {
     expect(maxPreviewPages(342, 15)).toBe(51);
     expect(maxPreviewPages(4, 15)).toBe(1);
+    // Papers (BS-34): up to 3 pages, never more than half.
+    expect(maxPreviewPages(14, 15, "paper")).toBe(3);
+    expect(maxPreviewPages(5, 15, "paper")).toBe(2);
+    expect(parseSections([s("First pages", "1", "4")], 14, 15, "paper").problems[0]).toMatch(/at most 3 free/);
+    expect(parseSections([s("First pages", "1", "3")], 14, 15, "paper").problems).toEqual([]);
   });
 });

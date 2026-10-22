@@ -31,6 +31,7 @@ const fromBook = (book: AdminBook): TextValues => ({
 });
 
 export function TextSection({ book }: { book: AdminBook }) {
+  const isPaper = book.kind === "paper";
   const [saved, setSaved] = useState(() => fromBook(book));
   const [values, setValues] = useState(saved);
   const [update, state] = useUpdateBookMutation();
@@ -77,8 +78,12 @@ export function TextSection({ book }: { book: AdminBook }) {
   return (
     <EditorSection
       id="text"
-      title="Abstract & description"
-      description="The abstract opens the book page and the free preview; the description tells readers what they will learn."
+      title={isPaper ? "Abstract" : "Abstract & description"}
+      description={
+        isPaper
+          ? "The abstract opens the paper’s page. A longer note about the paper is optional."
+          : "The abstract opens the book page and the free preview; the description tells readers what they will learn."
+      }
       dirty={dirty}
       saving={state.isLoading}
       onSave={() => void save()}
@@ -94,19 +99,24 @@ export function TextSection({ book }: { book: AdminBook }) {
         hint={
           abstractLength < MIN_ABSTRACT_CHARS
             ? `At least ${MIN_ABSTRACT_CHARS} characters (${abstractLength} so far). Markdown works: **bold**, *italic*, lists.`
-            : "Shown at the top of the book page and before the free preview. Markdown works."
+            : `Shown at the top of the ${isPaper ? "paper’s" : "book"} page. Markdown works.`
         }
       />
       <MarkdownField
-        label="Description"
-        required
+        label={isPaper ? "About this paper (optional)" : "Description"}
+        required={!isPaper}
         value={values.descriptionMarkdown}
         onChange={(descriptionMarkdown) => setValues((v) => ({ ...v, descriptionMarkdown }))}
         maxLength={50_000}
         rows={12}
-        hint="Who the book is for, what it covers, what's new in this edition. Use ## for headings and - for lists."
+        hint={
+          isPaper
+            ? "Anything readers should know beyond the abstract, e.g. the study’s context. Use - for lists."
+            : "Who the book is for, what it covers, what's new in this edition. Use ## for headings and - for lists."
+        }
       />
-      <div className="flex flex-col gap-3">
+      {/* A paper's contents are its pages: no table of contents to keep. */}
+      <div className={isPaper ? "hidden" : "flex flex-col gap-3"}>
         <FormField
           label="Table of contents"
           hint='One line per chapter; indent a line (or start it with "-") for a section. Put the page number at the end, e.g. "Moulding sands ..... 27".'

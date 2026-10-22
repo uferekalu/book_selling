@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import { Breadcrumbs, Container, Eyebrow, Icon, Section } from "@/components/ui";
 import { BookGrid } from "@/features/catalog/catalog-book-card";
+import { PaperList } from "@/features/catalog/paper-card";
 import { getAuthor, listBooks, orFallback } from "@/lib/catalog";
 import type { PublicAuthor } from "@/lib/catalog-types";
 import { requestCurrency } from "@/lib/request-currency";
@@ -53,7 +54,10 @@ function structuredData(author: PublicAuthor) {
 export default async function AuthorPage({ params }: PageProps<"/authors/[slug]">) {
   const { slug } = await params;
   const [author, currency] = await Promise.all([getAuthor(slug), requestCurrency()]);
-  const books = await orFallback(listBooks({ currency, author: author.slug, sort: "newest", pageSize: 48 }), null);
+  const [books, papers] = await Promise.all([
+    orFallback(listBooks({ currency, author: author.slug, sort: "newest", pageSize: 48 }), null),
+    orFallback(listBooks({ kind: "paper", currency, author: author.slug, sort: "newest", pageSize: 60 }), null),
+  ]);
   const links = Object.entries(author.links);
 
   return (
@@ -132,6 +136,12 @@ export default async function AuthorPage({ params }: PageProps<"/authors/[slug]"
       {books && books.items.length > 0 && (
         <Section eyebrow="Bibliography" title={`Books by ${author.name}`}>
           <BookGrid books={books.items} />
+        </Section>
+      )}
+
+      {papers && papers.items.length > 0 && (
+        <Section eyebrow="Research" title="Conference and workshop papers" className="border-t border-border">
+          <PaperList papers={papers.items} />
         </Section>
       )}
     </>

@@ -146,8 +146,31 @@ a reset link stops working once used.
 `bio`, `photo`, `affiliations[]`, `socialLinks`. Usually one document (the lecturer). It is still
 modelled as a collection so co-authored titles work.
 
-**`categories`**: `name`, `slug` (unique), `description`, `sortOrder`. Examples (the lecturer teaches foundry):
-Foundry Technology, Metal Casting, Heat Treatment, Physical Metallurgy, Furnaces and Melting.
+**`categories`**: `name`, `slug` (unique), `description`, `sortOrder`. One list for textbook
+subjects and paper research areas (BS-34), e.g. Manufacturing and Workshop Technology, Foundry
+Technology, Heat Treatment and Metal Forming, Technical Drawing, Engineering Materials, Iron and
+Steel Making, Safety, History and Development of Technical Education in Nigeria, Technical Education
+and Techno-Industrial Development. `GET /catalog/categories` returns `bookCount` and `paperCount`;
+the Books page shows the subjects with textbooks, the Papers page those with papers.
+
+**Papers (BS-34)** live in the `books` collection with `kind: 'paper'` (set at creation, never
+changed) and a `paper` sub-document: `access` (`sale` | `external`), `eventType` (conference,
+workshop, seminar, journal, other), `venue`, `location`, `publisher`, `pages`, `doi`,
+`externalUrl` (http/https only, checked on write and on read). The date is `publicationDate`.
+Rows from before BS-34 have no `kind`, so book queries use `kind: { $ne: 'paper' }`
+(`BOOKS_ONLY`) and paper queries `kind: 'paper'`; no migration was needed. Reusing the book
+record means a paper for sale goes through the unchanged money path (quote, checkout,
+`settle()`, entitlement, personal copy, reader). The rules that differ:
+- `publishProblems`: no cover or description needed; `paper.venue` required. For sale: PDF, a
+  built preview and an ebook price in every currency; an active print format is a problem.
+  External: a safe `externalUrl` instead, and nothing else.
+- `setFormats` refuses a print format for a paper, and any active format for an external paper;
+  switching `access` to external deactivates the formats, and switching `access` is refused while
+  the paper is published, so a published paper never gains or loses a price outside the checklist.
+- The quote already sells only published titles with an active, priced format, so an external
+  paper can never be bought.
+- Lists, search (which also matches the venue and location) and "related" are per kind; papers
+  sort newest-first by `publicationDate`. `/books/<paper>` redirects to `/papers/<paper>`.
 
 **`books`**
 | Field | Type | Notes |
@@ -1103,6 +1126,10 @@ the delivery store, not the only copy of the author's work.
 
 ### 10.1 Preview ("read the abstract and introduction before you buy")
 
+**Papers (BS-34)**: the same builder and reader, with a different cap: `maxPreviewPages(pages, %,
+'paper')` = at most `PAPER_PREVIEW_MAX_PAGES` (3) and never more than half the paper (a 5-page
+paper shows 2). The editor suggests pages 1–2. The reader route is `/papers/<slug>/read`.
+
 The lecturer's requirement: a buyer can read the abstract and introduction of any book in the
 browser, and when they want to read further they are asked to buy, smoothly and in context.
 
@@ -1466,6 +1493,23 @@ tested functions (`admin/dashboard.ts`).
 - `GET /admin/audit-log` (**owner**): `audit_logs` newest first (new index `{ at: -1 }`), filtered
   by entity type and action text. Actor names and order, book and user labels are resolved for
   display.
+
+## 12c. Conference and workshop papers on the storefront (built in BS-34)
+
+- `/papers`: search as you type, research-area filter (`paperCount`), sort; `PaperCard` shows
+  the type of paper, authors, venue, place and year, and the price or "Read at the publisher".
+- `/papers/<slug>`: abstract, publication details, keywords, an APA-style citation with a copy
+  button (`paper-citation.ts`, unit-tested), reviews (for papers sold here), textbooks in the
+  same research area, related papers. The buy panel reuses `FormatPicker` (`kind="paper"`:
+  PDF only, "Buy the paper", "Read the first pages free").
+- Search engines: schema.org `ScholarlyArticle` and Highwire `citation_*` meta tags (title,
+  authors, date, conference or journal, publisher, DOI) so Google Scholar can index the papers.
+- The home page has a papers section and subject cards count books and papers; the author page
+  lists the papers; the sitemap includes `/papers` and each paper.
+- Admin: **Store admin → Papers** (`/admin/papers`, the same list and editor as books). A paper's
+  editor has **Paper details** (how readers get it, type, venue, location, publisher, pages, DOI,
+  publisher link) and hides ISBN, edition, print, table of contents and sample pages; a cited paper
+  also hides the PDF, preview and price sections. The checklist follows the paper rules.
 
 ## 13. Security
 

@@ -13,7 +13,8 @@ import { ManuscriptSection } from "./manuscript-section";
 import { MediaSection } from "./media-section";
 import { PreviewSection } from "./preview-section";
 import { PublishPanel } from "./publish-panel";
-import { SECTIONS } from "./section";
+import { PaperSection } from "./paper-section";
+import { sectionsFor } from "./section";
 import { TextSection } from "./text-section";
 
 /**
@@ -39,27 +40,39 @@ export function BookEditor({ id }: { id: string }) {
     );
   }
 
+  const isPaper = book.kind === "paper";
+  const cited = isPaper && book.paper?.access === "external";
+
   return (
     <DirtyProvider>
       <div className="flex flex-col gap-6">
         <div className="flex flex-col gap-2">
-          <NextLink href="/admin/books" className="inline-flex min-h-11 items-center gap-1.5 self-start text-sm font-medium text-text-muted hover:text-text">
-            <Icon icon={ArrowLeft} size="sm" /> All books
+          <NextLink
+            href={isPaper ? "/admin/papers" : "/admin/books"}
+            className="inline-flex min-h-11 items-center gap-1.5 self-start text-sm font-medium text-text-muted hover:text-text"
+          >
+            <Icon icon={ArrowLeft} size="sm" /> {isPaper ? "All papers" : "All books"}
           </NextLink>
           <h2 className="font-display text-3xl font-medium sm:text-4xl">{book.title}</h2>
         </div>
         <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem] lg:gap-8">
           <aside className="flex flex-col gap-4 lg:sticky lg:top-24 lg:order-2">
             <PublishPanel book={book} />
-            <SectionNav />
+            <SectionNav sections={sectionsFor(book)} />
           </aside>
           <div className="flex min-w-0 flex-col gap-6 lg:order-1">
             <DetailsSection book={book} />
+            {isPaper && <PaperSection book={book} />}
             <TextSection book={book} />
             <MediaSection book={book} />
-            <ManuscriptSection book={book} />
-            <PreviewSection book={book} />
-            <FormatsSection book={book} />
+            {/* A paper read at the publisher is not sold here: no file, preview or price. */}
+            {!cited && (
+              <>
+                <ManuscriptSection book={book} />
+                <PreviewSection book={book} />
+                <FormatsSection book={book} />
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -67,12 +80,12 @@ export function BookEditor({ id }: { id: string }) {
   );
 }
 
-function SectionNav() {
+function SectionNav({ sections }: { sections: Array<{ id: string; label: string }> }) {
   const { dirty } = useDirtyRegistry();
   return (
     <nav aria-label="Editor sections" className="hidden lg:block">
       <ul className="flex flex-col gap-1">
-        {SECTIONS.map((section) => (
+        {sections.map((section) => (
           <li key={section.id}>
             <a
               href={`#${section.id}`}

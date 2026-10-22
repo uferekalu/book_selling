@@ -12,7 +12,23 @@ export const SECTIONS = [
   { id: "formats", label: "Formats & prices" },
 ] as const;
 
-export type SectionId = (typeof SECTIONS)[number]["id"];
+export type SectionId = (typeof SECTIONS)[number]["id"] | "paper";
+
+/**
+ * The editor's sections for a title (BS-34). A paper has its own details and is a PDF only; a
+ * paper read at the publisher has no file, preview or price here.
+ */
+export function sectionsFor(book: { kind: "book" | "paper"; paper: { access: "sale" | "external" } | null }): Array<{ id: SectionId; label: string }> {
+  if (book.kind !== "paper") return [...SECTIONS];
+  const base: Array<{ id: SectionId; label: string }> = [
+    { id: "details", label: "Details" },
+    { id: "paper", label: "Paper details" },
+    { id: "text", label: "Abstract" },
+    { id: "media", label: "Cover (optional)" },
+  ];
+  if (book.paper?.access === "external") return base;
+  return [...base, { id: "file", label: "Paper PDF" }, { id: "preview", label: "Free first pages" }, { id: "formats", label: "Price" }];
+}
 
 /** One editor card: heading, body and a save bar that shows when there is something to save. */
 export function EditorSection({

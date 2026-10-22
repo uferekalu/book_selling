@@ -17,8 +17,32 @@ export interface AuthorRef {
   slug: string;
 }
 
+/** A textbook, or a conference / workshop paper (BS-34). */
+export type BookKind = "book" | "paper";
+export type PaperAccess = "sale" | "external";
+export type PaperEventType = "conference" | "workshop" | "seminar" | "journal" | "other";
+
+/** Where and how a paper was presented or published. */
+export interface PublicPaper {
+  /** `sale`: bought as a PDF after a free preview. `external`: read at the publisher. */
+  access: PaperAccess;
+  eventType: PaperEventType;
+  venue: string;
+  location: string;
+  publisher: string;
+  pages: string;
+  doi: string;
+  /** Always http(s) (checked by the API). */
+  externalUrl: string | null;
+}
+
 export interface BookCardData {
   id: string;
+  kind: BookKind;
+  /** Papers only. */
+  paper: PublicPaper | null;
+  /** Year of publication or presentation. */
+  year: number | null;
   slug: string;
   title: string;
   subtitle: string;
@@ -79,7 +103,10 @@ export interface PublicCategory {
   slug: string;
   name: string;
   description: string;
+  /** Published textbooks in the subject. */
   bookCount?: number;
+  /** Published papers in the subject (BS-34). */
+  paperCount?: number;
 }
 
 export interface PublicAuthor {
@@ -97,6 +124,8 @@ export const BOOK_SORTS = ["relevance", "newest", "price_asc", "price_desc", "ra
 export type BookSort = (typeof BOOK_SORTS)[number];
 
 export interface BookFilters {
+  /** Textbooks unless asked for papers. */
+  kind?: BookKind;
   q?: string;
   category?: string;
   author?: string;

@@ -1,10 +1,15 @@
 import type { Currency } from '../common/money/currency.js';
 import type { CloudinaryService } from '../uploads/cloudinary.service.js';
 import type { AuthorDocument } from './schemas/author.schema.js';
+import { isSafeExternalUrl } from './catalog-rules.js';
 import type {
   BookDocument,
   BookFormat,
+  BookKind,
   FormatType,
+  PaperAccess,
+  PaperDetails,
+  PaperEventType,
 } from './schemas/book.schema.js';
 import type { CategoryDocument } from './schemas/category.schema.js';
 import type { StoredImage } from './schemas/image.schema.js';
@@ -46,8 +51,44 @@ export interface CategoryRef {
   slug: string;
 }
 
+/** Where and how a paper was presented or published (BS-34). */
+export interface PublicPaper {
+  access: PaperAccess;
+  eventType: PaperEventType;
+  venue: string;
+  location: string;
+  publisher: string;
+  pages: string;
+  doi: string;
+  /** Only ever an http(s) address. */
+  externalUrl: string | null;
+}
+
+export function presentPaper(
+  paper: PaperDetails | null | undefined,
+): PublicPaper {
+  return {
+    access: paper?.access ?? 'sale',
+    eventType: paper?.eventType ?? 'conference',
+    venue: paper?.venue ?? '',
+    location: paper?.location ?? '',
+    publisher: paper?.publisher ?? '',
+    pages: paper?.pages ?? '',
+    doi: paper?.doi ?? '',
+    externalUrl: isSafeExternalUrl(paper?.externalUrl)
+      ? paper!.externalUrl
+      : null,
+  };
+}
+
 export interface BookCardDto {
   id: string;
+  /** A textbook or a conference / workshop paper (BS-34). */
+  kind: BookKind;
+  /** Papers only. */
+  paper: PublicPaper | null;
+  /** Year of publication or presentation, when known. */
+  year: number | null;
   slug: string;
   title: string;
   subtitle: string;
@@ -101,7 +142,10 @@ export interface PublicCategoryDto {
   slug: string;
   name: string;
   description: string;
+  /** Published textbooks in the subject. */
   bookCount?: number;
+  /** Published papers in the subject (BS-34). */
+  paperCount?: number;
 }
 
 const NEW_FOR_MS = 90 * 24 * 60 * 60_000;
@@ -171,8 +215,12 @@ export class CatalogPresenter {
       null,
     );
     const distinctPrices = new Set(priced.map((f) => f.price!.amount));
+    const kind = book.kind ?? 'book';
     return {
       id: book._id.toString(),
+      kind,
+      paper: kind === 'paper' ? presentPaper(book.paper) : null,
+      year: book.publicationDate ? book.publicationDate.getUTCFullYear() : null,
       slug: book.slug,
       title: book.title,
       subtitle: book.subtitle,

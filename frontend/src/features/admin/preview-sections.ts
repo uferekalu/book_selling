@@ -15,7 +15,14 @@ export interface ParsedSection {
   toPage: number;
 }
 
-export const maxPreviewPages = (totalPages: number, percent: number) => Math.max(1, Math.floor((totalPages * percent) / 100));
+/** A paper's free preview is its first pages: at most this many (BS-34). */
+export const PAPER_PREVIEW_MAX_PAGES = 3;
+
+/** A book: `percent` of its pages. A paper: up to 3 pages, never more than half of it. */
+export function maxPreviewPages(totalPages: number, percent: number, kind: "book" | "paper" = "book"): number {
+  if (kind === "paper") return Math.max(1, Math.min(PAPER_PREVIEW_MAX_PAGES, Math.floor(totalPages / 2)));
+  return Math.max(1, Math.floor((totalPages * percent) / 100));
+}
 
 export function previewPageCount(sections: ParsedSection[]): number {
   const pages = new Set<number>();
@@ -23,7 +30,13 @@ export function previewPageCount(sections: ParsedSection[]): number {
   return pages.size;
 }
 
-export function parseSections(drafts: SectionDraft[], totalPages: number, maxPercent: number): { sections: ParsedSection[]; problems: string[] } {
+export function parseSections(
+  drafts: SectionDraft[],
+  totalPages: number,
+  maxPercent: number,
+  kind: "book" | "paper" = "book",
+): { sections: ParsedSection[]; problems: string[] } {
+  const what = kind === "paper" ? "paper" : "book";
   const problems: string[] = [];
   const sections: ParsedSection[] = [];
   if (drafts.length === 0) problems.push("Add at least one section");
@@ -36,7 +49,7 @@ export function parseSections(drafts: SectionDraft[], totalPages: number, maxPer
       problems.push(`${name}: enter the first and last page as numbers`);
       continue;
     }
-    if (from < 1 || to > totalPages) problems.push(`${name}: the book has pages 1 to ${totalPages}`);
+    if (from < 1 || to > totalPages) problems.push(`${name}: the ${what} has pages 1 to ${totalPages}`);
     else if (from > to) problems.push(`${name}: the first page comes after the last`);
     else sections.push({ label: d.label.trim(), fromPage: from, toPage: to });
   }
@@ -47,7 +60,13 @@ export function parseSections(drafts: SectionDraft[], totalPages: number, maxPer
     }
   }
   const count = previewPageCount(sections);
-  const max = maxPreviewPages(totalPages, maxPercent);
-  if (count > max) problems.push(`That's ${count} pages; the preview can have at most ${max} (${maxPercent}% of ${totalPages})`);
+  const max = maxPreviewPages(totalPages, maxPercent, kind);
+  if (count > max) {
+    problems.push(
+      kind === "paper"
+        ? `That's ${count} pages; a paper can show at most ${max} free (never more than half of its ${totalPages})`
+        : `That's ${count} pages; the preview can have at most ${max} (${maxPercent}% of ${totalPages})`,
+    );
+  }
   return { sections: sorted, problems };
 }

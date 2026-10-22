@@ -14,6 +14,9 @@ const uploadedOn = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "lo
 
 /** The complete book as a private PDF: never public; buyers get personalised copies from it. */
 export function ManuscriptSection({ book }: { book: AdminBook }) {
+  const isPaper = book.kind === "paper";
+  const noun = isPaper ? "paper" : "book";
+  const Noun = isPaper ? "Paper" : "Book";
   const { upload, cancel, progress } = useManuscriptUpload(book.id);
   const [attach, attachState] = useAttachManuscriptMutation();
   const [notifyBuyers, setNotifyBuyers] = useState(false);
@@ -28,20 +31,20 @@ export function ManuscriptSection({ book }: { book: AdminBook }) {
       const saved = await attach({ id: book.id, key, notifyBuyers: replacingSoldBook && notifyBuyers }).unwrap();
       setNotifyBuyers(false);
       toast({
-        title: "Book file saved",
+        title: `${Noun} file saved`,
         description: saved.manuscript ? `${saved.manuscript.pages} pages · ${formatBytes(saved.manuscript.bytes)}` : undefined,
         tone: "success",
       });
     } catch (error) {
-      toast({ title: "The book file wasn't saved", description: errorMessage(error, (error as Error).message), tone: "danger" });
+      toast({ title: `The ${noun} file wasn't saved`, description: errorMessage(error, (error as Error).message), tone: "danger" });
     }
   };
 
   return (
     <EditorSection
       id="file"
-      title="Book file"
-      description="The complete book as a PDF. It's stored privately: never shown publicly, and only reachable by buyers through short-lived personal links."
+      title={isPaper ? "Paper PDF" : "Book file"}
+      description={`The complete ${noun} as a PDF. It's stored privately: never shown publicly, and only reachable by buyers through short-lived personal links.`}
     >
       {book.manuscript ? (
         <div className="flex items-start gap-3 rounded-xl border border-border bg-surface-sunken p-4">
@@ -55,8 +58,8 @@ export function ManuscriptSection({ book }: { book: AdminBook }) {
         </div>
       ) : null}
       {book.manuscript && book.listedAt && (
-        <Alert tone="info" title="Replacing the file of a book on sale">
-          Everyone who owns the ebook gets the new edition in their library automatically (their personal copies are made
+        <Alert tone="info" title={`Replacing the file of a ${noun} on sale`}>
+          Everyone who owns it gets the new edition in their library automatically (their personal copies are made
           again). Copies they downloaded before don’t change.
         </Alert>
       )}
@@ -71,17 +74,17 @@ export function ManuscriptSection({ book }: { book: AdminBook }) {
       )}
       {attachState.isLoading ? (
         <div className="flex items-center gap-3 rounded-2xl border border-border bg-surface-sunken p-5" aria-live="polite">
-          <Spinner label="Checking the book PDF" />
-          <p className="text-sm text-text-muted">Checking the PDF and counting its pages. A large book can take up to a minute.</p>
+          <Spinner label={`Checking the ${noun} PDF`} />
+          <p className="text-sm text-text-muted">Checking the PDF and counting its pages. A large file can take up to a minute.</p>
         </div>
       ) : (
         <FileDrop
           accept="application/pdf"
-          title={book.manuscript ? "Replace the book PDF" : "Upload the book PDF"}
+          title={book.manuscript ? `Replace the ${noun} PDF` : `Upload the ${noun} PDF`}
           hint="PDF only. The file goes up in pieces, so a dropped connection only repeats one piece. Keep this page open until it finishes."
           onFile={(file) => void choose(file)}
           progress={progress}
-          progressLabel="Uploading book PDF"
+          progressLabel={`Uploading ${noun} PDF`}
           onCancel={cancel}
         />
       )}

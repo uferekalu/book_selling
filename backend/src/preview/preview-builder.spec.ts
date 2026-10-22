@@ -92,6 +92,30 @@ describe('preview section rules', () => {
     expect(maxPreviewPages(4, 15)).toBe(1);
   });
 
+  it('gives a paper up to 3 free pages, never more than half of it (BS-34)', () => {
+    expect(maxPreviewPages(14, 15, 'paper')).toBe(3);
+    expect(maxPreviewPages(5, 15, 'paper')).toBe(2);
+    expect(maxPreviewPages(2, 15, 'paper')).toBe(1);
+    expect(
+      sectionProblems(
+        [{ label: 'First pages', fromPage: 1, toPage: 4 }],
+        14,
+        15,
+        'paper',
+      ),
+    ).toEqual([
+      'The preview has 4 pages; a paper may show at most 3 free (never more than half of its 14)',
+    ]);
+    expect(
+      sectionProblems(
+        [{ label: 'First pages', fromPage: 1, toPage: 3 }],
+        14,
+        15,
+        'paper',
+      ),
+    ).toEqual([]);
+  });
+
   it('flags out-of-range, reversed and overlapping sections', () => {
     expect(
       sectionProblems([{ label: 'Intro', fromPage: 0, toPage: 3 }], 100, 15),

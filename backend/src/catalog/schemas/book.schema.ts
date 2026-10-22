@@ -11,6 +11,32 @@ import {
 export const BOOK_STATUSES = ['draft', 'published', 'archived'] as const;
 export type BookStatus = (typeof BOOK_STATUSES)[number];
 
+/**
+ * What a title is (BS-34). A textbook, or a conference / workshop paper. Papers are sold as ebooks
+ * only, with a short free preview (at most 3 pages); a paper can also be listed for citation only,
+ * linking to its publisher. Rows written before BS-34 have no `kind`: they are books, so book
+ * queries match "not a paper" rather than `kind: 'book'`.
+ */
+export const BOOK_KINDS = ['book', 'paper'] as const;
+export type BookKind = (typeof BOOK_KINDS)[number];
+
+/** Matches every book, including rows from before `kind` existed. */
+export const BOOKS_ONLY = { kind: { $ne: 'paper' as const } };
+export const PAPERS_ONLY = { kind: 'paper' as const };
+
+export const PAPER_EVENT_TYPES = [
+  'conference',
+  'workshop',
+  'seminar',
+  'journal',
+  'other',
+] as const;
+export type PaperEventType = (typeof PAPER_EVENT_TYPES)[number];
+
+/** `sale`: sold as an ebook with a free preview. `external`: cited only, read at the publisher. */
+export const PAPER_ACCESS = ['sale', 'external'] as const;
+export type PaperAccess = (typeof PAPER_ACCESS)[number];
+
 export const FORMAT_TYPES = ['ebook', 'print'] as const;
 export type FormatType = (typeof FORMAT_TYPES)[number];
 
@@ -123,8 +149,39 @@ export class Preview {
 }
 const PreviewSchema = SchemaFactory.createForClass(Preview);
 
+/** Where and how a paper was presented or published (BS-34). The date is `publicationDate`. */
+@Schema({ _id: false })
+export class PaperDetails {
+  @Prop({ type: String, enum: PAPER_ACCESS, default: 'sale' })
+  access: PaperAccess;
+  @Prop({ type: String, enum: PAPER_EVENT_TYPES, default: 'conference' })
+  eventType: PaperEventType;
+  /** The conference, workshop or journal, e.g. "Nigerian Metallurgical Society Annual Conference". */
+  @Prop({ type: String, default: '', trim: true, maxlength: 200 })
+  venue: string;
+  /** Where it took place, e.g. "Enugu, Nigeria". */
+  @Prop({ type: String, default: '', trim: true, maxlength: 120 })
+  location: string;
+  /** Who published the proceedings or journal. */
+  @Prop({ type: String, default: '', trim: true, maxlength: 160 })
+  publisher: string;
+  /** Pages in the proceedings or journal, e.g. "112–124". */
+  @Prop({ type: String, default: '', trim: true, maxlength: 20 })
+  pages: string;
+  @Prop({ type: String, default: '', trim: true, maxlength: 120 })
+  doi: string;
+  /** The publisher's page for the paper; required when `access` is `external`. */
+  @Prop({ type: String, default: null }) externalUrl: string | null;
+}
+export const PaperDetailsSchema = SchemaFactory.createForClass(PaperDetails);
+
 @Schema({ collection: 'books', timestamps: true })
 export class Book {
+  /** Set when the title is created and never changed (BS-34). Missing on older rows = book. */
+  @Prop({ type: String, enum: BOOK_KINDS, default: 'book' }) kind: BookKind;
+  /** Papers only. */
+  @Prop({ type: PaperDetailsSchema, default: null })
+  paper: PaperDetails | null;
   @Prop({ type: String, required: true, trim: true, maxlength: 200 })
   title: string;
   @Prop({ type: String, default: '', trim: true, maxlength: 240 })
@@ -188,6 +245,7 @@ export type BookDocument = HydratedDocument<Book>;
 export const BookSchema = SchemaFactory.createForClass(Book);
 
 BookSchema.index({ status: 1, listedAt: -1 });
+BookSchema.index({ kind: 1, status: 1, listedAt: -1 });
 // The preview worker's queue (only books with a pending or running build).
 BookSchema.index(
   { 'preview.status': 1, 'preview.queuedAt': 1 },

@@ -115,6 +115,7 @@ export class PreviewService {
       sections,
       book.manuscript.pages,
       this.maxPercent(),
+      book.kind ?? 'book',
     );
     if (problems.length) {
       throw new BadRequestException({
@@ -193,6 +194,7 @@ export class PreviewService {
         title: book.title,
         sections: book.preview.sections,
         maxPercent: this.maxPercent(),
+        kind: book.kind ?? 'book',
       });
       const fileId = await this.storage.save(
         built.bytes,
@@ -427,9 +429,10 @@ export function presentPreview(
 export function previewLimits(
   pages: number | undefined,
   maxPercent: number,
+  kind: 'book' | 'paper' = 'book',
 ): { maxPercent: number; maxPages: number | null } {
   return {
     maxPercent,
-    maxPages: pages ? maxPreviewPages(pages, maxPercent) : null,
+    maxPages: pages ? maxPreviewPages(pages, maxPercent, kind) : null,
   };
 }
